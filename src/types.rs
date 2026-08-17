@@ -2,11 +2,10 @@
 //!
 //! Определяет базовые типы, AI-типы и типы для многопоточности.
 
-use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Базовые типы Latent
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LatentType {
     Int,
     Float,
@@ -47,7 +46,7 @@ impl fmt::Display for LatentType {
 }
 
 /// AI-типы
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AIType {
     Model(Box<LatentType>),
     Embedding(usize),
@@ -70,7 +69,7 @@ impl fmt::Display for AIType {
 }
 
 /// Типы для многопоточности
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ConcurrencyType {
     Channel(Box<LatentType>),
     Promise(Box<LatentType>),

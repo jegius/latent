@@ -1,15 +1,10 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Latent IDE</title>
     <link rel="stylesheet" href="styles.css">
-
-    <!-- CodeMirror -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -24,7 +19,8 @@
 
         <main>
             <div class="editor-panel">
-                <textarea id="editor"></textarea>
+                <canvas id="editor-canvas"></canvas>
+                <textarea id="editor" style="display:none;"></textarea>
             </div>
 
             <div class="output-panel">
