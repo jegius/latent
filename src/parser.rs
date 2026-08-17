@@ -171,6 +171,9 @@ impl Parser {
             self.parse_decorator()
         } else if self.check(&TokenType::Let) {
             self.parse_let()
+        } else if self.check(&TokenType::Async) {
+            self.advance(); // consume 'async'
+            self.parse_fn()
         } else if self.check(&TokenType::Fn) {
             self.parse_fn()
         } else if self.check(&TokenType::Class) {
@@ -227,6 +230,10 @@ impl Parser {
     /// Парсинг функции
     fn parse_fn(&mut self) -> Result<Stmt, ParserError> {
         let pos = self.peek().pos;
+        // Поддержка async fn
+        if self.check(&TokenType::Async) {
+            self.advance();
+        }
         self.expect(TokenType::Fn, "fn")?;
         let name = self.expect_identifier_or_keyword()?;
 
@@ -417,6 +424,10 @@ impl Parser {
         self.expect(TokenType::Spawn, "spawn")?;
         self.expect(TokenType::LBrace, "{")?;
         let body = self.parse_block()?;
+        // Опциональная точка с запятой после spawn { ... }
+        if self.check(&TokenType::Semicolon) {
+            self.advance();
+        }
         Ok(Stmt {
             kind: StmtKind::Spawn(body),
             pos,
@@ -568,6 +579,45 @@ impl Parser {
             TokenType::Ai => {
                 self.advance();
                 Expr { kind: ExprKind::Identifier("ai".to_string()), pos }
+            }
+            TokenType::Channel => {
+                self.advance();
+                // channel<T>() — вызов с generic параметром
+                if self.check(&TokenType::Lt) {
+                    self.advance(); // consume '<'
+                    let _ty = self.parse_type()?;
+                    self.expect(TokenType::Gt, ">")?;
+                }
+                self.expect(TokenType::LParen, "(")?;
+                let mut args = Vec::new();
+                while !self.check(&TokenType::RParen) {
+                    args.push(self.parse_expression(0)?);
+                    if self.check(&TokenType::Comma) {
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
+                self.expect(TokenType::RParen, ")")?;
+                Expr {
+                    kind: ExprKind::Call {
+                        callee: Box::new(Expr { kind: ExprKind::Identifier("channel".to_string()), pos }),
+                        args,
+                    },
+                    pos,
+                }
+            }
+            TokenType::Async => {
+                self.advance();
+                Expr { kind: ExprKind::Identifier("async".to_string()), pos }
+            }
+            TokenType::This => {
+                self.advance();
+                Expr { kind: ExprKind::Identifier("this".to_string()), pos }
+            }
+            TokenType::Assert => {
+                self.advance();
+                Expr { kind: ExprKind::Identifier("assert".to_string()), pos }
             }
             TokenType::Minus => {
                 self.advance();
