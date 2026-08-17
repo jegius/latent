@@ -14,9 +14,36 @@
                 <button id="compile-btn">▶ Compile & Run</button>
                 <button id="compile-ai-btn">🤖 Compile & Run with AI</button>
                 <button id="check-btn">✓ Check Syntax</button>
+                <select id="examples-select" title="Load a code example">
+                    <option value="">📚 Examples…</option>
+                </select>
+                <button id="ai-settings-btn">⚙️ AI Gateway</button>
                 <span id="status"></span>
             </div>
         </header>
+
+        <div id="ai-settings" class="ai-settings" style="display:none;">
+            <div class="ai-settings-row">
+                <label for="ai-provider">Provider:</label>
+                <select id="ai-provider">
+                    <option value="mock">Mock (offline)</option>
+                    <option value="ollama" selected>Ollama (local)</option>
+                    <option value="openai-compatible">OpenAI-compatible</option>
+                </select>
+
+                <label for="ai-baseurl">Base URL:</label>
+                <input type="text" id="ai-baseurl" value="http://localhost:11434" placeholder="http://localhost:11434">
+
+                <label for="ai-model">Model:</label>
+                <input type="text" id="ai-model" value="qwen3:4b" placeholder="qwen3:4b">
+
+                <label for="ai-apikey">API Key:</label>
+                <input type="password" id="ai-apikey" placeholder="(optional)">
+
+                <button id="ai-test-btn">🔌 Test Connection</button>
+                <span id="ai-gateway-status"></span>
+            </div>
+        </div>
 
         <main>
             <div class="editor-panel">
@@ -28,7 +55,7 @@
                 <div class="tabs">
                     <button class="tab active" data-tab="output">Output</button>
                     <button class="tab" data-tab="wasm">WASM</button>
-                    <button class="tab" data-tab="ast">AST</button>
+                    <button class="tab" data-tab="ast">🤖 AI Insights</button>
                 </div>
 
                 <div id="output" class="tab-content active">
