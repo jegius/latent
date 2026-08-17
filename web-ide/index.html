@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Latent IDE</title>
+    <link rel="stylesheet" href="styles.css">
+
+    <!-- CodeMirror -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Latent IDE</h1>
+            <div class="toolbar">
+                <button id="compile-btn">▶ Compile & Run</button>
+                <button id="check-btn">✓ Check Syntax</button>
+                <span id="status"></span>
+            </div>
+        </header>
+
+        <main>
+            <div class="editor-panel">
+                <textarea id="editor"></textarea>
+            </div>
+
+            <div class="output-panel">
+                <div class="tabs">
+                    <button class="tab active" data-tab="output">Output</button>
+                    <button class="tab" data-tab="wasm">WASM</button>
+                    <button class="tab" data-tab="ast">AST</button>
+                </div>
+
+                <div id="output" class="tab-content active">
+                    <pre id="console-output"></pre>
+                </div>
+
+                <div id="wasm" class="tab-content">
+                    <pre id="wasm-output"></pre>
+                </div>
+
+                <div id="ast" class="tab-content">
+                    <pre id="ast-output"></pre>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script type="module" src="main.js"></script>
+</body>
+</html>

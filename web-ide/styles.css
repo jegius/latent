@@ -1,0 +1,164 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+header {
+    background: #252526;
+    padding: 10px 20px;
+    border-bottom: 1px solid #3c3c3c;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #569cd6;
+}
+
+.toolbar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+button {
+    background: #0e639c;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.2s;
+}
+
+button:hover {
+    background: #1177bb;
+}
+
+button:active {
+    background: #0d5a8f;
+}
+
+#status {
+    font-size: 13px;
+    color: #4ec9b0;
+    margin-left: 10px;
+}
+
+main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+.editor-panel {
+    flex: 1;
+    border-right: 1px solid #3c3c3c;
+    overflow: hidden;
+}
+
+.editor-panel .CodeMirror {
+    height: 100%;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.output-panel {
+    width: 400px;
+    display: flex;
+    flex-direction: column;
+    background: #252526;
+}
+
+.tabs {
+    display: flex;
+    background: #2d2d30;
+    border-bottom: 1px solid #3c3c3c;
+}
+
+.tab {
+    background: transparent;
+    color: #969696;
+    border: none;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 12px;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+}
+
+.tab:hover {
+    color: #d4d4d4;
+}
+
+.tab.active {
+    color: #569cd6;
+    border-bottom-color: #569cd6;
+}
+
+.tab-content {
+    display: none;
+    flex: 1;
+    overflow: auto;
+    padding: 10px;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.tab-content pre {
+    font-family: 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* CodeMirror тема */
+.cm-s-default .cm-keyword { color: #569cd6; }
+.cm-s-default .cm-type { color: #4ec9b0; }
+.cm-s-default .cm-builtin { color: #dcdcaa; }
+.cm-s-default .cm-number { color: #b5cea8; }
+.cm-s-default .cm-string { color: #ce9178; }
+.cm-s-default .cm-comment { color: #6a9955; }
+.cm-s-default .cm-operator { color: #d4d4d4; }
+.cm-s-default .cm-variable { color: #9cdcfe; }
+
+/* Скроллбар */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: #1e1e1e;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #424242;
+    border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #4f4f4f;
+}
