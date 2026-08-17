@@ -214,17 +214,25 @@ impl<'a> Lexer<'a> {
 
     pub fn next_token(&mut self) -> Result<Token, LexerError> {
         self.skip_whitespace();
-        let start_pos = self.pos;
+        // start_pos — это позиция ПОСЛЕ текущего символа.
+        // Вычитаем длину текущего символа, чтобы получить начало токена.
+        let char_len = self.current.map(|c| c.len_utf8()).unwrap_or(0);
+        let start_pos = Position::new(
+            self.pos.line,
+            self.pos.column - char_len,
+            self.pos.offset - char_len,
+        );
+        let start_offset = start_pos.offset;
 
         match self.peek() {
             None => Ok(Token::new(TokenType::Eof, "", start_pos)),
 
             // Числа
-            Some(ch) if ch.is_ascii_digit() => self.read_number(start_pos),
+            Some(ch) if ch.is_ascii_digit() => self.read_number(start_pos, start_offset),
 
             // Идентификаторы и ключевые слова
             Some(ch) if ch.is_ascii_alphabetic() || ch == '_' => {
-                self.read_identifier(start_pos)
+                self.read_identifier(start_pos, start_offset)
             }
 
             // Строки
@@ -415,11 +423,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn read_number(&mut self, start_pos: Position) -> Result<Token, LexerError> {
-        // start_pos.offset — это offset ПОСЛЕ первого символа.
-        // Для ASCII-символов вычитаем 1, чтобы получить начало токена.
-        let start_offset = start_pos.offset - 1;
-
+    fn read_number(&mut self, start_pos: Position, start_offset: usize) -> Result<Token, LexerError> {
         // Целая часть
         while let Some(ch) = self.peek() {
             if ch.is_ascii_digit() {
@@ -453,7 +457,7 @@ impl<'a> Lexer<'a> {
             }
             if !matches!(self.peek(), Some(ch) if ch.is_ascii_digit()) {
                 return Err(LexerError::InvalidNumberFormat {
-                    text: self.source[start_offset..self.pos.offset].to_string(),
+                    text: self.source[start_offset..self.pos.offset - 1].to_string(),
                     pos: start_pos,
                 });
             }
@@ -466,7 +470,15 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        let lexeme = &self.source[start_offset..self.pos.offset];
+        // self.pos.offset указывает на символ ПОСЛЕ последнего символа числа.
+        // Но если текущий символ — EOF, то advance() не вызывался, и offset не увеличился.
+        // В этом случае не вычитаем 1.
+        let end_offset = if self.current.is_some() {
+            self.pos.offset - 1
+        } else {
+            self.pos.offset
+        };
+        let lexeme = &self.source[start_offset..end_offset];
         let value: f64 = lexeme.parse().map_err(|_| LexerError::InvalidNumberFormat {
             text: lexeme.to_string(),
             pos: start_pos,
@@ -475,11 +487,7 @@ impl<'a> Lexer<'a> {
         Ok(Token::new(TokenType::Number(value), lexeme, start_pos))
     }
 
-    fn read_identifier(&mut self, start_pos: Position) -> Result<Token, LexerError> {
-        // start_pos.offset — это offset ПОСЛЕ первого символа.
-        // Для ASCII-символов вычитаем 1, чтобы получить начало токена.
-        let start_offset = start_pos.offset - 1;
-
+    fn read_identifier(&mut self, start_pos: Position, start_offset: usize) -> Result<Token, LexerError> {
         while let Some(ch) = self.peek() {
             if ch.is_ascii_alphanumeric() || ch == '_' {
                 self.advance();
@@ -488,7 +496,15 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        let lexeme = &self.source[start_offset..self.pos.offset];
+        // self.pos.offset указывает на символ ПОСЛЕ последнего символа идентификатора.
+        // Но если текущий символ — EOF, то advance() не вызывался, и offset не увеличился.
+        // В этом случае не вычитаем 1.
+        let end_offset = if self.current.is_some() {
+            self.pos.offset - 1
+        } else {
+            self.pos.offset
+        };
+        let lexeme = &self.source[start_offset..end_offset];
 
         if let Some(token_type) = self.keywords.get(lexeme) {
             Ok(Token::new(token_type.clone(), lexeme, start_pos))
@@ -502,6 +518,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn read_string(&mut self, start_pos: Position) -> Result<Token, LexerError> {
+        // start_pos.offset — это offset начала токена (включая открывающую кавычку).
         let start_offset = start_pos.offset;
         self.advance(); // consume opening '"'
 
@@ -558,6 +575,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn read_line_comment(&mut self, start_pos: Position) -> Result<Token, LexerError> {
+        // start_pos.offset — это offset начала токена (включая первый '/').
         let start_offset = start_pos.offset;
         self.advance(); // consume second '/'
 
@@ -568,11 +586,19 @@ impl<'a> Lexer<'a> {
             self.advance();
         }
 
-        let text = self.source[start_offset..self.pos.offset].to_string();
+        // self.pos.offset указывает на '\n' или EOF.
+        // Не включаем '\n' в комментарий.
+        let end_offset = if self.current == Some('\n') {
+            self.pos.offset - 1
+        } else {
+            self.pos.offset
+        };
+        let text = self.source[start_offset..end_offset].to_string();
         Ok(Token::new(TokenType::Comment(text.clone()), &text, start_pos))
     }
 
     fn read_block_comment(&mut self, start_pos: Position) -> Result<Token, LexerError> {
+        // start_pos.offset — это offset начала токена (включая первый '/').
         let start_offset = start_pos.offset;
         self.advance(); // consume '*'
 
@@ -585,7 +611,10 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     depth -= 1;
                     if depth == 0 {
-                        let text = self.source[start_offset..self.pos.offset].to_string();
+                        // self.pos.offset указывает на символ ПОСЛЕ '/'.
+                        // Не включаем его в комментарий.
+                        let end_offset = self.pos.offset - 1;
+                        let text = self.source[start_offset..end_offset].to_string();
                         return Ok(Token::new(TokenType::Comment(text.clone()), &text, start_pos));
                     }
                 }
@@ -946,9 +975,13 @@ fn sortingContract(f: fn([int]) -> [int]) {
         let mut lexer = Lexer::new(source);
         let tokens = lexer.tokenize().unwrap();
 
+        for (i, token) in tokens.iter().enumerate() {
+            println!("{}: {:?} = {:?}", i, token.token_type, token.lexeme);
+        }
+
         assert!(matches!(tokens[0].token_type, TokenType::At));
         assert!(matches!(tokens[1].token_type, TokenType::AiContract));
         assert!(matches!(tokens[5].token_type, TokenType::Fn));
-        assert!(matches!(tokens[12].token_type, TokenType::Arrow));
+        assert!(matches!(tokens[16].token_type, TokenType::ThinArrow));
     }
 }
