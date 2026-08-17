@@ -1,4 +1,4 @@
-т// runtime.js — JS Host Runtime для Latent
+// runtime.js - JS Host Runtime for Latent
 
 export class LatentRuntime {
     constructor() {
@@ -50,7 +50,21 @@ export class LatentRuntime {
 
     callMain() {
         if (this.wasmInstance && this.wasmInstance.exports.main) {
-            return this.wasmInstance.exports.main();
+            const result = this.wasmInstance.exports.main();
+            return result !== undefined ? result : null;
+        }
+        return null;
+    }
+
+    callMainWithAI() {
+        if (this.wasmInstance && this.wasmInstance.exports.main) {
+            const result = this.wasmInstance.exports.main();
+            // AI integration: call AI function if available
+            if (this.wasmInstance.exports.ai_infer) {
+                const aiResult = this.wasmInstance.exports.ai_infer(result);
+                return aiResult !== undefined ? aiResult : result;
+            }
+            return result !== undefined ? result : null;
         }
         return null;
     }

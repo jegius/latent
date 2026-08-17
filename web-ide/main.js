@@ -310,19 +310,38 @@ class LatentIDE {
         // Set example code
         this.editor.setCode(`// Welcome to Latent IDE!
 
+fn quicksort(arr: [int]) -> [int] {
+    if (arr.length <= 1) {
+        return arr;
+    }
+    let pivot = arr[0];
+    let left = [];
+    let right = [];
+    for (let i = 1; i < arr.length; i = i + 1) {
+        if (arr[i] < pivot) {
+            left.push(arr[i]);
+        } else {
+            right.push(arr[i]);
+        }
+    }
+    return quicksort(left) + [pivot] + quicksort(right);
+}
+
 fn main() -> int {
-    let ch = channel<int>();
-    spawn {
-        ch <- 42;
-    };
-    let x = <-ch;
-    return x;
+    let arr = [5, 2, 8, 1, 9, 3];
+    let sorted = quicksort(arr);
+    print(sorted);
+    return sorted[0];
 }
 `);
 
         // Button handlers
         document.getElementById('compile-btn').addEventListener('click', () => {
             this.compileAndRun();
+        });
+
+        document.getElementById('compile-ai-btn').addEventListener('click', () => {
+            this.compileAndRunWithAI();
         });
 
         document.getElementById('check-btn').addEventListener('click', () => {
@@ -372,6 +391,40 @@ fn main() -> int {
             console.log = originalLog;
 
             output.textContent += `\nResult: ${result}\n`;
+            status.textContent = 'Done';
+
+        } catch (e) {
+            status.textContent = 'Error';
+            output.textContent = `Error: ${e.message}\n`;
+        }
+    }
+
+    async compileAndRunWithAI() {
+        const source = this.editor.getCode();
+        const status = document.getElementById('status');
+        const output = document.getElementById('console-output');
+
+        try {
+            status.textContent = 'Compiling with AI...';
+            output.textContent = '';
+
+            const wasmBytes = await compile(source);
+
+            status.textContent = 'Running with AI...';
+
+            await this.runtime.load(wasmBytes);
+
+            const originalLog = console.log;
+            console.log = (...args) => {
+                output.textContent += args.join(' ') + '\n';
+                originalLog(...args);
+            };
+
+            const result = this.runtime.callMainWithAI();
+
+            console.log = originalLog;
+
+            output.textContent += `\nAI Result: ${result}\n`;
             status.textContent = 'Done';
 
         } catch (e) {
