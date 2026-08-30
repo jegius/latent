@@ -3,7 +3,9 @@
 //! Часть I: Концепция, синтаксис и архитектура.
 //! Этот модуль содержит базовые типы и структуры данных языка Latent.
 
+pub mod ast;
 pub mod lexer;
+pub mod parser;
 pub mod syntax;
 pub mod types;
 
