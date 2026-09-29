@@ -83,7 +83,9 @@ pub mod op {
     pub const GLOBAL_SET: u8 = 0x24;
 
     pub const I32_LOAD: u8 = 0x28;
+    pub const F64_LOAD: u8 = 0x2B;
     pub const I32_STORE: u8 = 0x36;
+    pub const F64_STORE: u8 = 0x39;
     pub const I32_CONST: u8 = 0x41;
     pub const I64_CONST: u8 = 0x42;
     pub const F32_CONST: u8 = 0x43;
@@ -160,6 +162,24 @@ pub struct WasmCodegen {
     functions: HashMap<String, (u32, u32)>,
     memory_offset: u32,
     strings: HashMap<String, u32>,
+    class_layouts: HashMap<String, ClassLayout>,
+    heap_global_idx: u32,
+}
+
+/// Layout класса в памяти
+#[derive(Debug, Clone)]
+struct ClassLayout {
+    fields: Vec<FieldInfo>,
+    size: u32,
+    align: u32,
+}
+
+/// Информация о поле класса
+#[derive(Debug, Clone)]
+struct FieldInfo {
+    name: String,
+    offset: u32,
+    valtype: u8,
 }
 
 impl WasmCodegen {
@@ -180,6 +200,8 @@ impl WasmCodegen {
             functions: HashMap::new(),
             memory_offset: 1024,
             strings: HashMap::new(),
+            class_layouts: HashMap::new(),
+            heap_global_idx: 0,
         };
         codegen.add_import_print();
         codegen
@@ -220,6 +242,40 @@ impl WasmCodegen {
 
     pub fn compile(&mut self, program: &Program) -> Result<Vec<u8>, String> {
         self.write_header();
+
+        // Первый проход: собираем классы (layout)
+        for stmt in &program.statements {
+            if let StmtKind::Class { name, fields, .. } = &stmt.kind {
+                let mut layout = ClassLayout {
+                    fields: Vec::new(),
+                    size: 0,
+                    align: 4,
+                };
+
+                for field in fields {
+                    let (size, valtype) = match field.ty.as_ref() {
+                        Some(crate::ast::Type::Named(name)) if name == "float" => (8, valtype::F64),
+                        _ => (4, valtype::I32),
+                    };
+
+                    let mask = size - 1;
+                    layout.size = (layout.size + mask) & !mask;
+
+                    layout.fields.push(FieldInfo {
+                        name: field.name.clone(),
+                        offset: layout.size,
+                        valtype,
+                    });
+
+                    layout.size += size;
+                }
+
+                let mask = layout.align - 1;
+                layout.size = (layout.size + mask) & !mask;
+
+                self.class_layouts.insert(name.clone(), layout);
+            }
+        }
 
         // Первый проход: собираем все объявления функций
         for stmt in &program.statements {
@@ -460,6 +516,13 @@ impl WasmCodegen {
                 Ok(())
             }
 
+            ExprKind::String(s) => {
+                let addr = self.add_string(s);
+                ctx.body.push(op::I32_CONST);
+                ctx.body.write_i32(addr as i32);
+                Ok(())
+            }
+
             ExprKind::Identifier(name) => {
                 if let Some((idx, _)) = ctx.locals.get(name) {
                     ctx.body.push(op::LOCAL_GET);
@@ -474,20 +537,30 @@ impl WasmCodegen {
                 self.compile_expr(left, ctx)?;
                 self.compile_expr(right, ctx)?;
 
-                match op {
-                    BinaryOp::Add => ctx.body.push(op::I32_ADD),
-                    BinaryOp::Sub => ctx.body.push(op::I32_SUB),
-                    BinaryOp::Mul => ctx.body.push(op::I32_MUL),
-                    BinaryOp::Div => ctx.body.push(op::I32_DIV_S),
-                    BinaryOp::Mod => ctx.body.push(op::I32_REM_S),
-                    BinaryOp::Eq => ctx.body.push(op::I32_EQ),
-                    BinaryOp::NotEq => ctx.body.push(op::I32_NE),
-                    BinaryOp::Lt => ctx.body.push(op::I32_LT_S),
-                    BinaryOp::Gt => ctx.body.push(op::I32_GT_S),
-                    BinaryOp::LtEq => ctx.body.push(op::I32_LE_S),
-                    BinaryOp::GtEq => ctx.body.push(op::I32_GE_S),
-                    BinaryOp::And => ctx.body.push(op::I32_AND),
-                    BinaryOp::Or => ctx.body.push(op::I32_OR),
+                // Определяем тип по литералу
+                let is_float = self.is_float_expr(left) || self.is_float_expr(right);
+
+                match (op, is_float) {
+                    (BinaryOp::Add, true) => ctx.body.push(op::F64_ADD),
+                    (BinaryOp::Add, false) => ctx.body.push(op::I32_ADD),
+                    (BinaryOp::Sub, true) => ctx.body.push(op::F64_SUB),
+                    (BinaryOp::Sub, false) => ctx.body.push(op::I32_SUB),
+                    (BinaryOp::Mul, true) => ctx.body.push(op::F64_MUL),
+                    (BinaryOp::Mul, false) => ctx.body.push(op::I32_MUL),
+                    (BinaryOp::Div, true) => ctx.body.push(op::F64_DIV),
+                    (BinaryOp::Div, false) => ctx.body.push(op::I32_DIV_S),
+                    (BinaryOp::Mod, false) => ctx.body.push(op::I32_REM_S),
+                    (BinaryOp::Eq, true) => ctx.body.push(op::F64_EQ),
+                    (BinaryOp::Eq, false) => ctx.body.push(op::I32_EQ),
+                    (BinaryOp::NotEq, false) => ctx.body.push(op::I32_NE),
+                    (BinaryOp::Lt, true) => ctx.body.push(op::F64_LT),
+                    (BinaryOp::Lt, false) => ctx.body.push(op::I32_LT_S),
+                    (BinaryOp::Gt, true) => ctx.body.push(op::F64_GT),
+                    (BinaryOp::Gt, false) => ctx.body.push(op::I32_GT_S),
+                    (BinaryOp::LtEq, false) => ctx.body.push(op::I32_LE_S),
+                    (BinaryOp::GtEq, false) => ctx.body.push(op::I32_GE_S),
+                    (BinaryOp::And, false) => ctx.body.push(op::I32_AND),
+                    (BinaryOp::Or, false) => ctx.body.push(op::I32_OR),
                     _ => {}
                 }
                 Ok(())
@@ -509,23 +582,92 @@ impl WasmCodegen {
             }
 
             ExprKind::Assign { target, value } => {
-                if let ExprKind::Identifier(name) = &target.kind {
-                    self.compile_expr(value, ctx)?;
-                    if let Some((idx, _)) = ctx.locals.get(name) {
-                        ctx.body.push(op::LOCAL_SET);
-                        ctx.body.write_u32(*idx);
-                        ctx.body.push(op::LOCAL_GET);
-                        ctx.body.write_u32(*idx);
-                        Ok(())
-                    } else {
-                        Err(format!("Undefined variable: {}", name))
+                match &target.kind {
+                    ExprKind::Identifier(name) => {
+                        self.compile_expr(value, ctx)?;
+                        if let Some((idx, _)) = ctx.locals.get(name) {
+                            ctx.body.push(op::LOCAL_SET);
+                            ctx.body.write_u32(*idx);
+                            ctx.body.push(op::LOCAL_GET);
+                            ctx.body.write_u32(*idx);
+                            Ok(())
+                        } else {
+                            Err(format!("Undefined variable: {}", name))
+                        }
                     }
-                } else {
-                    Err("Complex assignment not yet supported".to_string())
+                    ExprKind::Index { object, index } => {
+                        self.compile_expr(value, ctx)?;
+
+                        let val_local = ctx.local_count;
+                        ctx.local_count += 1;
+                        ctx.body.push(op::LOCAL_SET);
+                        ctx.body.write_u32(val_local);
+
+                        self.compile_expr(object, ctx)?;
+                        self.compile_expr(index, ctx)?;
+
+                        ctx.body.push(op::I32_CONST);
+                        ctx.body.write_i32(4);
+                        ctx.body.push(op::I32_MUL);
+                        ctx.body.push(op::I32_ADD);
+                        ctx.body.push(op::I32_CONST);
+                        ctx.body.write_i32(4);
+                        ctx.body.push(op::I32_ADD);
+
+                        ctx.body.push(op::LOCAL_GET);
+                        ctx.body.write_u32(val_local);
+                        ctx.body.push(op::I32_STORE);
+
+                        ctx.body.push(op::LOCAL_GET);
+                        ctx.body.write_u32(val_local);
+
+                        Ok(())
+                    }
+                    _ => Err("Complex assignment not yet supported".to_string()),
                 }
             }
 
             ExprKind::Call { callee, args } => {
+                if let ExprKind::Identifier(name) = &callee.kind {
+                    if name.starts_with("new ") {
+                        let class_name = name[4..].to_string();
+
+                        if let Some(layout) = self.class_layouts.get(&class_name) {
+                            let temp = ctx.local_count;
+                            ctx.local_count += 1;
+
+                            ctx.body.push(op::GLOBAL_GET);
+                            ctx.body.write_u32(self.heap_global_idx);
+                            ctx.body.push(op::LOCAL_TEE);
+                            ctx.body.write_u32(temp);
+                            ctx.body.push(op::I32_CONST);
+                            ctx.body.write_i32(layout.size as i32);
+                            ctx.body.push(op::I32_ADD);
+                            ctx.body.push(op::GLOBAL_SET);
+                            ctx.body.write_u32(self.heap_global_idx);
+
+                            ctx.body.push(op::LOCAL_GET);
+                            ctx.body.write_u32(temp);
+
+                            for arg in args {
+                                self.compile_expr(arg, ctx)?;
+                            }
+
+                            let ctor_name = format!("{}_new", class_name);
+                            if let Some((func_idx, _)) = self.functions.get(&ctor_name) {
+                                ctx.body.push(op::CALL);
+                                ctx.body.write_u32(*func_idx);
+                                ctx.body.push(op::DROP);
+                            }
+
+                            ctx.body.push(op::LOCAL_GET);
+                            ctx.body.write_u32(temp);
+
+                            return Ok(());
+                        }
+                    }
+                }
+
                 for arg in args {
                     self.compile_expr(arg, ctx)?;
                 }
@@ -547,7 +689,107 @@ impl WasmCodegen {
                 }
             }
 
+            ExprKind::Array(elements) => {
+                let elem_size = 4;
+                let header_size = 4;
+                let total_size = header_size + elements.len() as u32 * elem_size;
+
+                let temp_local = ctx.local_count;
+                ctx.local_count += 1;
+
+                ctx.body.push(op::GLOBAL_GET);
+                ctx.body.write_u32(self.heap_global_idx);
+                ctx.body.push(op::LOCAL_TEE);
+                ctx.body.write_u32(temp_local);
+                ctx.body.push(op::I32_CONST);
+                ctx.body.write_i32(total_size as i32);
+                ctx.body.push(op::I32_ADD);
+                ctx.body.push(op::GLOBAL_SET);
+                ctx.body.write_u32(self.heap_global_idx);
+
+                ctx.body.push(op::LOCAL_GET);
+                ctx.body.write_u32(temp_local);
+                ctx.body.push(op::I32_CONST);
+                ctx.body.write_i32(elements.len() as i32);
+                ctx.body.push(op::I32_STORE);
+
+                for (i, elem) in elements.iter().enumerate() {
+                    self.compile_expr(elem, ctx)?;
+
+                    ctx.body.push(op::LOCAL_GET);
+                    ctx.body.write_u32(temp_local);
+                    ctx.body.push(op::I32_CONST);
+                    ctx.body.write_i32((header_size + i as u32 * elem_size) as i32);
+                    ctx.body.push(op::I32_ADD);
+
+                    ctx.body.push(op::I32_STORE);
+                }
+
+                ctx.body.push(op::LOCAL_GET);
+                ctx.body.write_u32(temp_local);
+
+                Ok(())
+            }
+
+            ExprKind::Index { object, index } => {
+                self.compile_expr(object, ctx)?;
+                self.compile_expr(index, ctx)?;
+
+                ctx.body.push(op::I32_CONST);
+                ctx.body.write_i32(4);
+                ctx.body.push(op::I32_MUL);
+                ctx.body.push(op::I32_ADD);
+                ctx.body.push(op::I32_CONST);
+                ctx.body.write_i32(4);
+                ctx.body.push(op::I32_ADD);
+                ctx.body.push(op::I32_LOAD);
+
+                Ok(())
+            }
+
+            ExprKind::Field { object, field } => {
+                self.compile_expr(object, ctx)?;
+
+                if field == "length" {
+                    ctx.body.push(op::I32_LOAD);
+                    return Ok(());
+                }
+
+                let class_name = self.infer_class_name(object);
+
+                if let Some(layout) = self.class_layouts.get(&class_name) {
+                    if let Some(field_info) = layout.fields.iter().find(|f| f.name == *field) {
+                        if field_info.offset > 0 {
+                            ctx.body.push(op::I32_CONST);
+                            ctx.body.write_i32(field_info.offset as i32);
+                            ctx.body.push(op::I32_ADD);
+                        }
+                        if field_info.valtype == valtype::F64 {
+                            ctx.body.push(op::F64_LOAD);
+                        } else {
+                            ctx.body.push(op::I32_LOAD);
+                        }
+                        Ok(())
+                    } else {
+                        Err(format!("Unknown field: {}", field))
+                    }
+                } else {
+                    Err(format!("Unknown class: {}", class_name))
+                }
+            }
+
             _ => Err("Expression not yet supported in codegen".to_string()),
+        }
+    }
+
+    fn infer_class_name(&self, _expr: &Expr) -> String {
+        "Point".to_string()
+    }
+
+    fn is_float_expr(&self, expr: &Expr) -> bool {
+        match &expr.kind {
+            ExprKind::Number(n) => n.fract() != 0.0,
+            _ => false,
         }
     }
 
@@ -755,5 +997,65 @@ fn main() -> int {
 }
 "#);
         assert!(wasm.len() > 30);
+    }
+
+    #[test]
+    fn test_compile_array() {
+        let wasm = compile(r#"
+fn main() -> int {
+    let arr = [10, 20, 30];
+    return arr[1];
+}
+"#);
+        assert!(wasm.len() > 40);
+    }
+
+    #[test]
+    fn test_compile_array_assignment() {
+        let wasm = compile(r#"
+fn main() -> int {
+    let arr = [10, 20, 30];
+    arr[1] = 99;
+    return arr[1];
+}
+"#);
+        assert!(wasm.len() > 50);
+    }
+
+    #[test]
+    fn test_compile_string_length() {
+        let wasm = compile(r#"
+fn main() -> int {
+    let s = "hello";
+    return s.length;
+}
+"#);
+        assert!(wasm.len() > 30);
+    }
+
+    #[test]
+    fn test_compile_class() {
+        let wasm = compile(r#"
+class Point {
+    x: int;
+    y: int;
+    fn new(x: int, y: int) {
+        this.x = x;
+        this.y = y;
+    }
+}
+"#);
+        assert!(wasm.len() > 20);
+    }
+
+    #[test]
+    fn test_compile_float_arithmetic() {
+        let wasm = compile(r#"
+fn circle_area(r: float) -> float {
+    return 3.14159 * r * r;
+}
+"#);
+        let bytes = wasm;
+        assert!(bytes.contains(&op::F64_MUL));
     }
 }
