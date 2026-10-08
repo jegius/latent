@@ -7,6 +7,7 @@ pub mod ast;
 pub mod codegen;
 pub mod lexer;
 pub mod parser;
+pub mod runtime;
 pub mod syntax;
 pub mod typechecker;
 pub mod types;
