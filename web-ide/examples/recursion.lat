@@ -1,0 +1,51 @@
+// Recursive functions: factorial, fibonacci, ackermann
+
+fn factorial(n: int) -> int {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+fn fib(n: int) -> int {
+    if (n < 2) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+fn ackermann(m: int, n: int) -> int {
+    if (m == 0) {
+        return n + 1;
+    }
+    if (n == 0) {
+        return ackermann(m - 1, 1);
+    }
+    return ackermann(m - 1, ackermann(m, n - 1));
+}
+
+fn main() -> int {
+    print("factorial(10) =", factorial(10));
+    print("fib(20) =", fib(20));
+    print("ackermann(2, 3) =", ackermann(2, 3));
+
+    // Mutual recursion: is_even / is_odd
+    print("is_even(10) =", is_even(10));
+    print("is_odd(7) =", is_odd(7));
+
+    return 0;
+}
+
+fn is_even(n: int) -> bool {
+    if (n == 0) {
+        return true;
+    }
+    return is_odd(n - 1);
+}
+
+fn is_odd(n: int) -> bool {
+    if (n == 0) {
+        return false;
+    }
+    return is_even(n - 1);
+}

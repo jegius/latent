@@ -1,0 +1,25 @@
+// Tensors & semantic vectors: tensor, matmul, cosine_similarity, semantic.
+
+fn main() -> int {
+    // Create tensors with an explicit shape
+    let a = tensor([[1, 2], [3, 4]]);
+    let b = tensor([[5, 6], [7, 8]]);
+
+    // Matrix multiplication: [2,2] x [2,2] = [2,2]
+    let c = matmul(a, b);
+    print("matmul[0][0] =", c.data[0][0]);
+    print("C shape =", c.shape);
+
+    // Semantic vectors and cosine similarity
+    let s1 = semantic("the quick brown fox");
+    let s2 = semantic("the quick brown fox");
+    let sim = cosine_similarity(s1, s2);
+    print("self-similarity =", sim);
+
+    // Tensor helpers
+    let z = zeros(3);
+    print("zeros =", z);
+    print("rank =", c.rank);
+
+    return c.data[0][0] + c.rank;
+}

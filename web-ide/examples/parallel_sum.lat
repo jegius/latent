@@ -1,0 +1,39 @@
+// Parallel sum of squares across 4 goroutines (spawn + channel)
+
+fn worker(data: [int], start: int, end: int, ch: channel) {
+    let sum = 0;
+    for (let i = start; i < end; i = i + 1) {
+        sum = sum + data[i] * data[i];
+    }
+    ch.send(sum);
+}
+
+fn main() -> int {
+    // Build a large array: [1, 2, ..., 1000]
+    let data = [];
+    for (let i = 1; i <= 1000; i = i + 1) {
+        data.push(i);
+    }
+
+    let ch = channel();
+    let workers = 4;
+    let chunk = data.length / workers;
+
+    // Spawn 4 goroutines, each sums squares of its chunk
+    for (let w = 0; w < workers; w = w + 1) {
+        let start = w * chunk;
+        let end = start + chunk;
+        spawn worker(data, start, end, ch);
+    }
+
+    // Collect partial sums from all workers
+    let total = 0;
+    for (let w = 0; w < workers; w = w + 1) {
+        let partial = ch.recv();
+        print("Worker", w, "partial sum of squares:", partial);
+        total = total + partial;
+    }
+
+    print("Total sum of squares 1^2..1000^2:", total);
+    return total;
+}

@@ -1,0 +1,195 @@
+/* styles/modal.css — модальные окна (portal-root) в стиле IntelliJ Darcula.
+   Оверлей и диалог монтируются в #portal-root на document.body, поэтому
+   рисуются поверх всей IDE независимо от overflow/z-index предков. */
+
+.portal-root {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
+    pointer-events: auto;
+    animation: modal-overlay-in 0.12s ease-out;
+}
+
+.modal-overlay.modal-closing {
+    animation: modal-overlay-out 0.12s ease-in forwards;
+}
+
+.modal-dialog {
+    width: min(440px, calc(100vw - 48px));
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+    animation: modal-dialog-in 0.14s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+.modal-overlay.modal-closing .modal-dialog {
+    animation: modal-dialog-out 0.12s ease-in forwards;
+}
+
+/* --- Заголовок --- */
+.modal-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--bg);
+}
+
+.modal-icon {
+    font-size: 15px;
+    line-height: 1;
+    color: var(--accent);
+    flex-shrink: 0;
+}
+
+.modal-danger .modal-icon { color: var(--red); }
+
+.modal-title {
+    flex: 1;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+}
+
+.modal-close:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+}
+
+/* --- Тело --- */
+.modal-body {
+    padding: 16px;
+}
+
+.modal-message {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.modal-input {
+    width: 100%;
+    margin-top: 4px;
+    padding: 7px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    outline: none;
+}
+
+.modal-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(53, 116, 240, 0.25);
+}
+
+/* --- Кнопки --- */
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border-soft);
+    background: var(--bg);
+}
+
+.modal-btn {
+    min-width: 84px;
+    padding: 6px 16px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    font-size: 12.5px;
+    cursor: pointer;
+}
+
+.modal-btn:hover {
+    background: var(--bg-hover);
+}
+
+.modal-btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.modal-btn-primary:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+}
+
+.modal-danger .modal-btn-primary {
+    background: var(--red);
+    border-color: var(--red);
+}
+
+.modal-danger .modal-btn-primary:hover {
+    background: #e06c6c;
+    border-color: #e06c6c;
+}
+
+.modal-btn:focus-visible,
+.modal-close:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+/* --- Анимации --- */
+@keyframes modal-overlay-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes modal-overlay-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+
+@keyframes modal-dialog-in {
+    from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes modal-dialog-out {
+    from { opacity: 1; transform: translateY(0) scale(1); }
+    to { opacity: 0; transform: translateY(-6px) scale(0.98); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .modal-overlay,
+    .modal-dialog,
+    .modal-overlay.modal-closing,
+    .modal-overlay.modal-closing .modal-dialog {
+        animation: none;
+    }
+}

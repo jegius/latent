@@ -1,0 +1,192 @@
+/* styles/panels.css — рабочая область: project tool window и общие элементы. */
+
+.workbench {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* --- Project tool window --- */
+.project-panel {
+    width: 220px;
+    min-width: 160px;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 32px;
+    padding: 0 10px;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.panel-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+}
+
+.panel-actions { display: flex; gap: 4px; }
+
+.panel-action {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 14px;
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    line-height: 1;
+}
+
+.panel-action:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+}
+
+.project-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 0;
+}
+
+.tree-root {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 12px;
+    font-size: 12px;
+    color: var(--text-dim);
+    font-weight: 600;
+}
+
+.tree-root-icon { color: var(--accent); font-weight: 700; }
+
+.file-tree { padding-left: 0; }
+
+.tree-file {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px 3px 28px;
+    font-size: 12.5px;
+    color: var(--text);
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.tree-file:hover { background: var(--bg-hover); }
+
+.tree-file.active {
+    background: var(--bg-active);
+    border-left-color: var(--accent);
+}
+
+.tree-file-icon {
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.tree-file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tree-file-actions {
+    margin-left: auto;
+    display: none;
+    gap: 2px;
+}
+
+.tree-file:hover .tree-file-actions { display: flex; }
+
+.tree-action {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 11px;
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    line-height: 1;
+}
+
+.tree-action:hover { background: var(--bg-active); color: var(--text); }
+.tree-action:disabled { opacity: 0.3; cursor: default; }
+
+.tree-empty {
+    padding: 8px 28px;
+    color: var(--text-dim);
+    font-size: 12px;
+}
+
+/* --- Папка примеров (examples/) в дереве проекта --- */
+.tree-folder {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 12px;
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--text-dim);
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+}
+
+.tree-folder:hover { background: var(--bg-hover); }
+
+.tree-folder.collapsed .tree-folder-icon { transform: rotate(-90deg); }
+
+.tree-folder-icon {
+    color: var(--accent);
+    font-weight: 700;
+    transition: transform 0.12s ease;
+}
+
+.tree-folder-count {
+    margin-left: auto;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--text-dim);
+    background: var(--bg-hover);
+    border-radius: 8px;
+    padding: 0 7px;
+}
+
+.tree-group {
+    padding: 6px 12px 2px 28px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+}
+
+/* Строка примера — как файл, но с бейджем AI */
+.tree-example .tree-file-name { overflow: hidden; text-overflow: ellipsis; }
+
+.tree-example-ai {
+    margin-left: 6px;
+    font-size: 9.5px;
+    font-weight: 700;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 0 3px;
+    flex-shrink: 0;
+}

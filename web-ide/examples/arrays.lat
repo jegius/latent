@@ -1,0 +1,50 @@
+// Arrays: literals, indexing, methods, concatenation
+
+fn main() -> int {
+    // Array literal and indexing
+    let primes = [2, 3, 5, 7, 11, 13];
+    print("primes:", primes);
+    print("primes[0] =", primes[0]);
+    print("primes.length =", primes.length);
+
+    // Index assignment
+    primes[0] = 17;
+    print("after primes[0] = 17:", primes);
+
+    // push / pop
+    let stack = [];
+    stack.push(1);
+    stack.push(2);
+    stack.push(3);
+    print("stack after pushes:", stack);
+    let top = stack.pop();
+    print("popped:", top, "stack:", stack);
+
+    // Array concatenation with +
+    let a = [1, 2, 3];
+    let b = [4, 5, 6];
+    let c = a + b;
+    print("a + b =", c);
+
+    // Nested arrays
+    let matrix = [[1, 2], [3, 4], [5, 6]];
+    print("matrix[1][0] =", matrix[1][0]);
+
+    // Build array in a loop
+    let squares = [];
+    for (let i = 1; i <= 10; i = i + 1) {
+        squares.push(i * i);
+    }
+    print("squares 1..10:", squares);
+
+    // Sum via while loop
+    let sum = 0;
+    let i = 0;
+    while (i < squares.length) {
+        sum = sum + squares[i];
+        i = i + 1;
+    }
+    print("sum of squares:", sum);
+
+    return sum;
+}

@@ -1,0 +1,41 @@
+// Channels: send `<-` / recv, spawn blocks, select and yield.
+
+fn producer(ch, n) {
+    let i = 1;
+    while (i <= n) {
+        ch <- i * i;
+        i = i + 1;
+    }
+}
+
+fn main() -> int {
+    let ch = channel<int>();
+
+    // spawn a producer goroutine
+    spawn producer(ch, 3);
+
+    // blocking select on the channel
+    let first = select {
+        case v <- ch: v
+    };
+    let second = ch.recv();
+    let third = ch.recv();
+
+    print("first =", first, "second =", second, "third =", third);
+
+    // spawn an anonymous goroutine with a send
+    let done = channel<int>();
+    spawn {
+        done <- 100;
+    }
+    let d = done.recv();
+
+    // yield cooperatively inside a loop
+    let i = 0;
+    while (i < 2) {
+        yield;
+        i = i + 1;
+    }
+
+    return first + second + third + d;
+}

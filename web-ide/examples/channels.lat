@@ -1,0 +1,49 @@
+// CSP-style concurrency: producer/consumer via channels
+
+fn producer(ch: channel, count: int) {
+    for (let i = 1; i <= count; i = i + 1) {
+        print("producing", i);
+        ch.send(i * i);
+    }
+}
+
+fn consumer(ch: channel, count: int) {
+    let received = 0;
+    let sum = 0;
+    while (received < count) {
+        let v = ch.recv();
+        print("consumed", v);
+        sum = sum + v;
+        received = received + 1;
+    }
+    print("consumer finished:", received, "items, sum =", sum);
+}
+
+fn main() -> int {
+    let ch = channel();
+
+    spawn producer(ch, 5);
+    spawn consumer(ch, 5);
+
+    // Fan-in: multiple producers, one channel
+    let results = channel();
+    spawn worker(results, 10);
+    spawn worker(results, 20);
+    spawn worker(results, 30);
+
+    let total = 0;
+    for (let i = 0; i < 3; i = i + 1) {
+        total = total + results.recv();
+    }
+    print("fan-in total:", total);
+
+    return total;
+}
+
+fn worker(ch: channel, n: int) {
+    let sum = 0;
+    for (let i = 1; i <= n; i = i + 1) {
+        sum = sum + i;
+    }
+    ch.send(sum);
+}

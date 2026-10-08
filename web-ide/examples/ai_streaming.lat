@@ -1,0 +1,18 @@
+// AI streaming: модель отдаёт токены по одному (см. §5.2 статьи).
+// Запускать через "Run with AI".
+
+fn main() -> int {
+    let handle = ai_stream("gpt-4", "stream a short sentence about parallelism");
+
+    // Читаем токены из потока, пока stream_next не вернёт null
+    let token = stream_next(handle);
+    let count = 0;
+    while (token != null) {
+        print("token", count, ":", token);
+        count = count + 1;
+        token = stream_next(handle);
+    }
+
+    print("total tokens:", count);
+    return count;
+}

@@ -2,3 +2,8 @@ docs/
 target/
 .idea/
 .gm/
+
+# Playwright MCP artifacts
+.playwright-mcp/
+
+.agentplug-kv

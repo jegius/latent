@@ -1,0 +1,16 @@
+// Async/await: async functions return promises, await unwraps them.
+
+async fn fetch_value() -> int {
+    return 42;
+}
+
+async fn compute() -> int {
+    let base = await fetch_value();
+    return base + 8;
+}
+
+fn main() -> int {
+    let v = await compute();
+    print("awaited:", v);
+    return v;
+}

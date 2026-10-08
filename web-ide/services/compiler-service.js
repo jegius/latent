@@ -2,7 +2,7 @@
 // Содержит только бизнес-логику: компиляция, запуск, анализ, форматирование.
 // Не знает ничего о DOM и отображении.
 
-import { compile, checkSyntax, runLatent, analyzeCode } from '../compiler-loader.js';
+import { compile, checkSyntax, runLatent, analyzeCode, repairCode, loadWasmCompiler } from '../compiler-loader.js';
 
 /**
  * Результат компиляции и выполнения программы.
@@ -14,13 +14,46 @@ import { compile, checkSyntax, runLatent, analyzeCode } from '../compiler-loader
  */
 
 export class CompilerService {
+    constructor() {
+        /** @type {?{compile: (s: string) => Uint8Array}} движок №2, если загружен */
+        this.wasmCompiler = null;
+        this.wasmCompilerTried = false;
+    }
     /**
      * Компилирует исходный код и возвращает байткод.
+     * По умолчанию использует движок №1 (JS-интерпретатор). Если передан
+     * wasmCompiler (движок №2), делегирует настоящему Rust-компилятору.
      * @param {string} source
      * @returns {Promise<Uint8Array>}
      */
     async compile(source) {
+        if (this.wasmCompiler) {
+            return this.wasmCompiler.compile(source);
+        }
         return compile(source);
+    }
+
+    /**
+     * Лениво подгружает движок №2 (Rust-компилятор в WASM) и кэширует его.
+     * Возвращает true, если компилятор доступен.
+     * @param {Object} [opts] — пробрсывается в loadWasmCompiler
+     * @returns {Promise<boolean>}
+     */
+    async ensureWasmCompiler(opts) {
+        if (this.wasmCompiler) return true;
+        if (this.wasmCompilerTried) return false;
+        this.wasmCompilerTried = true;
+        const compiler = await loadWasmCompiler(opts);
+        if (compiler) {
+            this.wasmCompiler = compiler;
+            return true;
+        }
+        return false;
+    }
+
+    /** true, если движок №2 загружен. */
+    hasWasmCompiler() {
+        return !!this.wasmCompiler;
     }
 
     /**
@@ -43,6 +76,46 @@ export class CompilerService {
         const { result, output: logs } = await runLatent(source, withAI);
         const analysis = analyzeCode(source);
         return { result, logs, bytecode, analysis };
+    }
+
+    /**
+     * Компилирует и запускает программу; при ошибке (и включённом self-repair)
+     * отправляет исходник + диагностику модели и перезапускает исправленный код.
+     * Бюджет попыток — 3 (§6.5 статьи).
+     * @param {string} source
+     * @param {boolean} withAI
+     * @param {number} [maxAttempts]
+     * @returns {Promise<RunResult & {repaired: boolean, attempts: number, finalSource: string}>}
+     */
+    async compileAndRunWithRepair(source, withAI = true, maxAttempts = 3) {
+        let currentSource = source;
+        let attempts = 0;
+        const repairLog = [];
+
+        for (let i = 0; i < maxAttempts; i++) {
+            attempts++;
+            try {
+                const result = await this.compileAndRun(currentSource, withAI);
+                return {
+                    ...result,
+                    repaired: i > 0,
+                    attempts,
+                    finalSource: currentSource,
+                    repairLog,
+                };
+            } catch (e) {
+                repairLog.push(`Attempt ${attempts}: ${e.message}`);
+                const patched = await repairCode(currentSource, e.message, withAI);
+                if (patched === null) {
+                    repairLog.push('Self-repair unavailable — aborting.');
+                    throw e;
+                }
+                currentSource = patched;
+            }
+        }
+
+        throw new Error(
+            `Self-repair failed after ${maxAttempts} attempts:\n${repairLog.join('\n')}`);
     }
 
     /**

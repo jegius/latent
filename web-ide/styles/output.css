@@ -1,0 +1,59 @@
+/* styles/output.css — панель вывода (табы Output/WASM/AI Insights). */
+
+.output-panel {
+    width: 420px;
+    min-width: 260px;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-elevated);
+    border-left: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.tabs {
+    display: flex;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    height: 34px;
+    flex-shrink: 0;
+}
+
+.tab {
+    background: transparent;
+    color: var(--text-dim);
+    border: none;
+    padding: 0 16px;
+    cursor: pointer;
+    font-size: 12.5px;
+    font-family: var(--font-ui);
+    border-bottom: 2px solid transparent;
+    transition: color 0.12s;
+}
+
+.tab:hover { color: var(--text); }
+
+.tab.active {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+}
+
+.tab-contents { flex: 1; overflow: hidden; position: relative; }
+
+.tab-content {
+    display: none;
+    position: absolute;
+    inset: 0;
+    overflow: auto;
+    padding: 12px;
+}
+
+.tab-content.active { display: block; }
+
+.tab-content pre {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    color: var(--text);
+}

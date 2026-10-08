@@ -1,0 +1,37 @@
+// Classes & OOP: fields, init, methods, this binding.
+
+class Point {
+    x: int;
+    y: int;
+
+    fn init(x, y) {
+        this.x = x;
+        this.y = y;
+    }
+
+    fn norm2() {
+        return this.x * this.x + this.y * this.y;
+    }
+}
+
+class Counter {
+    n: int;
+
+    fn init() { this.n = 0; }
+    fn inc() {
+        this.n = this.n + 1;
+        return this.n;
+    }
+}
+
+fn main() -> int {
+    let p = new Point(3, 4);
+    print("p.norm2() =", p.norm2());
+
+    let c = new Counter();
+    c.inc();
+    c.inc();
+    print("counter =", c.inc());
+
+    return p.norm2() + c.n;
+}

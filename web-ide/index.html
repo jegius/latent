@@ -1,27 +1,53 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Latent IDE</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231e1f22'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' fill='%233574f0' text-anchor='middle'%3E%CE%BB%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Latent IDE</h1>
-            <div class="toolbar">
-                <button id="compile-btn">▶ Compile & Run</button>
-                <button id="compile-ai-btn">🤖 Compile & Run with AI</button>
-                <button id="check-btn">✓ Check Syntax</button>
-                <select id="examples-select" title="Load a code example">
-                    <option value="">📚 Examples…</option>
-                </select>
-                <button id="ai-settings-btn">⚙️ AI Gateway</button>
-                <span id="status"></span>
-            </div>
-        </header>
+    <div class="ide">
+        <!-- ============ Верхнее меню (IntelliJ-style) ============ -->
+        <div class="menubar">
+            <span class="menubar-logo">λ Latent</span>
+            <span class="menubar-item">File</span>
+            <span class="menubar-item">Edit</span>
+            <span class="menubar-item">View</span>
+            <span class="menubar-item">Run</span>
+            <span class="menubar-item">AI</span>
+            <span class="menubar-item">Help</span>
+            <span class="menubar-spacer"></span>
+            <span class="menubar-project">latent · web-ide</span>
+        </div>
 
+        <!-- ============ Панель инструментов ============ -->
+        <div class="toolbar">
+            <button class="tool-btn primary" id="compile-btn" title="Compile & Run (Ctrl+Enter)">
+                <span class="tool-icon">&gt;</span> Run
+            </button>
+            <button class="tool-btn" id="compile-ai-btn" title="Compile & Run with AI + self-repair">
+                <span class="tool-icon">AI</span> Run with AI
+            </button>
+            <button class="tool-btn" id="check-btn" title="Check Syntax">
+                <span class="tool-icon">ok</span> Check
+            </button>
+            <span class="toolbar-sep"></span>
+            <button class="tool-btn" id="build-wasm-btn" title="Build with engine #2 (Rust to WASM)">
+                <span class="tool-icon">E2</span> Engine #2
+            </button>
+            <button class="tool-btn" id="share-btn" title="Copy a shareable link">
+                <span class="tool-icon">@</span> Share
+            </button>
+            <label class="tool-toggle" id="hot-reload-label" title="Auto re-run on edit">
+                <input type="checkbox" id="hot-reload-toggle"> auto-run
+            </label>
+            <span class="toolbar-spacer"></span>
+            <button class="tool-btn icon-only" id="ai-settings-btn" title="AI Gateway settings">AI</button>
+        </div>
+
+        <!-- ============ Панель настроек AI ============ -->
         <div id="ai-settings" class="ai-settings" style="display:none;">
             <div class="ai-settings-row">
                 <label for="ai-provider">Provider:</label>
@@ -40,37 +66,74 @@
                 <label for="ai-apikey">API Key:</label>
                 <input type="password" id="ai-apikey" placeholder="(optional)">
 
-                <button id="ai-test-btn">🔌 Test Connection</button>
+                <button id="ai-test-btn">Test Connection</button>
                 <span id="ai-gateway-status"></span>
             </div>
         </div>
 
-        <main>
-            <div class="editor-panel">
-                <canvas id="editor-canvas"></canvas>
-                <textarea id="editor" style="display:none;"></textarea>
-            </div>
+        <!-- ============ Основная область ============ -->
+        <div class="workbench">
+            <!-- Project tool window (дерево файлов) -->
+            <aside class="project-panel">
+                <div class="panel-header">
+                    <span class="panel-title">PROJECT</span>
+                    <span class="panel-actions">
+                        <button class="panel-action" id="new-file-btn" title="New Latent file">＋</button>
+                    </span>
+                </div>
+                <div class="project-body">
+                    <div class="tree-root">
+                        <span class="tree-root-icon">λ</span>
+                        <span class="tree-root-name">src</span>
+                    </div>
+                    <div id="file-tree" class="file-tree"></div>
+                    <div class="tree-folder" id="examples-folder">
+                        <span class="tree-folder-icon">▾</span>
+                        <span class="tree-folder-name">examples</span>
+                        <span class="tree-folder-count" id="examples-count"></span>
+                    </div>
+                    <div id="example-tree" class="file-tree"></div>
+                </div>
+            </aside>
 
-            <div class="output-panel">
+            <!-- Редактор -->
+            <section class="editor-panel">
+                <div class="editor-tabs" id="editor-tabs"></div>
+                <div class="editor-host">
+                    <canvas id="editor-canvas"></canvas>
+                    <textarea id="editor" spellcheck="false"></textarea>
+                </div>
+            </section>
+
+            <!-- Панель вывода -->
+            <section class="output-panel">
                 <div class="tabs">
                     <button class="tab active" data-tab="output">Output</button>
                     <button class="tab" data-tab="wasm">WASM</button>
-                    <button class="tab" data-tab="ast">🤖 AI Insights</button>
+                    <button class="tab" data-tab="ast">AI Insights</button>
                 </div>
+                <div class="tab-contents">
+                    <div id="output" class="tab-content active">
+                        <pre id="console-output"></pre>
+                    </div>
+                    <div id="wasm" class="tab-content">
+                        <pre id="wasm-output"></pre>
+                    </div>
+                    <div id="ast" class="tab-content">
+                        <pre id="ast-output"></pre>
+                    </div>
+                </div>
+            </section>
+        </div>
 
-                <div id="output" class="tab-content active">
-                    <pre id="console-output"></pre>
-                </div>
-
-                <div id="wasm" class="tab-content">
-                    <pre id="wasm-output"></pre>
-                </div>
-
-                <div id="ast" class="tab-content">
-                    <pre id="ast-output"></pre>
-                </div>
-            </div>
-        </main>
+        <!-- ============ Статус-бар ============ -->
+        <div class="statusbar">
+            <span class="status-item" id="status">Ready</span>
+            <span class="status-spacer"></span>
+            <span class="status-item" id="status-cursor">Ln 1, Col 1</span>
+            <span class="status-item" id="status-engine">engine #1 (interpreter)</span>
+            <span class="status-item" id="status-file">untitled.lat</span>
+        </div>
     </div>
 
     <script type="module" src="main.js"></script>

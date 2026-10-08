@@ -1,0 +1,21 @@
+/* styles/responsive.css — адаптивные правила для узких экранов.
+   Добавлено при декомпозиции; базовые правила не изменяет. */
+
+@media (max-width: 900px) {
+    .output-panel {
+        width: 320px;
+        min-width: 220px;
+    }
+    .project-panel {
+        width: 180px;
+    }
+}
+
+@media (max-width: 720px) {
+    .output-panel {
+        display: none;
+    }
+    .menubar-project {
+        display: none;
+    }
+}

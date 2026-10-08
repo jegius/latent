@@ -1,0 +1,56 @@
+// Edge cases: empty arrays, null handling, unary operators
+
+fn safe_sum(arr: [int]) -> int {
+    if (arr.length == 0) {
+        print("warning: empty array, returning 0");
+        return 0;
+    }
+    let sum = 0;
+    for (let i = 0; i < arr.length; i = i + 1) {
+        sum = sum + arr[i];
+    }
+    return sum;
+}
+
+fn main() -> int {
+    // Empty array
+    let empty = [];
+    print("empty array:", empty, "length:", empty.length);
+    print("safe_sum(empty):", safe_sum(empty));
+
+    // Null value
+    let nothing = null;
+    print("null value:", nothing);
+    if (nothing == null) {
+        print("nothing is null");
+    }
+
+    // Unary operators
+    let x = 5;
+    print("-x =", -x);
+    print("!true =", !true);
+    print("!false =", !false);
+    print("!0 =", !0);
+    print("!1 =", !1);
+
+    // Boolean logic short-circuit
+    let result = false && (1 / 0 > 0);
+    print("false && (1/0 > 0):", result, "(short-circuit, no error)");
+
+    result = true || (1 / 0 > 0);
+    print("true || (1/0 > 0):", result, "(short-circuit, no error)");
+
+    // Deep equality of arrays
+    let a = [1, [2, 3], 4];
+    let b = [1, [2, 3], 4];
+    let c = [1, [2, 3], 5];
+    print("a == b:", a == b);
+    print("a == c:", a == c);
+    print("a != c:", a != c);
+
+    // Modulo and integer division
+    print("17 % 5 =", 17 % 5);
+    print("17 / 5 =", 17 / 5);
+
+    return 0;
+}

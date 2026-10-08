@@ -1,0 +1,43 @@
+// Builtins and methods: len(), push(), arr.pop(), str.length
+// Встроенные функции языка в одном месте.
+
+fn sum(arr: [int]) -> int {
+    let total = 0;
+    for (let i = 0; i < len(arr); i = i + 1) {
+        total = total + arr[i];
+    }
+    return total;
+}
+
+fn main() -> int {
+    // len() — длина массива и строки
+    let nums = [4, 8, 15, 16, 23, 42];
+    print("len(nums) =", len(nums));
+
+    let word = "latent";
+    print("len(\"latent\") =", len(word));
+
+    // push() как встроенная функция (в отличие от метода arr.push)
+    let acc = [];
+    push(acc, 1);
+    push(acc, 2);
+    push(acc, 3);
+    print("after push:", acc);
+
+    // Методы массива: push / pop / length
+    let stack = [10, 20, 30];
+    stack.push(40);
+    print("stack.push(40) ->", stack);
+    let top = stack.pop();
+    print("stack.pop() ->", top, "stack:", stack);
+    print("stack.length =", stack.length);
+
+    // Метод строки: length
+    print("\"hello\".length =", "hello".length);
+
+    // Комбинируем встроенные функции
+    print("sum(nums) =", sum(nums));
+    print("average =", sum(nums) / len(nums));
+
+    return sum(nums);
+}

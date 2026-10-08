@@ -1,0 +1,10 @@
+{
+  "name": "latent-web-ide",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Latent online IDE — tree-walking interpreter (engine #1) and AI gateway",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

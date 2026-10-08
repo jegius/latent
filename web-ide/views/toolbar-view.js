@@ -1,13 +1,16 @@
 // views/toolbar-view.js — слой отображения тулбара.
-// Отвечает только за привязку событий кнопок и селектора примеров.
-// Не содержит бизнес-логики.
+// Единственная ответственность: привязка событий кнопок тулбара.
+// Не содержит бизнес-логики. Выбор примеров перенесён в меню (File → Examples).
 
 export class ToolbarView {
     constructor() {
         this.compileBtn = document.getElementById('compile-btn');
         this.compileAIBtn = document.getElementById('compile-ai-btn');
         this.checkBtn = document.getElementById('check-btn');
-        this.examplesSelect = document.getElementById('examples-select');
+        this.shareBtn = document.getElementById('share-btn');
+        this.hotReloadToggle = document.getElementById('hot-reload-toggle');
+        this.buildWasmBtn = document.getElementById('build-wasm-btn');
+        this.newFileBtn = document.getElementById('new-file-btn');
     }
 
     /**
@@ -32,32 +35,35 @@ export class ToolbarView {
     }
 
     /**
-     * Заполняет выпадающий список примеров.
-     * @param {Array<{id: string, title: string}>} examples
+     * @param {() => void} handler
      */
-    populateExamples(examples) {
-        // Оставляем только placeholder-пункт
-        this.examplesSelect.length = 1;
-        for (const ex of examples) {
-            const option = document.createElement('option');
-            option.value = ex.id;
-            option.textContent = ex.title;
-            this.examplesSelect.appendChild(option);
-        }
+    onShare(handler) {
+        if (this.shareBtn) this.shareBtn.addEventListener('click', handler);
     }
 
     /**
-     * Привязывает обработчик выбора примера.
-     * @param {(exampleId: string) => void} handler
+     * @param {() => void} handler
      */
-    onExampleSelected(handler) {
-        this.examplesSelect.addEventListener('change', () => {
-            const id = this.examplesSelect.value;
-            if (id) {
-                handler(id);
-                // Сбрасываем выбор, чтобы повторный клик по тому же примеру тоже срабатывал
-                this.examplesSelect.value = '';
-            }
-        });
+    onBuildWasm(handler) {
+        if (this.buildWasmBtn) this.buildWasmBtn.addEventListener('click', handler);
+    }
+
+    /**
+     * @param {() => void} handler
+     */
+    onNewFile(handler) {
+        if (this.newFileBtn) this.newFileBtn.addEventListener('click', handler);
+    }
+
+    /**
+     * Привязывает обработчик переключателя автоперезапуска.
+     * @param {(enabled: boolean) => void} handler
+     */
+    onHotReloadToggle(handler) {
+        if (this.hotReloadToggle) {
+            this.hotReloadToggle.addEventListener('change', () => {
+                handler(this.hotReloadToggle.checked);
+            });
+        }
     }
 }

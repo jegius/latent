@@ -1,0 +1,47 @@
+/* styles/base.css — базовые стили и палитра IntelliJ IDEA Darcula (2026).
+   Фоны #1e1f22 / #2b2d30, акцент #3574f0, текст #bcbec4, приглушённый #7a7e85. */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --bg: #1e1f22;
+    --bg-elevated: #2b2d30;
+    --bg-toolbar: #2b2d30;
+    --bg-hover: #35373b;
+    --bg-active: #393b40;
+    --border: #393b40;
+    --border-soft: #2b2d30;
+    --text: #bcbec4;
+    --text-dim: #7a7e85;
+    --accent: #3574f0;
+    --accent-hover: #4682f2;
+    --green: #57965c;
+    --red: #db5c5c;
+    --yellow: #d5b778;
+    --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', Menlo, monospace;
+}
+
+html, body {
+    height: 100%;
+}
+
+body {
+    font-family: var(--font-ui);
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+}
+
+.ide {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}

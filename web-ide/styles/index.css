@@ -1,0 +1,14 @@
+/* styles/index.css — агрегатор стилей IDE.
+   Порядок @import сохраняет исходный каскад: base → menubar → toolbar →
+   ai-settings → panels → editor → output → statusbar → responsive. */
+
+@import 'base.css';
+@import 'menubar.css';
+@import 'toolbar.css';
+@import 'ai-settings.css';
+@import 'panels.css';
+@import 'editor.css';
+@import 'output.css';
+@import 'modal.css';
+@import 'statusbar.css';
+@import 'responsive.css';

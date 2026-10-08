@@ -1,0 +1,27 @@
+// Pattern matching: literals, wildcard, identifier binding and Result/Option.
+
+fn classify(n: int) -> string {
+    return match n {
+        case 0: "zero",
+        case 1: "one",
+        default: "many",
+    };
+}
+
+fn from_result(r) -> int {
+    return match r {
+        case Ok(v): v,
+        case Err(e): -1,
+    };
+}
+
+fn main() -> int {
+    print("classify(0) =", classify(0));
+    print("classify(1) =", classify(1));
+    print("classify(9) =", classify(9));
+
+    print("from_result(Ok(42)) =", from_result(Ok(42)));
+    print("from_result(Err(\"bad\")) =", from_result(Err("bad")));
+
+    return classify(0).length + from_result(Ok(7));
+}
