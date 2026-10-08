@@ -371,7 +371,7 @@ impl WasmCodegen {
 
 /// Есть ли в теле функции `return <expr>;` (тогда функция возвращает i32,
 /// даже без явной аннотации — как в engine #1).
-fn body_returns_value(body: &[Stmt]) -> bool {
+pub(super) fn body_returns_value(body: &[Stmt]) -> bool {
     fn stmt_returns(s: &Stmt) -> bool {
         match &s.kind {
             StmtKind::Return(Some(_)) => true,

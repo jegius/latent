@@ -12,6 +12,7 @@ const VARIADIC_BUILTINS: &[&str] = &[
     "tensor", "semantic", "matmul", "cosine_similarity", "dot", "magnitude",
     "zeros", "ones", "snapshot", "ai_contract", "enforce_contract", "assert_eq",
     "len", "push", "str", "int", "float", "sqrt",
+    "alloc", "load8", "store8", "load32", "store32", "memcopy",
 ];
 
 impl TypeChecker {
@@ -316,6 +317,8 @@ impl TypeChecker {
                     "cosine_similarity" | "dot" | "magnitude" => Type::Float,
                     "matmul" => Type::Generic("Tensor".to_string(), vec![self.fresh_var()]),
                     "len" => Type::Int,
+                    "alloc" | "load8" | "load32" => Type::Int,
+                    "store8" | "store32" | "memcopy" => Type::Unit,
                     "str" => Type::String,
                     "int" => Type::Int,
                     "float" => Type::Float,

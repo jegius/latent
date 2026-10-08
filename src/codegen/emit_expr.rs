@@ -427,6 +427,10 @@ impl WasmCodegen {
                 if name == "assert" || name == "assert_eq" {
                     return false;
                 }
+                // Примитивы записи в память не оставляют значения на стеке.
+                if name == "store8" || name == "store32" || name == "memcopy" {
+                    return false;
+                }
                 if self.void_functions.contains(name) {
                     return false;
                 }

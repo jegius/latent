@@ -7,3 +7,6 @@ target/
 .playwright-mcp/
 
 .agentplug-kv
+
+# Сгенерированные bootstrap-артефакты self-hosted компилятора
+selfhost/stage*.wasm

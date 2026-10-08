@@ -3,7 +3,7 @@
 use super::bytecode::{op, valtype};
 use super::context::{FuncContext, StaticTy};
 use super::module_builder::WasmCodegen;
-use super::runtime_helpers::{ALLOC, F64_TO_STR, I32_TO_STR, STR_TO_I32};
+use super::runtime_helpers::{ALLOC, F64_TO_STR, I32_TO_STR, MEM_COPY, STR_TO_I32};
 use crate::ast::*;
 
 /// Встроенные, требующие host-рантайма: движок №2 даёт по ним понятную ошибку.
@@ -115,6 +115,11 @@ impl WasmCodegen {
         args: &[Expr],
         ctx: &mut FuncContext,
     ) -> Result<(), String> {
+        // Примитивы линейной памяти: необходимы для селф-хостинга —
+        // кодогенератор на самом Latent должен уметь писать байты WASM.
+        if let Some(result) = self.compile_memory_builtin(name, args, ctx)? {
+            return Ok(result);
+        }
         if name == "print" {
             for arg in args {
                 // Не-строковые аргументы конвертируем в строку, чтобы
@@ -248,6 +253,90 @@ impl WasmCodegen {
             Ok(())
         } else {
             Err(format!("Unknown function: {}", name))
+        }
+    }
+
+    /// Примитивы линейной памяти (селф-хостинг): `alloc`, `load8`, `store8`,
+    /// `load32`, `store32`, `memcopy`. Возвращает `Some(Ok(()))`, если `name`
+    /// распознан, — значение уже оставлено на стеке WASM.
+    ///
+    /// # Safety
+    /// Это небезопасные операции без границ — та же природа, что у bump-
+    /// аллокатора и байтового доступа внутри рантайм-хелперов. Вызывающая
+    /// сторона отвечает за валидность адреса.
+    fn compile_memory_builtin(
+        &mut self,
+        name: &str,
+        args: &[Expr],
+        ctx: &mut FuncContext,
+    ) -> Result<Option<()>, String> {
+        match name {
+            // alloc(size) -> ptr — bump-аллокатор рантайма.
+            "alloc" => {
+                if let Some(a) = args.first() {
+                    self.compile_expr(a, ctx)?;
+                } else {
+                    ctx.body.push(op::I32_CONST);
+                    ctx.body.write_i32(0);
+                }
+                self.emit_helper_call(&mut ctx.body, ALLOC);
+                Ok(Some(()))
+            }
+            // load8(addr) -> int — беззнаковый байт из линейной памяти.
+            "load8" => {
+                if let Some(a) = args.first() {
+                    self.compile_expr(a, ctx)?;
+                } else {
+                    ctx.body.push(op::I32_CONST);
+                    ctx.body.write_i32(0);
+                }
+                ctx.body.push(op::I32_LOAD8_U);
+                ctx.body.write_u32(0); // align = 1
+                ctx.body.write_u32(0); // offset
+                Ok(Some(()))
+            }
+            // store8(addr, value) — записать младший байт по адресу.
+            "store8" => {
+                if args.len() >= 2 {
+                    self.compile_expr(&args[0], ctx)?;
+                    self.compile_expr(&args[1], ctx)?;
+                    ctx.body.push(op::I32_STORE8);
+                    ctx.body.write_u32(0);
+                    ctx.body.write_u32(0);
+                }
+                Ok(Some(()))
+            }
+            // load32(addr) -> int — 32-битное слово (little-endian).
+            "load32" => {
+                if let Some(a) = args.first() {
+                    self.compile_expr(a, ctx)?;
+                } else {
+                    ctx.body.push(op::I32_CONST);
+                    ctx.body.write_i32(0);
+                }
+                self.emit_i32_load(&mut ctx.body);
+                Ok(Some(()))
+            }
+            // store32(addr, value) — записать 32-битное слово.
+            "store32" => {
+                if args.len() >= 2 {
+                    self.compile_expr(&args[0], ctx)?;
+                    self.compile_expr(&args[1], ctx)?;
+                    self.emit_i32_store(&mut ctx.body);
+                }
+                Ok(Some(()))
+            }
+            // memcopy(dst, src, len) — побайтовое копирование.
+            "memcopy" => {
+                if args.len() >= 3 {
+                    for a in &args[..3] {
+                        self.compile_expr(a, ctx)?;
+                    }
+                    self.emit_helper_call(&mut ctx.body, MEM_COPY);
+                }
+                Ok(Some(()))
+            }
+            _ => Ok(None),
         }
     }
 

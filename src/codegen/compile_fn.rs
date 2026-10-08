@@ -16,7 +16,11 @@ impl WasmCodegen {
         let ret_wasm = ret_ty.as_ref()
             .map(|t| latent_to_wasm(&parse_ast_type(t)))
             .unwrap_or(valtype::I32);
-        let (_, func_body) = self.build_function_typed(params, ret_ty.is_some(), ret_wasm, body, &[], false)?;
+        // Согласовано с collect_function_signatures: функция без аннотации,
+        // но с `return expr`, тоже возвращает i32 — иначе сигнатура обещает
+        // результат, а тело не оставляет значения на стеке (невалидный WASM).
+        let has_result = ret_ty.is_some() || super::module_builder::body_returns_value(body);
+        let (_, func_body) = self.build_function_typed(params, has_result, ret_wasm, body, &[], false)?;
         self.write_code(func_body);
         let _ = name;
         Ok(())
