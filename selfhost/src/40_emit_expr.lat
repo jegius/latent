@@ -1,0 +1,151 @@
+// --- эмиссия ---
+fn ev(b) -> int { return bput(FNB(), b); }
+fn ev_leb(v) -> int { return bleb(FNB(), v); }
+fn ev_sleb(v) -> int { return bsleb(FNB(), v); }
+fn nf() -> int { return get(0, 2); }
+fn ALLOC_FI() -> int { return get(0, 2) + 1; }
+fn MEM_FI() -> int { return get(0, 2) + 2; }
+
+fn emit_bi1(fi, opcode, align) -> int {
+    expect(20); level_or(); expect(21);
+    if (opcode == 0) { ev(16); ev_leb(fi); } else { ev(opcode); ev(align); ev(0); }
+    set(0, 5, 1);
+    return 0;
+}
+fn emit_bi2(fi, opcode, align, produces) -> int {
+    expect(20); level_or();
+    if (tkind() == 24) { adv(); }
+    level_or(); expect(21);
+    if (opcode == 0) { ev(16); ev_leb(fi); } else { ev(opcode); ev(align); ev(0); }
+    set(0, 5, produces);
+    return 0;
+}
+fn emit_memcopy() -> int {
+    expect(20); level_or();
+    if (tkind() == 24) { adv(); }
+    level_or();
+    if (tkind() == 24) { adv(); }
+    level_or(); expect(21);
+    ev(16); ev_leb(MEM_FI());
+    set(0, 5, 1);
+    return 0;
+}
+
+fn emit_call(off, ln) -> int {
+    if (is_lit(off, ln, "print", 5)) { return emit_call_named(0, 1); }
+    if (is_lit(off, ln, "alloc", 5)) { return emit_bi1(ALLOC_FI(), 0, 0); }
+    if (is_lit(off, ln, "memcopy", 7)) { return emit_memcopy(); }
+    if (is_lit(off, ln, "load8", 5)) { return emit_bi1(0, 45, 0); }
+    if (is_lit(off, ln, "load32", 6)) { return emit_bi1(0, 40, 2); }
+    if (is_lit(off, ln, "store8", 6)) { return emit_bi2(0, 58, 0, 0); }
+    if (is_lit(off, ln, "store32", 7)) { return emit_bi2(0, 54, 2, 0); }
+    let fi = find_func(off, ln);
+    if (fi < 0) { err(); return 0; }
+    return emit_call_named(fi + 1, 0);
+}
+fn emit_call_named(fidx, is_print) -> int {
+    expect(20);
+    let argc = 0;
+    while (tkind() != 21 && tkind() != 0) {
+        level_or(); argc = argc + 1;
+        if (tkind() == 24) { adv(); }
+    }
+    expect(21);
+    ev(16); ev_leb(fidx);
+    if (is_print == 1) { set(0, 5, 0); } else { set(0, 5, 1); }
+    return 0;
+}
+
+fn level_primary() -> int {
+    let k = tkind();
+    if (k == 1) { ev(65); ev_sleb(tval()); adv(); set(0, 5, 1); return 0; }
+    if (k == 90) { ev(65); ev_sleb(1); adv(); set(0, 5, 1); return 0; }
+    if (k == 91) { ev(65); ev_sleb(0); adv(); set(0, 5, 1); return 0; }
+    if (k == 3) {
+        let q = tval(); let ql = tlen();
+        let addr = str_addr(q + 1, ql - 2);
+        ev(65); ev_sleb(addr); adv(); set(0, 5, 1); return 0;
+    }
+    if (k == 20) { adv(); level_or(); expect(21); return 0; }
+    if (k == 31) { adv(); ev(65); ev_sleb(0); level_unary(); ev(107); set(0, 5, 1); return 0; }
+    if (k == 53) { adv(); level_unary(); ev(69); set(0, 5, 1); return 0; }
+    if (is_ident_kind(k)) {
+        let off = tval(); let ln = tlen(); adv();
+        if (tkind() == 20) { return emit_call(off, ln); }
+        let li = find_local(off, ln);
+        if (li >= 0) { ev(32); ev_leb(li); set(0, 5, 1); return 0; }
+        err(); return 0;
+    }
+    err(); set(0, 5, 1); return 0;
+}
+fn level_unary() -> int { return level_primary(); }
+
+fn parse_assign() -> int {
+    let noff = tval(); let nlen = tlen();
+    adv(); adv();
+    level_or();
+    let li = find_local(noff, nlen);
+    if (li < 0) { err(); } else { ev(33); ev_leb(li); ev(32); ev_leb(li); }
+    set(0, 5, 1);
+    return 0;
+}
+
+fn level_or() -> int {
+    if (is_ident_kind(tkind()) && tkind_at(1) == 27) { return parse_assign(); }
+    level_and();
+    while (tkind() == 47) { adv(); level_and(); ev(114); }
+    return 0;
+}
+fn level_and() -> int {
+    level_eq();
+    while (tkind() == 46) { adv(); level_eq(); ev(113); }
+    return 0;
+}
+fn level_eq() -> int {
+    level_cmp();
+    while (tkind() == 40 || tkind() == 41) {
+        let k = tkind(); adv(); level_cmp();
+        if (k == 40) { ev(70); } else { ev(71); }
+    }
+    return 0;
+}
+fn level_cmp() -> int {
+    level_bit();
+    while (tkind() == 42 || tkind() == 43 || tkind() == 44 || tkind() == 45) {
+        let k = tkind(); adv(); level_bit();
+        if (k == 42) { ev(72); } else { if (k == 43) { ev(74); } else { if (k == 44) { ev(76); } else { ev(78); } } }
+    }
+    return 0;
+}
+fn level_bit() -> int {
+    level_shift();
+    while (tkind() == 48 || tkind() == 49 || tkind() == 50) {
+        let k = tkind(); adv(); level_shift();
+        if (k == 48) { ev(113); } else { if (k == 49) { ev(114); } else { ev(115); } }
+    }
+    return 0;
+}
+fn level_shift() -> int {
+    level_add();
+    while (tkind() == 51 || tkind() == 52) {
+        let k = tkind(); adv(); level_add();
+        if (k == 51) { ev(116); } else { ev(117); }
+    }
+    return 0;
+}
+fn level_add() -> int {
+    level_mul();
+    while (tkind() == 30 || tkind() == 31) {
+        let k = tkind(); adv(); level_mul();
+        if (k == 30) { ev(106); } else { ev(107); }
+    }
+    return 0;
+}
+fn level_mul() -> int {
+    level_unary();
+    while (tkind() == 32 || tkind() == 33 || tkind() == 34) {
+        let k = tkind(); adv(); level_unary();
+        if (k == 32) { ev(108); } else { if (k == 33) { ev(109); } else { ev(111); } }
+    }
+    return 0;
+}

@@ -1,0 +1,16 @@
+fn compile_program() -> int {
+    let reserve = alloc(4100000);   // гарантировать рост памяти под все области
+    store32(reserve, 0);
+    binit(OUTB()); binit(SCRB()); binit(FNB()); binit(CODEB()); binit(BODYC()); binit(DATAB());
+    set(0, 4, 0); set(0, 5, 0); set(0, 6, 0);
+    let nt = tokenize();
+    set(0, 1, nt);
+    let n = scan_signatures();
+    let i = 0;
+    while (i < n) { compile_fn(i); i = i + 1; }
+    helper_bodies();
+    build_module();
+    return blen(OUTB());
+}
+
+fn main() -> int { return compile_program(); }

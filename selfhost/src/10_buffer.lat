@@ -1,0 +1,31 @@
+// --- байтовые буферы [len u32][bytes] ---
+fn binit(b) -> int { store32(b, 0); return b; }
+fn bput(b, x) -> int { store8(b + 4 + load32(b), x & 255); store32(b, load32(b) + 1); return b; }
+fn bleb(b, value) -> int {
+    let v = value;
+    while (true) {
+        let byte = v & 127;
+        v = v >> 7;
+        if (v != 0) { byte = byte | 128; }
+        bput(b, byte);
+        if (v == 0) { return b; }
+    }
+    return b;
+}
+// Signed LEB128 (для немедленных i32.const).
+fn bsleb(b, value) -> int {
+    let v = value;
+    while (true) {
+        let byte = v & 127;
+        v = v >> 7;
+        let done = 0;
+        if (v == 0 && (byte & 64) == 0) { done = 1; }
+        if (v == -1 && (byte & 64) != 0) { done = 1; }
+        if (done == 0) { byte = byte | 128; }
+        bput(b, byte);
+        if (done == 1) { return b; }
+    }
+    return b;
+}
+fn bcopy(b, s, off, n) -> int { memcopy(b + 4 + load32(b), s + 4 + off, n); store32(b, load32(b) + n); return b; }
+fn blen(b) -> int { return load32(b); }

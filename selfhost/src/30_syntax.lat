@@ -1,0 +1,96 @@
+// ============================ ПАРСЕР ============================
+fn tkind() -> int { return load32(KIND() + get(0, 0) * 4); }
+fn tkind_at(off) -> int { return load32(KIND() + (get(0, 0) + off) * 4); }
+fn tval() -> int { return load32(TVAL() + get(0, 0) * 4); }
+fn tlen() -> int { return load32(TLEN() + get(0, 0) * 4); }
+fn adv() -> int { return set(0, 0, get(0, 0) + 1); }
+fn err() -> int { return set(0, 4, 1); }
+fn is_ident_kind(k) -> bool { return k == 2 || (k >= 10 && k <= 19); }
+
+fn expect(k) -> int { if (tkind() == k) { return adv(); } err(); return 0; }
+fn expect_ident() -> int {
+    let k = tkind();
+    if (k == 2 || (k >= 10 && k <= 19)) { return adv(); }
+    err(); return 0;
+}
+
+fn name_eq(aoff, alen, boff, blen) -> bool {
+    if (alen != blen) { return false; }
+    let i = 0;
+    while (i < alen) {
+        if (load8(INPUT() + 4 + aoff + i) != load8(INPUT() + 4 + boff + i)) { return false; }
+        i = i + 1;
+    }
+    return true;
+}
+fn is_lit(off, ln, s, sn) -> bool {
+    if (ln != sn) { return false; }
+    let i = 0;
+    while (i < ln) {
+        if (load8(INPUT() + 4 + off + i) != load8(s + 4 + i)) { return false; }
+        i = i + 1;
+    }
+    return true;
+}
+
+// Поиск локальной переменной. Идём с конца таблицы: последнее объявление
+// с этим именем затеняет предыдущие. add_local всегда выделяет свежий слот,
+// поэтому поиск «первого совпадения» рассинхронизировал бы запись (новый слот)
+// и чтение (старый слот) при повторном `let` одного имени — так ломался
+// tokenize при самокомпиляции.
+fn find_local(off, ln) -> int {
+    let i = get(0, 3) - 1;
+    while (i >= 0) {
+        if (name_eq(off, ln, load32(LOCOFF() + i * 4), load32(LOCLEN() + i * 4))) { return load32(LOCIDX() + i * 4); }
+        i = i - 1;
+    }
+    return -1;
+}
+fn add_local(off, ln, idx) -> int {
+    let nl = get(0, 3);
+    store32(LOCOFF() + nl * 4, off); store32(LOCLEN() + nl * 4, ln); store32(LOCIDX() + nl * 4, idx);
+    set(0, 3, nl + 1);
+    return idx;
+}
+fn find_func(off, ln) -> int {
+    let i = 0; let nf = get(0, 2);
+    while (i < nf) {
+        if (name_eq(off, ln, load32(FNOFF() + i * 4), load32(FNLEN() + i * 4))) { return i; }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// --- строковые литералы: таблица + data-секция ---
+fn find_str(off, ln) -> int {
+    let i = 0; let ns = get(0, 6);
+    while (i < ns) {
+        if (load32(STRL() + i * 4) == ln) {
+            let so = load32(STRO() + i * 4);
+            let j = 0; let same = 1;
+            while (j < ln) {
+                if (load8(INPUT() + 4 + off + j) != load8(INPUT() + 4 + so + j)) { same = 0; j = ln; } else { j = j + 1; }
+            }
+            if (same == 1) { return load32(STRA() + i * 4); }
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+fn add_str(off, ln) -> int {
+    let addr = 1024 + load32(DATAB());
+    store32(STRO() + get(0, 6) * 4, off);
+    store32(STRL() + get(0, 6) * 4, ln);
+    store32(STRA() + get(0, 6) * 4, addr);
+    set(0, 6, get(0, 6) + 1);
+    // blob: [len u32 LE][bytes]
+    bput(DATAB(), ln & 255); bput(DATAB(), (ln >> 8) & 255); bput(DATAB(), (ln >> 16) & 255); bput(DATAB(), (ln >> 24) & 255);
+    let i = 0;
+    while (i < ln) { bput(DATAB(), load8(INPUT() + 4 + off + i)); i = i + 1; }
+    return addr;
+}
+fn str_addr(off, ln) -> int {
+    let a = find_str(off, ln);
+    if (a >= 0) { return a; }
+    return add_str(off, ln);
+}

@@ -1,7 +1,7 @@
-// Self-hosted Latent compiler (subset) — Latent -> WASM bytes.
-// Прямая (single-pass) стратегия: парсим и сразу эмитим байты WASM.
-// Всё состояние — в фиксированных областях линейной памяти.
+// СГЕНЕРИРОВАНО selfhost/build.mjs из selfhost/src/*.lat — не редактировать вручную.
+// Пересобрать: node selfhost/build.mjs
 
+// ===== часть: 00_abi.lat =====
 // --- фиксированные адреса областей ---
 fn INPUT() -> int { return 32768; }      // 32K
 fn OUTB() -> int { return 65536; }       // 192K готовый wasm
@@ -31,6 +31,7 @@ fn STRA() -> int { return 2850816; }     // 128K
 fn get(st, k) -> int { return load32(ST() + st * 4 + k * 4); }
 fn set(st, k, v) -> int { store32(ST() + st * 4 + k * 4, v); return v; }
 
+// ===== часть: 10_buffer.lat =====
 // --- байтовые буферы [len u32][bytes] ---
 fn binit(b) -> int { store32(b, 0); return b; }
 fn bput(b, x) -> int { store8(b + 4 + load32(b), x & 255); store32(b, load32(b) + 1); return b; }
@@ -63,6 +64,7 @@ fn bsleb(b, value) -> int {
 fn bcopy(b, s, off, n) -> int { memcopy(b + 4 + load32(b), s + 4 + off, n); store32(b, load32(b) + n); return b; }
 fn blen(b) -> int { return load32(b); }
 
+// ===== часть: 20_lexer.lat =====
 // ============================ ЛЕКСЕР ============================
 fn is_digit(c) -> bool { return c >= 48 && c <= 57; }
 fn is_alpha(c) -> bool { return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95; }
@@ -184,6 +186,7 @@ fn tokenize() -> int {
     return n + 1;
 }
 
+// ===== часть: 30_syntax.lat =====
 // ============================ ПАРСЕР ============================
 fn tkind() -> int { return load32(KIND() + get(0, 0) * 4); }
 fn tkind_at(off) -> int { return load32(KIND() + (get(0, 0) + off) * 4); }
@@ -281,6 +284,7 @@ fn str_addr(off, ln) -> int {
     return add_str(off, ln);
 }
 
+// ===== часть: 40_emit_expr.lat =====
 // --- эмиссия ---
 fn ev(b) -> int { return bput(FNB(), b); }
 fn ev_leb(v) -> int { return bleb(FNB(), v); }
@@ -433,6 +437,7 @@ fn level_mul() -> int {
     return 0;
 }
 
+// ===== часть: 50_stmt.lat =====
 // --- инструкции ---
 fn stmts() -> int {
     while (tkind() != 23 && tkind() != 0) {
@@ -524,6 +529,7 @@ fn st_for() -> int {
     return 0;
 }
 
+// ===== часть: 60_func.lat =====
 // --- сборка функций ---
 fn scan_signatures() -> int {
     let i = 0; let cnt = 0;
@@ -588,6 +594,7 @@ fn compile_fn(fi) -> int {
     return 0;
 }
 
+// ===== часть: 70_module.lat =====
 // ============================ СБОРКА МОДУЛЯ ============================
 fn emit_sec(id, content) -> int {
     bput(OUTB(), id); bleb(OUTB(), blen(content)); bcopy(OUTB(), content, 0, blen(content));
@@ -739,6 +746,7 @@ fn find_main() -> int {
     return 0;
 }
 
+// ===== часть: 90_driver.lat =====
 fn compile_program() -> int {
     let reserve = alloc(4100000);   // гарантировать рост памяти под все области
     store32(reserve, 0);

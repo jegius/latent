@@ -1,0 +1,63 @@
+// --- сборка функций ---
+fn scan_signatures() -> int {
+    let i = 0; let cnt = 0;
+    let total = get(0, 1);
+    while (i < total) {
+        if (load32(KIND() + i * 4) == 11) {
+            store32(FNTOK() + cnt * 4, i);
+            store32(FNOFF() + cnt * 4, load32(TVAL() + (i + 1) * 4));
+            store32(FNLEN() + cnt * 4, load32(TLEN() + (i + 1) * 4));
+            let j = i + 2; let p = 0; let prev = 20;
+            while (j < total && load32(KIND() + j * 4) != 21) {
+                let kk = load32(KIND() + j * 4);
+                if ((kk == 2 || (kk >= 10 && kk <= 19)) && (prev == 20 || prev == 24)) { p = p + 1; }
+                prev = kk; j = j + 1;
+            }
+            store32(FNNP() + cnt * 4, p);
+            cnt = cnt + 1;
+        }
+        i = i + 1;
+    }
+    set(0, 2, cnt);
+    return cnt;
+}
+fn skip_type() -> int {
+    while (tkind() != 24 && tkind() != 21 && tkind() != 22 && tkind() != 0) { adv(); }
+    return 0;
+}
+
+fn compile_fn(fi) -> int {
+    set(0, 0, load32(FNTOK() + fi * 4));
+    expect(11); expect_ident();
+    binit(FNB());
+    set(0, 3, 0);
+    expect(20);
+    let idx = 0;
+    while (tkind() != 21 && tkind() != 0) {
+        let poff = tval(); let plen = tlen();
+        expect_ident();
+        add_local(poff, plen, idx);
+        idx = idx + 1;
+        if (tkind() == 26) { adv(); skip_type(); }
+        if (tkind() == 24) { adv(); }
+    }
+    expect(21);
+    if (tkind() == 28) { adv(); skip_type(); }
+    expect(22);
+    stmts();
+    expect(23);
+    let lb = load8(FNB() + 4 + load32(FNB()) - 1);
+    if (lb != 15) { ev(65); ev_sleb(0); }
+    ev(11);
+    // финальное тело
+    binit(BODYC());
+    let nparams = load32(FNNP() + fi * 4);
+    let nlocals = get(0, 3) - nparams;
+    if (nlocals < 0) { nlocals = 0; }
+    if (nlocals > 0) { bleb(BODYC(), 1); bleb(BODYC(), nlocals); bput(BODYC(), 127); } else { bleb(BODYC(), 0); }
+    bcopy(BODYC(), FNB(), 0, blen(FNB()));
+    store32(CODEOF() + fi * 4, load32(CODEB()));
+    store32(CODELN() + fi * 4, blen(BODYC()));
+    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+    return 0;
+}

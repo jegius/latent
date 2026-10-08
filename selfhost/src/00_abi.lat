@@ -1,0 +1,28 @@
+// --- фиксированные адреса областей ---
+fn INPUT() -> int { return 32768; }      // 32K
+fn OUTB() -> int { return 65536; }       // 192K готовый wasm
+fn SCRB() -> int { return 262144; }      // 192K скретч секции
+fn FNB() -> int { return 458752; }       // 192K тело текущей функции
+fn BODYC() -> int { return 655360; }     // 192K финальное тело
+fn CODEB() -> int { return 851968; }     // 384K все тела
+fn KIND() -> int { return 1245184; }     // 256K
+fn TVAL() -> int { return 1507328; }     // 256K
+fn TLEN() -> int { return 1769472; }     // 256K
+fn FNOFF() -> int { return 2031616; }    // 32K
+fn FNLEN() -> int { return 2064384; }    // 32K
+fn FNNP() -> int { return 2097152; }     // 32K
+fn FNTOK() -> int { return 2129920; }    // 32K
+fn LOCOFF() -> int { return 2162688; }   // 32K
+fn LOCLEN() -> int { return 2195456; }   // 32K
+fn LOCIDX() -> int { return 2228224; }   // 32K
+fn ST() -> int { return 2260992; }       // 256
+fn CODEOF() -> int { return 2261248; }   // 32K
+fn CODELN() -> int { return 2293760; }   // 32K
+fn DATAB() -> int { return 2326528; }    // 256K
+fn STRO() -> int { return 2588672; }     // 128K
+fn STRL() -> int { return 2719744; }     // 128K
+fn STRA() -> int { return 2850816; }     // 128K
+
+// Слоты состояния: 0=PC 1=NT 2=NF 3=NL 4=status 5=produces 6=NS(strings)
+fn get(st, k) -> int { return load32(ST() + st * 4 + k * 4); }
+fn set(st, k, v) -> int { store32(ST() + st * 4 + k * 4, v); return v; }

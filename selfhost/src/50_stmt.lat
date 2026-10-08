@@ -1,0 +1,90 @@
+// --- инструкции ---
+fn stmts() -> int {
+    while (tkind() != 23 && tkind() != 0) {
+        let before = get(0, 0);
+        stmt();
+        if (get(0, 0) == before) { adv(); }
+    }
+    return 0;
+}
+fn stmt() -> int {
+    let k = tkind();
+    if (k == 10) { return st_let(); }
+    if (k == 15) { return st_return(); }
+    if (k == 12) { return st_if(); }
+    if (k == 14) { return st_while(); }
+    if (k == 16) { return st_for(); }
+    if (is_ident_kind(k) && tkind_at(1) == 27) { return st_assign(); }
+    level_or();
+    if (get(0, 5) == 1) { ev(26); }
+    expect(25);
+    return 0;
+}
+fn st_assign() -> int {
+    let noff = tval(); let nlen = tlen();
+    expect_ident(); expect(27);
+    level_or();
+    let li = find_local(noff, nlen);
+    if (li < 0) { err(); } else { ev(33); ev_leb(li); }
+    expect(25); set(0, 5, 0);
+    return 0;
+}
+fn st_let() -> int {
+    adv();
+    let noff = tval(); let nlen = tlen();
+    expect_ident();
+    if (tkind() == 26) { adv(); skip_type(); }
+    set(0, 5, 0);
+    if (tkind() == 27) { adv(); level_or(); } else { ev(65); ev_sleb(0); }
+    expect(25);
+    let idx = get(0, 3);
+    add_local(noff, nlen, idx);
+    ev(33); ev_leb(idx);
+    return 0;
+}
+fn st_return() -> int {
+    adv();
+    if (tkind() != 25) { level_or(); } else { ev(65); ev_sleb(0); }
+    ev(15);
+    if (tkind() == 25) { adv(); }
+    return 0;
+}
+fn st_if() -> int {
+    adv(); expect(20); level_or(); expect(21);
+    ev(4); ev(64); expect(22); stmts(); expect(23);
+    if (tkind() == 13) {
+        adv();
+        if (tkind() == 12) { ev(5); st_if(); ev(11); return 0; }
+        ev(5); expect(22); stmts(); expect(23); ev(11); return 0;
+    }
+    ev(11);
+    return 0;
+}
+fn st_while() -> int {
+    adv(); expect(20);
+    ev(2); ev(64); ev(3); ev(64);
+    level_or(); expect(21);
+    ev(69); ev(13); ev_leb(1);
+    expect(22); stmts(); expect(23);
+    ev(12); ev_leb(0); ev(11); ev(11);
+    return 0;
+}
+fn st_for() -> int {
+    adv(); expect(20);
+    if (tkind() == 10) { st_let(); } else { if (tkind() != 25) { level_or(); ev(26); expect(25); } else { adv(); } }
+    ev(2); ev(64); ev(3); ev(64);
+    if (tkind() != 25) { level_or(); } else { ev(65); ev_sleb(1); }
+    expect(25);
+    ev(69); ev(13); ev_leb(1);
+    let step_start = get(0, 0);
+    while (tkind() != 21 && tkind() != 0) { adv(); }
+    let step_end = get(0, 0);
+    expect(21);
+    expect(22); stmts(); expect(23);
+    let after_body = get(0, 0);
+    set(0, 0, step_start);
+    if (step_start != step_end) { level_or(); ev(26); }
+    set(0, 0, after_body);
+    ev(12); ev_leb(0); ev(11); ev(11);
+    return 0;
+}

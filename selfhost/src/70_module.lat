@@ -1,0 +1,150 @@
+// ============================ СБОРКА МОДУЛЯ ============================
+fn emit_sec(id, content) -> int {
+    bput(OUTB(), id); bleb(OUTB(), blen(content)); bcopy(OUTB(), content, 0, blen(content));
+    return 0;
+}
+
+// Тела рантайм-хелперов: alloc(1)->i32 и memcopy(3)->i32.
+fn helper_bodies() -> int {
+    // alloc(size)->ptr
+    binit(BODYC());
+    bleb(BODYC(), 1); bleb(BODYC(), 3); bput(BODYC(), 127);   // locals: 3×i32
+    // ptr = heap (global 0)
+    bput(BODYC(), 35); bleb(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 1);
+    // heap = heap + size
+    bput(BODYC(), 35); bleb(BODYC(), 0); bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 106); bput(BODYC(), 36); bleb(BODYC(), 0);
+    // need = (heap + 65535) / 65536
+    bput(BODYC(), 35); bleb(BODYC(), 0); bput(BODYC(), 65); bleb(BODYC(), 65535);
+    bput(BODYC(), 106);
+    bput(BODYC(), 65); bleb(BODYC(), 65536);
+    bput(BODYC(), 110); bput(BODYC(), 33); bleb(BODYC(), 2);
+    // cur = memory.size 0
+    bput(BODYC(), 63); bput(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 3);
+    // if cur < need { grow(need-cur); drop }
+    bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 73);
+    bput(BODYC(), 4); bput(BODYC(), 64);
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 107);
+    bput(BODYC(), 64); bput(BODYC(), 0); bput(BODYC(), 26);
+    bput(BODYC(), 11);
+    bput(BODYC(), 32); bleb(BODYC(), 1);
+    bput(BODYC(), 11);
+    // append body to CODEB and record
+    store32(CODEOF() + nf() * 4, load32(CODEB()));
+    store32(CODELN() + nf() * 4, blen(BODYC()));
+    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+
+    // memcopy(dst,src,len)->i32 (возвращает 0)
+    binit(BODYC());
+    bleb(BODYC(), 1); bleb(BODYC(), 1); bput(BODYC(), 127);   // local i (idx3)
+    bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 3);
+    bput(BODYC(), 2); bput(BODYC(), 64); bput(BODYC(), 3); bput(BODYC(), 64);
+    bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 79);
+    bput(BODYC(), 13); bleb(BODYC(), 1);
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 106);
+    bput(BODYC(), 45); bput(BODYC(), 0); bput(BODYC(), 0);
+    bput(BODYC(), 58); bput(BODYC(), 0); bput(BODYC(), 0);
+    bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 106); bput(BODYC(), 33); bleb(BODYC(), 3);
+    bput(BODYC(), 12); bleb(BODYC(), 0);
+    bput(BODYC(), 11); bput(BODYC(), 11);
+    bput(BODYC(), 65); bleb(BODYC(), 0);
+    bput(BODYC(), 11);
+    store32(CODEOF() + (nf() + 1) * 4, load32(CODEB()));
+    store32(CODELN() + (nf() + 1) * 4, blen(BODYC()));
+    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+    return 0;
+}
+
+fn build_module() -> int {
+    binit(OUTB());
+    bput(OUTB(), 0); bput(OUTB(), 97); bput(OUTB(), 115); bput(OUTB(), 109);
+    bput(OUTB(), 1); bput(OUTB(), 0); bput(OUTB(), 0); bput(OUTB(), 0);
+    let n = nf();
+
+    // type section: (i32)->void; arity 0..5 -> i32; (i32,i32,i32)->i32 уже есть
+    binit(SCRB());
+    bleb(SCRB(), 7);
+    bput(SCRB(), 96); bleb(SCRB(), 1); bput(SCRB(), 127); bleb(SCRB(), 0);
+    let a = 0;
+    while (a < 6) {
+        bput(SCRB(), 96); bleb(SCRB(), a);
+        let q = 0; while (q < a) { bput(SCRB(), 127); q = q + 1; }
+        bleb(SCRB(), 1); bput(SCRB(), 127);
+        a = a + 1;
+    }
+    emit_sec(1, SCRB());
+
+    // import
+    binit(SCRB());
+    bleb(SCRB(), 1);
+    bleb(SCRB(), 3); bput(SCRB(),101); bput(SCRB(),110); bput(SCRB(),118);
+    bleb(SCRB(), 5); bput(SCRB(),112); bput(SCRB(),114); bput(SCRB(),105); bput(SCRB(),110); bput(SCRB(),116);
+    bput(SCRB(), 0); bleb(SCRB(), 0);
+    emit_sec(2, SCRB());
+
+    // func section: n user + alloc + memcopy
+    binit(SCRB());
+    bleb(SCRB(), n + 2);
+    let i = 0;
+    while (i < n) { bleb(SCRB(), load32(FNNP() + i * 4) + 1); i = i + 1; }
+    bleb(SCRB(), 2);   // alloc: (i32)->i32 = type2
+    bleb(SCRB(), 4);   // memcopy: (i32,i32,i32)->i32 = type4
+    emit_sec(3, SCRB());
+
+    // memory: 16 pages
+    binit(SCRB());
+    bleb(SCRB(), 1); bput(SCRB(), 0); bleb(SCRB(), 64);
+    emit_sec(5, SCRB());
+
+    // global: heap = 1024 + data_len
+    binit(SCRB());
+    bleb(SCRB(), 1); bput(SCRB(), 127); bput(SCRB(), 1);
+    bput(SCRB(), 65); bleb(SCRB(), 1024 + load32(DATAB())); bput(SCRB(), 11);
+    emit_sec(6, SCRB());
+
+    // export: memory + main
+    binit(SCRB());
+    bleb(SCRB(), 2);
+    bleb(SCRB(), 6); bput(SCRB(),109); bput(SCRB(),101); bput(SCRB(),109); bput(SCRB(),111); bput(SCRB(),114); bput(SCRB(),121);
+    bput(SCRB(), 2); bleb(SCRB(), 0);
+    bleb(SCRB(), 4); bput(SCRB(),109); bput(SCRB(),97); bput(SCRB(),105); bput(SCRB(),110);
+    bput(SCRB(), 0); bleb(SCRB(), find_main() + 1);
+    emit_sec(7, SCRB());
+
+    // code section: n + 2 bodies
+    binit(SCRB());
+    bleb(SCRB(), n + 2);
+    i = 0;
+    while (i < n + 2) {
+        bleb(SCRB(), load32(CODELN() + i * 4));
+        let q = 0;
+        while (q < load32(CODELN() + i * 4)) {
+            bput(SCRB(), load8(CODEB() + 4 + load32(CODEOF() + i * 4) + q));
+            q = q + 1;
+        }
+        i = i + 1;
+    }
+    emit_sec(10, SCRB());
+
+    // data section: одна активная сегмент-группа на каждый литерал
+    if (get(0, 6) > 0) {
+        binit(SCRB());
+        bleb(SCRB(), 1);      // 1 segment (объединяет все блобы подряд по адресу 1024)
+        bput(SCRB(), 0);      // active, mem 0
+        bput(SCRB(), 65); bleb(SCRB(), 1024); bput(SCRB(), 11);
+        bleb(SCRB(), load32(DATAB()));
+        let q = 0;
+        while (q < load32(DATAB())) { bput(SCRB(), load8(DATAB() + 4 + q)); q = q + 1; }
+        emit_sec(11, SCRB());
+    }
+    return 0;
+}
+
+fn find_main() -> int {
+    let i = 0; let n = nf();
+    while (i < n) {
+        if (is_lit(load32(FNOFF() + i * 4), load32(FNLEN() + i * 4), "main", 4)) { return i; }
+        i = i + 1;
+    }
+    return 0;
+}
