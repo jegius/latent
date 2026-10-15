@@ -1941,8 +1941,11 @@ fn tc_bin(level) -> int {
     let base = tc_bin(level + 1);
     while (is_op_at(level, tck())) {
         let op = tck(); tcx();
-        tc_bin(level + 1);
-        base = op_result(op);
+        let lt = base;
+        let rt = tc_bin(level + 1);
+        // "+" над строкой (любой стороной) даёт строку, как в oracle.
+        if (op == 30 && (lt == TY_STR() || rt == TY_STR())) { base = TY_STR(); }
+        else { base = op_result(op); }
     }
     return base;
 }
