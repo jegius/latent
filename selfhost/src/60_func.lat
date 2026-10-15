@@ -47,8 +47,10 @@ fn fn_ret_tp(total, ftok) -> int {
     }
     return T_INT();
 }
+// Пропускает аннотацию типа до разделителя: `,` `)` `}` `=` `;` или EOF.
 fn skip_type() -> int {
-    while (tkind() != 24 && tkind() != 21 && tkind() != 22 && tkind() != 0) { adv(); }
+    while (tkind() != 24 && tkind() != 21 && tkind() != 22 && tkind() != 27
+        && tkind() != 25 && tkind() != 0) { adv(); }
     return 0;
 }
 // Читает аннотацию типа и возвращает тег для LOTP (T_INT/T_FLT/T_STR),
@@ -69,6 +71,36 @@ fn read_ann_after_colon() -> int {
     return T_INT();
 }
 
+// Декларации локальных групп для code-секции: идём по слотам nparams..ntot
+// и группируем подряд идущие одинаковые valtype (0x7f=i32, 0x7c=f64).
+// Так float-локальные (LOTP=T_FLT) получают корректный f64-valtype.
+fn emit_local_decls(nparams, ntot) -> int {
+    let i = nparams;
+    let ngrp = 0;
+    while (i < ntot) {
+        let t = local_valtype(i);
+        let j = i + 1;
+        while (j < ntot && local_valtype(j) == t) { j = j + 1; }
+        ngrp = ngrp + 1;
+        i = j;
+    }
+    bleb(BODYC(), ngrp);
+    i = nparams;
+    while (i < ntot) {
+        let t = local_valtype(i);
+        let j = i + 1;
+        while (j < ntot && local_valtype(j) == t) { j = j + 1; }
+        bleb(BODYC(), j - i);
+        bput(BODYC(), t);
+        i = j;
+    }
+    return 0;
+}
+fn local_valtype(idx) -> int {
+    if (load32(LOTP() + idx * 4) == T_FLT()) { return 124; }   // f64
+    return 127;                                                // i32
+}
+
 fn compile_fn(fi) -> int {
     set(0, 0, load32(FNTOK() + fi * 4));
     store32(CURFI(), fi);
@@ -86,8 +118,10 @@ fn compile_fn(fi) -> int {
         let poff = tval(); let plen = tlen();
         expect_ident();
         let slot = get(0, 3);
-        let pt = read_ann_after_colon();
-        add_local(poff, plen, slot); set_local_tp(slot, pt);
+        // Параметры подписаны всегда i32 (mixed-float параметры не поддержаны
+        // ни oracle, ни нами); аннотацию всё равно потребляем.
+        read_ann_after_colon();
+        add_local(poff, plen, slot); set_local_tp(slot, T_INT());
         idx = idx + 1;
         if (tkind() == 24) { adv(); }
     }
@@ -99,12 +133,10 @@ fn compile_fn(fi) -> int {
     let lb = load8(FNB() + 4 + load32(FNB()) - 1);
     if (lb != 15) { ev(65); ev_sleb(0); }
     ev(11);
-    // финальное тело
+    // финальное тело: декларации локальных групп по типу (i32/f64).
     binit(BODYC());
     let nparams = load32(FNNP() + fi * 4);
-    let nlocals = get(0, 3) - nparams;
-    if (nlocals < 0) { nlocals = 0; }
-    if (nlocals > 0) { bleb(BODYC(), 1); bleb(BODYC(), nlocals); bput(BODYC(), 127); } else { bleb(BODYC(), 0); }
+    emit_local_decls(nparams, get(0, 3));
     bcopy(BODYC(), FNB(), 0, blen(FNB()));
     store32(CODEOF() + fi * 4, load32(CODEB()));
     store32(CODELN() + fi * 4, blen(BODYC()));
