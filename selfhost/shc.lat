@@ -34,6 +34,32 @@ fn TSTK() -> int { return 3014656; }     // 32K  стек типов выраж�
 fn FNRET() -> int { return 3047424; }    // 32K  тип результата функции
 fn FPT() -> int { return 3080192; }      // 32K  типы параметров функций (stride 8)
 fn FLOATB() -> int { return 3112960; }   // 32K  f64-константы (8 байт/слот)
+// --- таблицы классов (для new / полей / методов) ---
+// Размещены выше области INPUT (3145728..3276800); память наращивается
+// driver-ом через alloc(4100000) до использования.
+fn CLNO() -> int { return 3407872; }     // 16K  имя класса: оффсет в исходник
+fn CLNL() -> int { return 3424256; }     // 16K  имя класса: длина
+fn CLNF() -> int { return 3440640; }     // 4K   число полей класса
+fn CLNM() -> int { return 3444736; }     // 4K   число методов класса
+fn CLSZ() -> int { return 3448832; }     // 4K   размер класса в байтах
+fn NCLA() -> int { return 3452928; }     // 4K   число классов (слот-указатель)
+fn FLDO() -> int { return 3457024; }     // 32K  поле: оффсет имени
+fn FLDL() -> int { return 3489792; }     // 32K  поле: длина имени
+fn FLDOC() -> int { return 3522560; }    // 32K  поле: смещение в объекте
+fn FLDCL() -> int { return 3555328; }    // 32K  поле: индекс класса
+fn LOCCLS() -> int { return 3588096; }   // 32K  класс локальной (-1 если нет)
+fn FNCLS() -> int { return 3620864; }    // 32K  класс-владелец функции (-1 если нет)
+// Таблица методов: каждый метод = функция с неявным первым параметром `this`.
+fn METHTOK() -> int { return 3653632; }  // 32K  токен `fn` метода
+fn METHCLS() -> int { return 3686400; }  // 32K  класс метода
+fn METHFI() -> int { return 3719168; }   // 32K  индекс функции метода
+fn NMETH() -> int { return 3751936; }    // 4K   число методов (слот-указатель)
+fn CLFFI() -> int { return 3756032; }    // 4K   первый индекс полей класса
+fn NCLS() -> int { return 3760128; }     // 4K   число классов (счётчик)
+fn NFCLS() -> int { return 3764224; }    // 4K   число полей (счётчик)
+fn NFNCL() -> int { return 3768320; }    // 4K   число методов (счётчик)
+fn CURFI() -> int { return 3772416; }    // 16   индекс текущей компилируемой функции
+fn LASTCLS() -> int { return 3776512; }   // 16   класс последнего первичного выражения
 
 // Слоты состояния: 0=PC 1=NT 2=NF 3=NL 4=status 5=produces 6=NS(strings) 7=TS
 fn get(st, k) -> int { return load32(ST() + st * 4 + k * 4); }
@@ -110,16 +136,23 @@ fn kw_code(src, off, n) -> int {
     if (n == 3) {
         if (match_at(src, 4, off, "let", 3)) { return 10; }
         if (match_at(src, 4, off, "for", 3)) { return 16; }
+        if (match_at(src, 4, off, "new", 3)) { return 93; }
     }
     if (n == 4) {
         if (match_at(src, 4, off, "else", 4)) { return 13; }
         if (match_at(src, 4, off, "true", 4)) { return 90; }
+        if (match_at(src, 4, off, "this", 4)) { return 94; }
+        if (match_at(src, 4, off, "case", 4)) { return 97; }
     }
     if (n == 5) {
         if (match_at(src, 4, off, "while", 5)) { return 14; }
         if (match_at(src, 4, off, "false", 5)) { return 91; }
+        if (match_at(src, 4, off, "class", 5)) { return 92; }
+        if (match_at(src, 4, off, "match", 5)) { return 95; }
     }
+    if (n == 4) { if (match_at(src, 4, off, "enum", 4)) { return 96; } }
     if (n == 6) { if (match_at(src, 4, off, "return", 6)) { return 15; } }
+    if (n == 7) { if (match_at(src, 4, off, "default", 7)) { return 98; } }
     return 0;
 }
 
@@ -281,7 +314,9 @@ fn reserve() -> int { let idx = get(0, 3); set(0, 3, idx + 1); set_local_tp(idx,
 fn find_func(off, ln) -> int {
     let i = 0; let nf = get(0, 2);
     while (i < nf) {
-        if (name_eq(off, ln, load32(FNOFF() + i * 4), load32(FNLEN() + i * 4))) { return i; }
+        // Методы (класс-владелец >= 0) не видны как свободные функции.
+        if (load32(FNCLS() + i * 4) < 0
+            && name_eq(off, ln, load32(FNOFF() + i * 4), load32(FNLEN() + i * 4))) { return i; }
         i = i + 1;
     }
     return -1;
@@ -319,6 +354,158 @@ fn str_addr(off, ln) -> int {
     let a = find_str(off, ln);
     if (a >= 0) { return a; }
     return add_str(off, ln);
+}
+
+// ===== часть: 35_class.lat =====
+// ============================ КЛАССЫ ============================
+// Первый проход: регистрация классов, их полей (имя, смещение) и методов
+// (токен `fn`, класс-владелец). Layout — как в oracle: поля по 4 байта
+// подряд (int/bool/string/указатель); float вне подмножества.
+
+fn get_ncls() -> int { return load32(NCLS()); }
+fn set_ncls(v) -> int { store32(NCLS(), v); return v; }
+fn get_nfcls() -> int { return load32(NFCLS()); }
+fn set_nfcls(v) -> int { store32(NFCLS(), v); return v; }
+fn get_nmeth() -> int { return load32(NFNCL()); }
+fn set_nmeth(v) -> int { store32(NFNCL(), v); return v; }
+
+// Пропускает метод от токена `fn` до токена ПОСЛЕ закрывающей `}` тела.
+fn skip_fn_body(j, total) -> int {
+    let k = j;
+    while (k < total && load32(KIND() + k * 4) != 22) { k = k + 1; }
+    let depth = 0;
+    while (k < total) {
+        let t = load32(KIND() + k * 4);
+        if (t == 22) { depth = depth + 1; }
+        else {
+            if (t == 23) { depth = depth - 1; if (depth == 0) { return k + 1; } }
+        }
+        k = k + 1;
+    }
+    return k;
+}
+
+// Индекс класса по имени (-1 если нет).
+fn class_idx_by_name(off, ln) -> int {
+    let i = 0; let n = get_ncls();
+    while (i < n) {
+        if (name_eq(off, ln, load32(CLNO() + i * 4), load32(CLNL() + i * 4))) { return i; }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn scan_classes() -> int {
+    let i = 0; let total = get(0, 1);
+    let ncls = 0;
+    while (i < total) {
+        if (load32(KIND() + i * 4) == 92) {
+            let no = load32(TVAL() + (i + 1) * 4); let nl = load32(TLEN() + (i + 1) * 4);
+            store32(CLNO() + ncls * 4, no); store32(CLNL() + ncls * 4, nl);
+            store32(CLFFI() + ncls * 4, get_nfcls());
+            let nfld = 0; let nsz = 0;
+            let j = i + 3;                       // после `class` IDENT `{`
+            let depth = 1;
+            while (j < total && depth > 0) {
+                let k = load32(KIND() + j * 4);
+                if (k == 22) { depth = depth + 1; j = j + 1; }
+                else {
+                    if (k == 23) { depth = depth - 1; j = j + 1; }
+                    else {
+                        if (depth == 1 && k == 11) {
+                            let mi = get_nmeth();
+                            store32(METHTOK() + mi * 4, j); store32(METHCLS() + mi * 4, ncls);
+                            set_nmeth(mi + 1);
+                            j = skip_fn_body(j, total);
+                        } else {
+                            if (depth == 1 && is_field_start(k)) {
+                                let fo = load32(TVAL() + j * 4); let fl = load32(TLEN() + j * 4);
+                                let fld = get_nfcls();
+                                store32(FLDO() + fld * 4, fo); store32(FLDL() + fld * 4, fl);
+                                store32(FLDCL() + fld * 4, ncls); store32(FLDOC() + fld * 4, nsz);
+                                set_nfcls(fld + 1);
+                                nfld = nfld + 1; nsz = nsz + 4;
+                                while (j < total && load32(KIND() + j * 4) != 25) { j = j + 1; }
+                                j = j + 1;
+                            } else { j = j + 1; }
+                        }
+                    }
+                }
+            }
+            store32(CLNF() + ncls * 4, nfld);
+            store32(CLSZ() + ncls * 4, nsz);
+            ncls = ncls + 1;
+            i = j;
+        } else { i = i + 1; }
+    }
+    set_ncls(ncls);
+    return ncls;
+}
+
+// Поле начинается с идентификатора/мягкого слова, но не с `fn`.
+fn is_field_start(k) -> bool { return k == 2 || (k >= 10 && k <= 19); }
+
+// Класс метода по токену `fn` (-1 если это свободная функция).
+fn method_class(fntok) -> int {
+    let i = 0; let n = get_nmeth();
+    while (i < n) {
+        if (load32(METHTOK() + i * 4) == fntok) { return load32(METHCLS() + i * 4); }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// Смещение поля в объекте класса (-1 если поле не найдено).
+fn field_off(cls, off, ln) -> int {
+    let i = load32(CLFFI() + cls * 4);
+    let n = i + load32(CLNF() + cls * 4);
+    while (i < n) {
+        if (name_eq(off, ln, load32(FLDO() + i * 4), load32(FLDL() + i * 4))) { return load32(FLDOC() + i * 4); }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// Индекс функции метода класса по имени (-1 если нет).
+fn find_method(cls, off, ln) -> int {
+    let i = 0; let n = get(0, 2);
+    while (i < n) {
+        if (load32(FNCLS() + i * 4) == cls
+            && name_eq(off, ln, load32(FNOFF() + i * 4), load32(FNLEN() + i * 4))) { return i; }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// Индекс функции метода класса по имени-литералу.
+fn find_method_named(cls, name, nl) -> int {
+    let i = 0; let n = get(0, 2);
+    while (i < n) {
+        if (load32(FNCLS() + i * 4) == cls
+            && is_lit(load32(FNOFF() + i * 4), load32(FNLEN() + i * 4), name, nl)) { return i; }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// Результат функции оставляет значение? (для drop при вызове конструктора).
+fn fn_has_result(fi) -> bool {
+    let total = get(0, 1);
+    let i = load32(FNTOK() + fi * 4);
+    // ищем `->` после ')' или `return <expr>`
+    let j = i;
+    while (j < total && load32(KIND() + j * 4) != 22 && load32(KIND() + j * 4) != 0) {
+        if (load32(KIND() + j * 4) == 28) { return true; }
+        j = j + 1;
+    }
+    j = i;
+    while (j < total && load32(KIND() + j * 4) != 0) {
+        if (load32(KIND() + j * 4) == 15) {
+            if (load32(KIND() + (j + 1) * 4) != 25 && load32(KIND() + (j + 1) * 4) != 23) { return true; }
+        }
+        j = j + 1;
+    }
+    return false;
 }
 
 // ===== часть: 40_emit_expr.lat =====
@@ -507,14 +694,47 @@ fn level_primary() -> int {
     if (k == 80) { return level_array(); }
     if (k == 31) { adv(); ev(65); ev_sleb(0); level_unary(); ev(107); set(0, 5, 1); return 0; }
     if (k == 53) { adv(); level_unary(); ev(69); set(0, 5, 1); return 0; }
+    if (k == 94) { adv(); ev(32); ev_leb(0); set(0, 5, 1); tp(T_INT()); set(0, 8, load32(FNCLS() + load32(CURFI()) * 4)); return 0; }
+    if (k == 93) { return level_new(); }
     if (is_ident_kind(k)) {
         let off = tval(); let ln = tlen(); adv();
         if (tkind() == 20) { return emit_call(off, ln); }
         let li = find_local(off, ln);
-        if (li >= 0) { ev(32); ev_leb(li); set(0, 5, 1); tp(local_tp(li)); return 0; }
+        if (li >= 0) { ev(32); ev_leb(li); set(0, 5, 1); tp(local_tp(li)); set(0, 8, load32(LOCCLS() + li * 4)); return 0; }
         err(); return 0;
     }
-    err(); set(0, 5, 1); tp(T_INT()); return 0;
+    err(); set(0, 5, 1); tp(T_INT()); set(0, 8, -1); return 0;
+}
+
+// new Class(args): bump-alloc(CLSZ); вызвать Class_init/_new (this первым).
+fn level_new() -> int {
+    adv();
+    let noff = tval(); let nlen = tlen();
+    expect_ident();
+    let cls = class_idx_by_name(noff, nlen);
+    if (cls < 0) { err(); tp(T_INT()); return 0; }
+    let sz = load32(CLSZ() + cls * 4);
+    let p = reserve();
+    ev(65); ev_sleb(sz); ev(16); ev_leb(ALLOC_FI()); ev(33); ev_leb(p);
+    expect(20);
+    let ctor = find_method_named(cls, "init", 4);
+    if (ctor < 0) { ctor = find_method_named(cls, "new", 3); }
+    if (ctor >= 0) {
+        ev(32); ev_leb(p);                    // this — первый аргумент
+        while (tkind() != 21 && tkind() != 0) {
+            set(0, 7, 0);
+            level_or();
+            if (tkind() == 24) { adv(); }
+        }
+        ev(16); ev_leb(ctor + 1);
+        if (fn_has_result(ctor)) { ev(26); }
+    } else {
+        while (tkind() != 21 && tkind() != 0) { set(0, 7, 0); level_or(); if (tkind() == 24) { adv(); } }
+    }
+    expect(21);
+    ev(32); ev_leb(p);
+    set(0, 5, 1); tp(T_INT()); set(0, 8, cls);
+    return 0;
 }
 
 // Постфиксные операции: индексация a[i] и поле .length.
@@ -545,7 +765,19 @@ fn level_postfix() -> int {
                 if (tkind() == 20) { level_method(a, al); }
                 else {
                     if (is_lit(a, al, "length", 6)) { ev(40); ev(2); ev(0); set(0, 5, 1); set(0, 7, base); tp(T_INT()); }
-                    else { err(); }
+                    else {
+                        let cls = get(0, 8);
+                        if (cls >= 0) {
+                            // Доступ к полю класса: obj + offset → load.
+                            let off = field_off(cls, a, al);
+                            if (off < 0) { err(); }
+                            else {
+                                if (off > 0) { ev(65); ev_sleb(off); ev(106); }
+                                ev(40); ev(2); ev(0);
+                                set(0, 5, 1); set(0, 7, base); tp(T_INT());
+                            }
+                        } else { err(); }
+                    }
                 }
             } else { return 0; }
         }
@@ -555,6 +787,26 @@ fn level_postfix() -> int {
 // Метод-вызов obj.name(args). Объект уже лежит на стеке (из level_postfix).
 // Поддерживаются: push(x), pop(), length().
 fn level_method(off, ln) -> int {
+    // Метод класса: объект уже на стеке → сохранить как this, затем вызвать.
+    let cls = get(0, 8);
+    if (cls >= 0 && (tkind_at(0) == 20)) {
+        let mi = find_method(cls, off, ln);
+        if (mi >= 0) {
+            let tl = reserve(); ev(33); ev_leb(tl);
+            let base = get(0, 7);
+            expect(20);
+            ev(32); ev_leb(tl);              // this первым
+            while (tkind() != 21 && tkind() != 0) {
+                set(0, 7, base);
+                level_or();
+                if (tkind() == 24) { adv(); }
+            }
+            expect(21);
+            ev(16); ev_leb(mi + 1);
+            set(0, 5, 1); set(0, 7, base); tp(load32(FNRET() + mi * 4)); set(0, 8, -1);
+            return 0;
+        }
+    }
     if (is_lit(off, ln, "push", 4)) {
         let al = reserve(); ev(33); ev_leb(al);
         expect(20); level_or(); expect(21);
@@ -836,6 +1088,7 @@ fn stmts() -> int {
     while (tkind() != 23 && tkind() != 0) {
         let before = get(0, 0);
         set(0, 7, 0);              // тип-стек выравнивается на границе инструкции
+        set(0, 8, -1);             // класс последнего выражения сбрасывается
         stmt();
         if (get(0, 0) == before) { adv(); }
     }
@@ -849,11 +1102,49 @@ fn stmt() -> int {
     if (k == 14) { return st_while(); }
     if (k == 16) { return st_for(); }
     if (is_ident_kind(k) && tkind_at(1) == 27) { return st_assign(); }
+    if (k == 94 && tkind_at(1) == 29 && tkind_at(3) == 27) { return st_field_assign(k); }
+    if (is_ident_kind(k) && tkind_at(1) == 29 && tkind_at(3) == 27) { return st_field_assign(k); }
     level_or();
     if (get(0, 5) == 1) { ev(26); }
     expect(25);
     return 0;
 }
+// Присваивание в поле: `this.f = v` или `obj.f = v`. Класс берётся из
+// FNCLS текущей функции (для this) или из LOCCLS локальной переменной.
+fn st_field_assign(k) -> int {
+    let cls = -1;
+    let base_slot = -1;
+    if (k == 94) {
+        adv();                          // this
+        cls = load32(FNCLS() + load32(CURFI()) * 4);
+        base_slot = -1;                 // this = локаль 0
+    } else {
+        let boff = tval(); let blen = tlen(); adv();
+        cls = load32(LOCCLS() + find_local(boff, blen) * 4);
+        base_slot = find_local(boff, blen);
+    }
+    expect(29);                        // .
+    let foff = tval(); let flen = tlen();
+    expect_ident();
+    expect(27);                        // =
+    let voff = reserve();
+    level_or();
+    ev(33); ev_leb(voff);              // сохраняем значение
+    let off = field_off(cls, foff, flen);
+    if (off < 0) { err(); }
+    else {
+        ev(32);
+        if (base_slot >= 0) { ev_leb(base_slot); } else { ev_leb(0); }
+        if (off > 0) { ev(65); ev_sleb(off); ev(106); }
+        ev(32); ev_leb(voff);
+        ev(54); ev(2); ev(0);          // i32.store
+        // Присваивание — выражение: оставляем записанное значение.
+        // (в st)-контексте достаточно; стек инструкций выравнивается вызовом)
+    }
+    expect(25); set(0, 5, 0);
+    return 0;
+}
+
 fn st_assign() -> int {
     let noff = tval(); let nlen = tlen();
     expect_ident(); expect(27);
@@ -990,6 +1281,10 @@ fn scan_signatures() -> int {
                 if ((kk == 2 || (kk >= 10 && kk <= 19)) && (prev == 20 || prev == 24)) { p = p + 1; }
                 prev = kk; j = j + 1;
             }
+            let mc = method_class(i);
+            store32(FNCLS() + cnt * 4, mc);
+            // Метод получает неявный первый параметр `this`.
+            if (mc >= 0) { p = p + 1; }
             store32(FNNP() + cnt * 4, p);
             store32(FNRET() + cnt * 4, fn_ret_tp(total, i));
             cnt = cnt + 1;
@@ -1021,15 +1316,22 @@ fn skip_type() -> int {
 
 fn compile_fn(fi) -> int {
     set(0, 0, load32(FNTOK() + fi * 4));
+    store32(CURFI(), fi);
     expect(11); expect_ident();
     binit(FNB());
     set(0, 3, 0);
+    let cls = load32(FNCLS() + fi * 4);
+    if (cls >= 0) {
+        // Неявный `this` = локаль 0 (offset -1, распознаётся по имени в primary).
+        add_local(-1, 4, 0); set_local_tp(0, T_INT()); store32(LOCCLS() + 0 * 4, cls);
+    }
     expect(20);
     let idx = 0;
     while (tkind() != 21 && tkind() != 0) {
         let poff = tval(); let plen = tlen();
         expect_ident();
-        add_local(poff, plen, idx);
+        let slot = get(0, 3);
+        add_local(poff, plen, slot); set_local_tp(slot, T_INT());
         idx = idx + 1;
         if (tkind() == 26) { adv(); skip_type(); }
         if (tkind() == 24) { adv(); }
@@ -1368,8 +1670,10 @@ fn compile_program() -> int {
     store32(reserve, 0);
     binit(OUTB()); binit(SCRB()); binit(FNB()); binit(CODEB()); binit(BODYC()); binit(DATAB());
     set(0, 4, 0); set(0, 5, 0); set(0, 6, 0); set(0, 7, 0);
+    set_ncls(0); set_nfcls(0); set_nmeth(0);
     let nt = tokenize();
     set(0, 1, nt);
+    scan_classes();
     let n = scan_signatures();
     let i = 0;
     while (i < n) { compile_fn(i); i = i + 1; }

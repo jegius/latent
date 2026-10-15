@@ -13,6 +13,10 @@ fn scan_signatures() -> int {
                 if ((kk == 2 || (kk >= 10 && kk <= 19)) && (prev == 20 || prev == 24)) { p = p + 1; }
                 prev = kk; j = j + 1;
             }
+            let mc = method_class(i);
+            store32(FNCLS() + cnt * 4, mc);
+            // Метод получает неявный первый параметр `this`.
+            if (mc >= 0) { p = p + 1; }
             store32(FNNP() + cnt * 4, p);
             store32(FNRET() + cnt * 4, fn_ret_tp(total, i));
             cnt = cnt + 1;
@@ -44,15 +48,22 @@ fn skip_type() -> int {
 
 fn compile_fn(fi) -> int {
     set(0, 0, load32(FNTOK() + fi * 4));
+    store32(CURFI(), fi);
     expect(11); expect_ident();
     binit(FNB());
     set(0, 3, 0);
+    let cls = load32(FNCLS() + fi * 4);
+    if (cls >= 0) {
+        // Неявный `this` = локаль 0 (offset -1, распознаётся по имени в primary).
+        add_local(-1, 4, 0); set_local_tp(0, T_INT()); store32(LOCCLS() + 0 * 4, cls);
+    }
     expect(20);
     let idx = 0;
     while (tkind() != 21 && tkind() != 0) {
         let poff = tval(); let plen = tlen();
         expect_ident();
-        add_local(poff, plen, idx);
+        let slot = get(0, 3);
+        add_local(poff, plen, slot); set_local_tp(slot, T_INT());
         idx = idx + 1;
         if (tkind() == 26) { adv(); skip_type(); }
         if (tkind() == 24) { adv(); }

@@ -62,7 +62,9 @@ fn reserve() -> int { let idx = get(0, 3); set(0, 3, idx + 1); set_local_tp(idx,
 fn find_func(off, ln) -> int {
     let i = 0; let nf = get(0, 2);
     while (i < nf) {
-        if (name_eq(off, ln, load32(FNOFF() + i * 4), load32(FNLEN() + i * 4))) { return i; }
+        // Методы (класс-владелец >= 0) не видны как свободные функции.
+        if (load32(FNCLS() + i * 4) < 0
+            && name_eq(off, ln, load32(FNOFF() + i * 4), load32(FNLEN() + i * 4))) { return i; }
         i = i + 1;
     }
     return -1;

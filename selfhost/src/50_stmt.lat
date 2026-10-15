@@ -3,6 +3,7 @@ fn stmts() -> int {
     while (tkind() != 23 && tkind() != 0) {
         let before = get(0, 0);
         set(0, 7, 0);              // тип-стек выравнивается на границе инструкции
+        set(0, 8, -1);             // класс последнего выражения сбрасывается
         stmt();
         if (get(0, 0) == before) { adv(); }
     }
@@ -16,11 +17,49 @@ fn stmt() -> int {
     if (k == 14) { return st_while(); }
     if (k == 16) { return st_for(); }
     if (is_ident_kind(k) && tkind_at(1) == 27) { return st_assign(); }
+    if (k == 94 && tkind_at(1) == 29 && tkind_at(3) == 27) { return st_field_assign(k); }
+    if (is_ident_kind(k) && tkind_at(1) == 29 && tkind_at(3) == 27) { return st_field_assign(k); }
     level_or();
     if (get(0, 5) == 1) { ev(26); }
     expect(25);
     return 0;
 }
+// Присваивание в поле: `this.f = v` или `obj.f = v`. Класс берётся из
+// FNCLS текущей функции (для this) или из LOCCLS локальной переменной.
+fn st_field_assign(k) -> int {
+    let cls = -1;
+    let base_slot = -1;
+    if (k == 94) {
+        adv();                          // this
+        cls = load32(FNCLS() + load32(CURFI()) * 4);
+        base_slot = -1;                 // this = локаль 0
+    } else {
+        let boff = tval(); let blen = tlen(); adv();
+        cls = load32(LOCCLS() + find_local(boff, blen) * 4);
+        base_slot = find_local(boff, blen);
+    }
+    expect(29);                        // .
+    let foff = tval(); let flen = tlen();
+    expect_ident();
+    expect(27);                        // =
+    let voff = reserve();
+    level_or();
+    ev(33); ev_leb(voff);              // сохраняем значение
+    let off = field_off(cls, foff, flen);
+    if (off < 0) { err(); }
+    else {
+        ev(32);
+        if (base_slot >= 0) { ev_leb(base_slot); } else { ev_leb(0); }
+        if (off > 0) { ev(65); ev_sleb(off); ev(106); }
+        ev(32); ev_leb(voff);
+        ev(54); ev(2); ev(0);          // i32.store
+        // Присваивание — выражение: оставляем записанное значение.
+        // (в st)-контексте достаточно; стек инструкций выравнивается вызовом)
+    }
+    expect(25); set(0, 5, 0);
+    return 0;
+}
+
 fn st_assign() -> int {
     let noff = tval(); let nlen = tlen();
     expect_ident(); expect(27);

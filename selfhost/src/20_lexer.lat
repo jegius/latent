@@ -23,16 +23,23 @@ fn kw_code(src, off, n) -> int {
     if (n == 3) {
         if (match_at(src, 4, off, "let", 3)) { return 10; }
         if (match_at(src, 4, off, "for", 3)) { return 16; }
+        if (match_at(src, 4, off, "new", 3)) { return 93; }
     }
     if (n == 4) {
         if (match_at(src, 4, off, "else", 4)) { return 13; }
         if (match_at(src, 4, off, "true", 4)) { return 90; }
+        if (match_at(src, 4, off, "this", 4)) { return 94; }
+        if (match_at(src, 4, off, "case", 4)) { return 97; }
     }
     if (n == 5) {
         if (match_at(src, 4, off, "while", 5)) { return 14; }
         if (match_at(src, 4, off, "false", 5)) { return 91; }
+        if (match_at(src, 4, off, "class", 5)) { return 92; }
+        if (match_at(src, 4, off, "match", 5)) { return 95; }
     }
+    if (n == 4) { if (match_at(src, 4, off, "enum", 4)) { return 96; } }
     if (n == 6) { if (match_at(src, 4, off, "return", 6)) { return 15; } }
+    if (n == 7) { if (match_at(src, 4, off, "default", 7)) { return 98; } }
     return 0;
 }
 

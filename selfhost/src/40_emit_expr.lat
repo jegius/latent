@@ -183,14 +183,47 @@ fn level_primary() -> int {
     if (k == 80) { return level_array(); }
     if (k == 31) { adv(); ev(65); ev_sleb(0); level_unary(); ev(107); set(0, 5, 1); return 0; }
     if (k == 53) { adv(); level_unary(); ev(69); set(0, 5, 1); return 0; }
+    if (k == 94) { adv(); ev(32); ev_leb(0); set(0, 5, 1); tp(T_INT()); set(0, 8, load32(FNCLS() + load32(CURFI()) * 4)); return 0; }
+    if (k == 93) { return level_new(); }
     if (is_ident_kind(k)) {
         let off = tval(); let ln = tlen(); adv();
         if (tkind() == 20) { return emit_call(off, ln); }
         let li = find_local(off, ln);
-        if (li >= 0) { ev(32); ev_leb(li); set(0, 5, 1); tp(local_tp(li)); return 0; }
+        if (li >= 0) { ev(32); ev_leb(li); set(0, 5, 1); tp(local_tp(li)); set(0, 8, load32(LOCCLS() + li * 4)); return 0; }
         err(); return 0;
     }
-    err(); set(0, 5, 1); tp(T_INT()); return 0;
+    err(); set(0, 5, 1); tp(T_INT()); set(0, 8, -1); return 0;
+}
+
+// new Class(args): bump-alloc(CLSZ); вызвать Class_init/_new (this первым).
+fn level_new() -> int {
+    adv();
+    let noff = tval(); let nlen = tlen();
+    expect_ident();
+    let cls = class_idx_by_name(noff, nlen);
+    if (cls < 0) { err(); tp(T_INT()); return 0; }
+    let sz = load32(CLSZ() + cls * 4);
+    let p = reserve();
+    ev(65); ev_sleb(sz); ev(16); ev_leb(ALLOC_FI()); ev(33); ev_leb(p);
+    expect(20);
+    let ctor = find_method_named(cls, "init", 4);
+    if (ctor < 0) { ctor = find_method_named(cls, "new", 3); }
+    if (ctor >= 0) {
+        ev(32); ev_leb(p);                    // this — первый аргумент
+        while (tkind() != 21 && tkind() != 0) {
+            set(0, 7, 0);
+            level_or();
+            if (tkind() == 24) { adv(); }
+        }
+        ev(16); ev_leb(ctor + 1);
+        if (fn_has_result(ctor)) { ev(26); }
+    } else {
+        while (tkind() != 21 && tkind() != 0) { set(0, 7, 0); level_or(); if (tkind() == 24) { adv(); } }
+    }
+    expect(21);
+    ev(32); ev_leb(p);
+    set(0, 5, 1); tp(T_INT()); set(0, 8, cls);
+    return 0;
 }
 
 // Постфиксные операции: индексация a[i] и поле .length.
@@ -221,7 +254,19 @@ fn level_postfix() -> int {
                 if (tkind() == 20) { level_method(a, al); }
                 else {
                     if (is_lit(a, al, "length", 6)) { ev(40); ev(2); ev(0); set(0, 5, 1); set(0, 7, base); tp(T_INT()); }
-                    else { err(); }
+                    else {
+                        let cls = get(0, 8);
+                        if (cls >= 0) {
+                            // Доступ к полю класса: obj + offset → load.
+                            let off = field_off(cls, a, al);
+                            if (off < 0) { err(); }
+                            else {
+                                if (off > 0) { ev(65); ev_sleb(off); ev(106); }
+                                ev(40); ev(2); ev(0);
+                                set(0, 5, 1); set(0, 7, base); tp(T_INT());
+                            }
+                        } else { err(); }
+                    }
                 }
             } else { return 0; }
         }
@@ -231,6 +276,26 @@ fn level_postfix() -> int {
 // Метод-вызов obj.name(args). Объект уже лежит на стеке (из level_postfix).
 // Поддерживаются: push(x), pop(), length().
 fn level_method(off, ln) -> int {
+    // Метод класса: объект уже на стеке → сохранить как this, затем вызвать.
+    let cls = get(0, 8);
+    if (cls >= 0 && (tkind_at(0) == 20)) {
+        let mi = find_method(cls, off, ln);
+        if (mi >= 0) {
+            let tl = reserve(); ev(33); ev_leb(tl);
+            let base = get(0, 7);
+            expect(20);
+            ev(32); ev_leb(tl);              // this первым
+            while (tkind() != 21 && tkind() != 0) {
+                set(0, 7, base);
+                level_or();
+                if (tkind() == 24) { adv(); }
+            }
+            expect(21);
+            ev(16); ev_leb(mi + 1);
+            set(0, 5, 1); set(0, 7, base); tp(load32(FNRET() + mi * 4)); set(0, 8, -1);
+            return 0;
+        }
+    }
     if (is_lit(off, ln, "push", 4)) {
         let al = reserve(); ev(33); ev_leb(al);
         expect(20); level_or(); expect(21);
