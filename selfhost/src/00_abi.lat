@@ -56,6 +56,12 @@ fn NFCLS() -> int { return 3764224; }    // 4K   число полей (счёт
 fn NFNCL() -> int { return 3768320; }    // 4K   число методов (счётчик)
 fn CURFI() -> int { return 3772416; }    // 16   индекс текущей компилируемой функции
 fn LASTCLS() -> int { return 3776512; }   // 16   класс последнего первичного выражения
+// --- таблицы enum-вариантов ---
+fn VNO() -> int { return 3780608; }      // 16K  вариант: оффсет имени
+fn VNL() -> int { return 3796992; }      // 16K  вариант: длина имени
+fn VTAG() -> int { return 3813376; }     // 4K   вариант: тег
+fn VARY() -> int { return 3817472; }     // 4K   вариант: арность
+fn NVAR() -> int { return 3821568; }     // 4K   число вариантов
 
 // Слоты состояния: 0=PC 1=NT 2=NF 3=NL 4=status 5=produces 6=NS(strings) 7=TS
 fn get(st, k) -> int { return load32(ST() + st * 4 + k * 4); }

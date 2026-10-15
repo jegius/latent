@@ -59,8 +59,41 @@ fn emit_call(off, ln) -> int {
     if (is_lit(off, ln, "str", 3)) { return emit_str_conv(); }
     if (is_lit(off, ln, "int", 3)) { return emit_int_conv(); }
     let fi = find_func(off, ln);
-    if (fi < 0) { err(); return 0; }
+    if (fi < 0) {
+        // Конструктор enum-варианта: Tag(args) → [tag i32][fields...].
+        let tag = variant_tag(off, ln);
+        if (tag >= 0) { return emit_variant(tag, variant_arity(off, ln)); }
+        err(); return 0;
+    }
     return emit_call_named(fi + 1, 0);
+}
+
+// Tag(args) → указатель на [tag i32][field0]... 0-арный — сам тег.
+fn emit_variant(tag, ar) -> int {
+    let base = get(0, 7);
+    expect(20);
+    if (ar == 0) {
+        while (tkind() != 21 && tkind() != 0) { set(0, 7, base); level_or(); if (tkind() == 24) { adv(); } }
+        expect(21);
+        ev(65); ev_sleb(tag);
+        set(0, 5, 1); set(0, 7, base); tp(T_INT()); return 0;
+    }
+    let p = reserve();
+    ev(65); ev_sleb(4 + ar * 4); ev(16); ev_leb(ALLOC_FI()); ev(33); ev_leb(p);
+    let i = 0;
+    while (tkind() != 21 && tkind() != 0) {
+        set(0, 7, base);
+        ev(32); ev_leb(p); ev(65); ev_sleb(4 + i * 4); ev(106);
+        level_or();
+        ev(54); ev(2); ev(0);
+        i = i + 1;
+        if (tkind() == 24) { adv(); }
+    }
+    expect(21);
+    ev(32); ev_leb(p); ev(65); ev_sleb(tag); ev(54); ev(2); ev(0);
+    ev(32); ev_leb(p);
+    set(0, 5, 1); set(0, 7, base); tp(T_INT());
+    return 0;
 }
 
 // len(x) -> длина из заголовка [len u32][...] (общее представление строк/массивов).
@@ -185,8 +218,16 @@ fn level_primary() -> int {
     if (k == 53) { adv(); level_unary(); ev(69); set(0, 5, 1); return 0; }
     if (k == 94) { adv(); ev(32); ev_leb(0); set(0, 5, 1); tp(T_INT()); set(0, 8, load32(FNCLS() + load32(CURFI()) * 4)); return 0; }
     if (k == 93) { return level_new(); }
+    if (k == 95) { return level_match(); }
     if (is_ident_kind(k)) {
-        let off = tval(); let ln = tlen(); adv();
+        let off = tval(); let ln = tlen();
+        // 0-арный enum-вариант как значение (без скобок).
+        if (tkind_at(1) != 20 && find_local(off, ln) < 0 && find_func(off, ln) < 0
+            && variant_tag(off, ln) >= 0) {
+            ev(65); ev_sleb(variant_tag(off, ln)); adv();
+            set(0, 5, 1); tp(T_INT()); set(0, 8, -1); return 0;
+        }
+        adv();
         if (tkind() == 20) { return emit_call(off, ln); }
         let li = find_local(off, ln);
         if (li >= 0) { ev(32); ev_leb(li); set(0, 5, 1); tp(local_tp(li)); set(0, 8, load32(LOCCLS() + li * 4)); return 0; }
@@ -194,6 +235,99 @@ fn level_primary() -> int {
     }
     err(); set(0, 5, 1); tp(T_INT()); set(0, 8, -1); return 0;
 }
+
+// match scrut { case pat: expr, ... }: цепочка IF/ELSE, значение на стеке.
+// scrut сохраняется в локаль; каждый паттерн — условие, тело — ветвь THEN.
+fn level_match() -> int {
+    adv();
+    let scrut = reserve();
+    level_or(); ev(33); ev_leb(scrut);
+    expect(22);                        // {
+    let out = reserve();               // результат match
+    emit_match_arms(scrut, out);
+    expect(23);                        // }
+    ev(32); ev_leb(out);
+    set(0, 5, 1); tp(T_INT());
+    return 0;
+}
+fn emit_match_arms(scrut, out) -> int {
+    while (tkind() != 23 && tkind() != 0) {
+        if (tkind() == 24) { adv(); }   // запятая между ветками
+        if (tkind() == 97) { adv(); }   // case
+        set(0, 7, 0);
+        // wildcard `_` или `default`
+        if (tkind() == 98) { adv(); expect(26); level_or(); ev(33); ev_leb(out); return 0; }
+        if (is_ident_kind(tkind()) && ttext_is(tval(), tlen(), "_", 1) && tkind_at(1) == 26) {
+            adv(); expect(26); level_or(); ev(33); ev_leb(out); return 0;
+        }
+        // паттерн
+        let poff = tval(); let plen = tlen();
+        let isvar = is_ident_kind(tkind());
+        if (isvar) {
+            adv();
+            if (tkind() == 20) {
+                // Конструктор: Tag(sub...)
+                emit_ctor_test(poff, plen, scrut);
+                ev(4); ev(64);              // if
+                emit_bind_fields(scrut);
+                expect(26); level_or(); ev(33); ev_leb(out);
+                ev(5);                      // else
+                emit_match_arms(scrut, out);
+                ev(11);                     // end
+                return 0;
+            }
+            if (tkind() == 26) {
+                // Связывание: pat: expr
+                expect(26);
+                ev(32); ev_leb(scrut); ev(33); ev_leb(scrut);
+                level_or(); ev(33); ev_leb(out);
+                return 0;
+            }
+        }
+        // числовой литерал
+        if (tkind() == 1) {
+            let v = tval(); adv(); expect(26);
+            ev(32); ev_leb(scrut); ev(65); ev_sleb(v); ev(70); ev(4); ev(64);
+            level_or(); ev(33); ev_leb(out);
+            ev(5); emit_match_arms(scrut, out); ev(11);
+            return 0;
+        }
+        err(); return 0;
+    }
+    ev(65); ev_sleb(0); ev(33); ev_leb(out);
+    return 0;
+}
+// Условие «scrut это вариант Tag»: возвращает i32-условие на стеке.
+fn emit_ctor_test(off, ln, scrut) -> int {
+    let tag = variant_tag(off, ln);
+    let ar = variant_arity(off, ln);
+    if (ar == 0) {
+        ev(32); ev_leb(scrut); ev(65); ev_sleb(tag); ev(70);
+    } else {
+        ev(32); ev_leb(scrut); ev(40); ev(2); ev(0); ev(65); ev_sleb(tag); ev(70);
+    }
+    return 0;
+}
+// Связывает под-паттерны конструктора из полей scrut (уже проверен THEN).
+fn emit_bind_fields(scrut) -> int {
+    // Имена под-паттернов идут сразу за именем конструктора в скобках.
+    expect(20);
+    let i = 0;
+    while (tkind() != 21 && tkind() != 0) {
+        if (is_ident_kind(tkind())) {
+            let noff = tval(); let nlen = tlen(); adv();
+            let slot = get(0, 3);
+            add_local(noff, nlen, slot); set_local_tp(slot, T_INT()); store32(LOCCLS() + slot * 4, -1);
+            ev(32); ev_leb(scrut); ev(65); ev_sleb(4 + i * 4); ev(106); ev(40); ev(2); ev(0);
+            ev(33); ev_leb(slot);
+        } else { adv(); }
+        i = i + 1;
+        if (tkind() == 24) { adv(); }
+    }
+    expect(21);
+    return 0;
+}
+fn ttext_is(off, ln, s, sn) -> bool { return is_lit(off, ln, s, sn); }
 
 // new Class(args): bump-alloc(CLSZ); вызвать Class_init/_new (this первым).
 fn level_new() -> int {

@@ -60,6 +60,12 @@ fn NFCLS() -> int { return 3764224; }    // 4K   число полей (счёт
 fn NFNCL() -> int { return 3768320; }    // 4K   число методов (счётчик)
 fn CURFI() -> int { return 3772416; }    // 16   индекс текущей компилируемой функции
 fn LASTCLS() -> int { return 3776512; }   // 16   класс последнего первичного выражения
+// --- таблицы enum-вариантов ---
+fn VNO() -> int { return 3780608; }      // 16K  вариант: оффсет имени
+fn VNL() -> int { return 3796992; }      // 16K  вариант: длина имени
+fn VTAG() -> int { return 3813376; }     // 4K   вариант: тег
+fn VARY() -> int { return 3817472; }     // 4K   вариант: арность
+fn NVAR() -> int { return 3821568; }     // 4K   число вариантов
 
 // Слоты состояния: 0=PC 1=NT 2=NF 3=NL 4=status 5=produces 6=NS(strings) 7=TS
 fn get(st, k) -> int { return load32(ST() + st * 4 + k * 4); }
@@ -362,6 +368,69 @@ fn str_addr(off, ln) -> int {
 // (токен `fn`, класс-владелец). Layout — как в oracle: поля по 4 байта
 // подряд (int/bool/string/указатель); float вне подмножества.
 
+fn get_nvar() -> int { return load32(NVAR()); }
+fn set_nvar(v) -> int { store32(NVAR(), v); return v; }
+
+// Регистрация enum-вариантов: `enum Name { V, W(T), ... }`. Тег — порядковый
+// номер варианта; арность — число полей в скобках. Индексация глобальная.
+fn scan_enums() -> int {
+    // Индексы 0..3 зарезервированы под встроенные Ok/Err/Some/None
+    // (variant_tag/arity отвечают за них константами); пользовательские
+    // варианты начинаются с 4.
+    let i = 0; let total = get(0, 1); let nvar = 4;
+    while (i < total) {
+        if (load32(KIND() + i * 4) == 96) {
+            let j = i + 3;                    // после `enum` IDENT `{`
+            while (j < total && load32(KIND() + j * 4) != 23 && load32(KIND() + j * 4) != 0) {
+                if (is_ident_kind(load32(KIND() + j * 4))) {
+                    store32(VNO() + nvar * 4, load32(TVAL() + j * 4));
+                    store32(VNL() + nvar * 4, load32(TLEN() + j * 4));
+                    let ar = 0;
+                    j = j + 1;
+                    if (load32(KIND() + j * 4) == 20) {
+                        let d = 1; j = j + 1;
+                        while (d > 0 && j < total) {
+                            let k = load32(KIND() + j * 4);
+                            if (k == 20) { d = d + 1; }
+                            else { if (k == 21) { d = d - 1; if (d == 0) { j = j + 1; } } }
+                            if (d > 0) { ar = ar + 1; j = j + 1; }
+                        }
+                    }
+                    store32(VARY() + nvar * 4, ar);
+                    nvar = nvar + 1;
+                } else { j = j + 1; }
+                if (load32(KIND() + j * 4) == 24) { j = j + 1; }
+            }
+            i = j + 1;
+        } else { i = i + 1; }
+    }
+    set_nvar(nvar);
+    return nvar;
+}
+// Тег варианта по имени (-1 если нет). Первые 4 записи — Ok/Err/Some/None.
+fn variant_tag(off, ln) -> int {
+    if (is_lit(off, ln, "Ok", 2)) { return 0; }
+    if (is_lit(off, ln, "Err", 3)) { return 1; }
+    if (is_lit(off, ln, "Some", 4)) { return 2; }
+    if (is_lit(off, ln, "None", 4)) { return 3; }
+    let i = 4; let n = get_nvar();
+    while (i < n) {
+        if (name_eq(off, ln, load32(VNO() + i * 4), load32(VNL() + i * 4))) { return i; }
+        i = i + 1;
+    }
+    return -1;
+}
+fn variant_arity(off, ln) -> int {
+    if (is_lit(off, ln, "Ok", 2) || is_lit(off, ln, "Err", 3) || is_lit(off, ln, "Some", 4)) { return 1; }
+    if (is_lit(off, ln, "None", 4)) { return 0; }
+    let i = 4; let n = get_nvar();
+    while (i < n) {
+        if (name_eq(off, ln, load32(VNO() + i * 4), load32(VNL() + i * 4))) { return load32(VARY() + i * 4); }
+        i = i + 1;
+    }
+    return -1;
+}
+
 fn get_ncls() -> int { return load32(NCLS()); }
 fn set_ncls(v) -> int { store32(NCLS(), v); return v; }
 fn get_nfcls() -> int { return load32(NFCLS()); }
@@ -570,8 +639,41 @@ fn emit_call(off, ln) -> int {
     if (is_lit(off, ln, "str", 3)) { return emit_str_conv(); }
     if (is_lit(off, ln, "int", 3)) { return emit_int_conv(); }
     let fi = find_func(off, ln);
-    if (fi < 0) { err(); return 0; }
+    if (fi < 0) {
+        // Конструктор enum-варианта: Tag(args) → [tag i32][fields...].
+        let tag = variant_tag(off, ln);
+        if (tag >= 0) { return emit_variant(tag, variant_arity(off, ln)); }
+        err(); return 0;
+    }
     return emit_call_named(fi + 1, 0);
+}
+
+// Tag(args) → указатель на [tag i32][field0]... 0-арный — сам тег.
+fn emit_variant(tag, ar) -> int {
+    let base = get(0, 7);
+    expect(20);
+    if (ar == 0) {
+        while (tkind() != 21 && tkind() != 0) { set(0, 7, base); level_or(); if (tkind() == 24) { adv(); } }
+        expect(21);
+        ev(65); ev_sleb(tag);
+        set(0, 5, 1); set(0, 7, base); tp(T_INT()); return 0;
+    }
+    let p = reserve();
+    ev(65); ev_sleb(4 + ar * 4); ev(16); ev_leb(ALLOC_FI()); ev(33); ev_leb(p);
+    let i = 0;
+    while (tkind() != 21 && tkind() != 0) {
+        set(0, 7, base);
+        ev(32); ev_leb(p); ev(65); ev_sleb(4 + i * 4); ev(106);
+        level_or();
+        ev(54); ev(2); ev(0);
+        i = i + 1;
+        if (tkind() == 24) { adv(); }
+    }
+    expect(21);
+    ev(32); ev_leb(p); ev(65); ev_sleb(tag); ev(54); ev(2); ev(0);
+    ev(32); ev_leb(p);
+    set(0, 5, 1); set(0, 7, base); tp(T_INT());
+    return 0;
 }
 
 // len(x) -> длина из заголовка [len u32][...] (общее представление строк/массивов).
@@ -696,8 +798,16 @@ fn level_primary() -> int {
     if (k == 53) { adv(); level_unary(); ev(69); set(0, 5, 1); return 0; }
     if (k == 94) { adv(); ev(32); ev_leb(0); set(0, 5, 1); tp(T_INT()); set(0, 8, load32(FNCLS() + load32(CURFI()) * 4)); return 0; }
     if (k == 93) { return level_new(); }
+    if (k == 95) { return level_match(); }
     if (is_ident_kind(k)) {
-        let off = tval(); let ln = tlen(); adv();
+        let off = tval(); let ln = tlen();
+        // 0-арный enum-вариант как значение (без скобок).
+        if (tkind_at(1) != 20 && find_local(off, ln) < 0 && find_func(off, ln) < 0
+            && variant_tag(off, ln) >= 0) {
+            ev(65); ev_sleb(variant_tag(off, ln)); adv();
+            set(0, 5, 1); tp(T_INT()); set(0, 8, -1); return 0;
+        }
+        adv();
         if (tkind() == 20) { return emit_call(off, ln); }
         let li = find_local(off, ln);
         if (li >= 0) { ev(32); ev_leb(li); set(0, 5, 1); tp(local_tp(li)); set(0, 8, load32(LOCCLS() + li * 4)); return 0; }
@@ -705,6 +815,99 @@ fn level_primary() -> int {
     }
     err(); set(0, 5, 1); tp(T_INT()); set(0, 8, -1); return 0;
 }
+
+// match scrut { case pat: expr, ... }: цепочка IF/ELSE, значение на стеке.
+// scrut сохраняется в локаль; каждый паттерн — условие, тело — ветвь THEN.
+fn level_match() -> int {
+    adv();
+    let scrut = reserve();
+    level_or(); ev(33); ev_leb(scrut);
+    expect(22);                        // {
+    let out = reserve();               // результат match
+    emit_match_arms(scrut, out);
+    expect(23);                        // }
+    ev(32); ev_leb(out);
+    set(0, 5, 1); tp(T_INT());
+    return 0;
+}
+fn emit_match_arms(scrut, out) -> int {
+    while (tkind() != 23 && tkind() != 0) {
+        if (tkind() == 24) { adv(); }   // запятая между ветками
+        if (tkind() == 97) { adv(); }   // case
+        set(0, 7, 0);
+        // wildcard `_` или `default`
+        if (tkind() == 98) { adv(); expect(26); level_or(); ev(33); ev_leb(out); return 0; }
+        if (is_ident_kind(tkind()) && ttext_is(tval(), tlen(), "_", 1) && tkind_at(1) == 26) {
+            adv(); expect(26); level_or(); ev(33); ev_leb(out); return 0;
+        }
+        // паттерн
+        let poff = tval(); let plen = tlen();
+        let isvar = is_ident_kind(tkind());
+        if (isvar) {
+            adv();
+            if (tkind() == 20) {
+                // Конструктор: Tag(sub...)
+                emit_ctor_test(poff, plen, scrut);
+                ev(4); ev(64);              // if
+                emit_bind_fields(scrut);
+                expect(26); level_or(); ev(33); ev_leb(out);
+                ev(5);                      // else
+                emit_match_arms(scrut, out);
+                ev(11);                     // end
+                return 0;
+            }
+            if (tkind() == 26) {
+                // Связывание: pat: expr
+                expect(26);
+                ev(32); ev_leb(scrut); ev(33); ev_leb(scrut);
+                level_or(); ev(33); ev_leb(out);
+                return 0;
+            }
+        }
+        // числовой литерал
+        if (tkind() == 1) {
+            let v = tval(); adv(); expect(26);
+            ev(32); ev_leb(scrut); ev(65); ev_sleb(v); ev(70); ev(4); ev(64);
+            level_or(); ev(33); ev_leb(out);
+            ev(5); emit_match_arms(scrut, out); ev(11);
+            return 0;
+        }
+        err(); return 0;
+    }
+    ev(65); ev_sleb(0); ev(33); ev_leb(out);
+    return 0;
+}
+// Условие «scrut это вариант Tag»: возвращает i32-условие на стеке.
+fn emit_ctor_test(off, ln, scrut) -> int {
+    let tag = variant_tag(off, ln);
+    let ar = variant_arity(off, ln);
+    if (ar == 0) {
+        ev(32); ev_leb(scrut); ev(65); ev_sleb(tag); ev(70);
+    } else {
+        ev(32); ev_leb(scrut); ev(40); ev(2); ev(0); ev(65); ev_sleb(tag); ev(70);
+    }
+    return 0;
+}
+// Связывает под-паттерны конструктора из полей scrut (уже проверен THEN).
+fn emit_bind_fields(scrut) -> int {
+    // Имена под-паттернов идут сразу за именем конструктора в скобках.
+    expect(20);
+    let i = 0;
+    while (tkind() != 21 && tkind() != 0) {
+        if (is_ident_kind(tkind())) {
+            let noff = tval(); let nlen = tlen(); adv();
+            let slot = get(0, 3);
+            add_local(noff, nlen, slot); set_local_tp(slot, T_INT()); store32(LOCCLS() + slot * 4, -1);
+            ev(32); ev_leb(scrut); ev(65); ev_sleb(4 + i * 4); ev(106); ev(40); ev(2); ev(0);
+            ev(33); ev_leb(slot);
+        } else { adv(); }
+        i = i + 1;
+        if (tkind() == 24) { adv(); }
+    }
+    expect(21);
+    return 0;
+}
+fn ttext_is(off, ln, s, sn) -> bool { return is_lit(off, ln, s, sn); }
 
 // new Class(args): bump-alloc(CLSZ); вызвать Class_init/_new (this первым).
 fn level_new() -> int {
@@ -1670,10 +1873,11 @@ fn compile_program() -> int {
     store32(reserve, 0);
     binit(OUTB()); binit(SCRB()); binit(FNB()); binit(CODEB()); binit(BODYC()); binit(DATAB());
     set(0, 4, 0); set(0, 5, 0); set(0, 6, 0); set(0, 7, 0);
-    set_ncls(0); set_nfcls(0); set_nmeth(0);
+    set_ncls(0); set_nfcls(0); set_nmeth(0); set_nvar(4);
     let nt = tokenize();
     set(0, 1, nt);
     scan_classes();
+    scan_enums();
     let n = scan_signatures();
     let i = 0;
     while (i < n) { compile_fn(i); i = i + 1; }
