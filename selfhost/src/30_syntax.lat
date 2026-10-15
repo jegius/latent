@@ -52,6 +52,9 @@ fn add_local(off, ln, idx) -> int {
     set(0, 3, nl + 1);
     return idx;
 }
+// Свежий безымянный слот (временные для индексации/массивов/for-in).
+// Тип всегда i32 — финальное тело объявляет nlocals i32-локалей.
+fn reserve() -> int { let idx = get(0, 3); set(0, 3, idx + 1); return idx; }
 fn find_func(off, ln) -> int {
     let i = 0; let nf = get(0, 2);
     while (i < nf) {
