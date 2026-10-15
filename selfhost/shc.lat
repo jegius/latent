@@ -3,7 +3,10 @@
 
 // ===== часть: 00_abi.lat =====
 // --- фиксированные адреса областей ---
-fn INPUT() -> int { return 32768; }      // 32K
+// Входной исходник вынесен в отдельную высокую область (128K): он растёт
+// вместе с компилятором, и раньше при исходнике >32K хвост залезал на OUTB,
+// который binit() занулял при старте — это молча портило последние токены.
+fn INPUT() -> int { return 3145728; }    // 128K (выше всех рабочих областей)
 fn OUTB() -> int { return 65536; }       // 192K готовый wasm
 fn SCRB() -> int { return 262144; }      // 192K скретч секции
 fn FNB() -> int { return 458752; }       // 192K тело текущей функции
@@ -26,10 +29,27 @@ fn DATAB() -> int { return 2326528; }    // 256K
 fn STRO() -> int { return 2588672; }     // 128K
 fn STRL() -> int { return 2719744; }     // 128K
 fn STRA() -> int { return 2850816; }     // 128K
+fn LOTP() -> int { return 2981888; }     // 32K  тип локальной (0=int 1=float 2=str)
+fn TSTK() -> int { return 3014656; }     // 32K  стек типов выражений
+fn FNRET() -> int { return 3047424; }    // 32K  тип результата функции
+fn FPT() -> int { return 3080192; }      // 32K  типы параметров функций (stride 8)
+fn FLOATB() -> int { return 3112960; }   // 32K  f64-константы (8 байт/слот)
 
-// Слоты состояния: 0=PC 1=NT 2=NF 3=NL 4=status 5=produces 6=NS(strings)
+// Слоты состояния: 0=PC 1=NT 2=NF 3=NL 4=status 5=produces 6=NS(strings) 7=TS
 fn get(st, k) -> int { return load32(ST() + st * 4 + k * 4); }
 fn set(st, k, v) -> int { store32(ST() + st * 4 + k * 4, v); return v; }
+
+// Типы значений выражений (для выбора опкодов и строковых операций).
+fn T_INT() -> int { return 0; }
+fn T_FLT() -> int { return 1; }
+fn T_STR() -> int { return 2; }
+
+// Стек типов: эмиссия выражений идёт снизу вверх, поэтому тип операнда
+// доступен сразу после его эмиссии — это зеркало стека значений WASM.
+fn tp(t) -> int { let p = get(0, 7); store32(TSTK() + p * 4, t); set(0, 7, p + 1); return t; }
+// Толерантный pop: пустой стек типов считаем int (не критично для опкодов).
+fn tpop() -> int { let p = get(0, 7); if (p <= 0) { return T_INT(); } set(0, 7, p - 1); return load32(TSTK() + (p - 1) * 4); }
+fn ttop() -> int { let p = get(0, 7); if (p <= 0) { return T_INT(); } return load32(TSTK() + (p - 1) * 4); }
 
 // ===== часть: 10_buffer.lat =====
 // --- байтовые буферы [len u32][bytes] ---
@@ -251,9 +271,13 @@ fn add_local(off, ln, idx) -> int {
     set(0, 3, nl + 1);
     return idx;
 }
+// Тип локальной по её слоту (все слоты объявляются i32; типы — для выбора
+// строковых/числовых опкодов, как int/str в статически типизированном oracle).
+fn local_tp(idx) -> int { return load32(LOTP() + idx * 4); }
+fn set_local_tp(idx, t) -> int { store32(LOTP() + idx * 4, t); return t; }
 // Свежий безымянный слот (временные для индексации/массивов/for-in).
 // Тип всегда i32 — финальное тело объявляет nlocals i32-локалей.
-fn reserve() -> int { let idx = get(0, 3); set(0, 3, idx + 1); return idx; }
+fn reserve() -> int { let idx = get(0, 3); set(0, 3, idx + 1); set_local_tp(idx, T_INT()); return idx; }
 fn find_func(off, ln) -> int {
     let i = 0; let nf = get(0, 2);
     while (i < nf) {
@@ -305,22 +329,34 @@ fn ev_sleb(v) -> int { return bsleb(FNB(), v); }
 fn nf() -> int { return get(0, 2); }
 fn ALLOC_FI() -> int { return get(0, 2) + 1; }
 fn MEM_FI() -> int { return get(0, 2) + 2; }
+fn SCAT_FI() -> int { return get(0, 2) + 3; }   // str_concat(a,b)->ptr
+fn SEQ_FI() -> int { return get(0, 2) + 4; }    // str_eq(a,b)->i32
+fn SCHR_FI() -> int { return get(0, 2) + 5; }   // str_char_at(ptr,idx)->i32
+fn I32S_FI() -> int { return get(0, 2) + 6; }   // i32_to_str(n)->ptr
+fn S2I_FI() -> int { return get(0, 2) + 7; }    // str_to_i32(ptr)->i32
+fn NHELP() -> int { return 7; }                 // alloc+memcopy+3 str+2 conv
 
 fn emit_bi1(fi, opcode, align) -> int {
+    let base = get(0, 7);
     expect(20); level_or(); expect(21);
     if (opcode == 0) { ev(16); ev_leb(fi); } else { ev(opcode); ev(align); ev(0); }
     set(0, 5, 1);
+    set(0, 7, base); tp(T_INT());
     return 0;
 }
 fn emit_bi2(fi, opcode, align, produces) -> int {
+    let base = get(0, 7);
     expect(20); level_or();
     if (tkind() == 24) { adv(); }
     level_or(); expect(21);
     if (opcode == 0) { ev(16); ev_leb(fi); } else { ev(opcode); ev(align); ev(0); }
     set(0, 5, produces);
+    set(0, 7, base);
+    if (produces == 1) { tp(T_INT()); }
     return 0;
 }
 fn emit_memcopy() -> int {
+    let base = get(0, 7);
     expect(20); level_or();
     if (tkind() == 24) { adv(); }
     level_or();
@@ -328,6 +364,7 @@ fn emit_memcopy() -> int {
     level_or(); expect(21);
     ev(16); ev_leb(MEM_FI());
     set(0, 5, 1);
+    set(0, 7, base); tp(T_INT());
     return 0;
 }
 
@@ -339,11 +376,105 @@ fn emit_call(off, ln) -> int {
     if (is_lit(off, ln, "load32", 6)) { return emit_bi1(0, 40, 2); }
     if (is_lit(off, ln, "store8", 6)) { return emit_bi2(0, 58, 0, 0); }
     if (is_lit(off, ln, "store32", 7)) { return emit_bi2(0, 54, 2, 0); }
+    if (is_lit(off, ln, "len", 3)) { return emit_len(); }
+    if (is_lit(off, ln, "push", 4)) { return emit_push_call(); }
+    if (is_lit(off, ln, "assert", 6)) { return emit_assert(); }
+    if (is_lit(off, ln, "assert_eq", 9)) { return emit_assert_eq(); }
+    if (is_lit(off, ln, "str", 3)) { return emit_str_conv(); }
+    if (is_lit(off, ln, "int", 3)) { return emit_int_conv(); }
     let fi = find_func(off, ln);
     if (fi < 0) { err(); return 0; }
     return emit_call_named(fi + 1, 0);
 }
+
+// len(x) -> длина из заголовка [len u32][...] (общее представление строк/массивов).
+fn emit_len() -> int {
+    let base = get(0, 7);
+    expect(20); level_or(); expect(21);
+    ev(40); ev(2); ev(0);
+    set(0, 5, 1);
+    set(0, 7, base); tp(T_INT());
+    return 0;
+}
+
+// assert(cond): if !cond { unreachable }.
+fn emit_assert() -> int {
+    let base = get(0, 7);
+    expect(20); level_or(); expect(21);
+    ev(69); ev(4); ev(64); ev(0); ev(11);
+    set(0, 5, 0);
+    set(0, 7, base);
+    return 0;
+}
+
+// assert_eq(a, b): if a != b { unreachable } (i32-равенство, как в oracle).
+fn emit_assert_eq() -> int {
+    let base = get(0, 7);
+    expect(20); level_or();
+    if (tkind() == 24) { adv(); }
+    level_or(); expect(21);
+    ev(70); ev(69); ev(4); ev(64); ev(0); ev(11);
+    set(0, 5, 0);
+    set(0, 7, base);
+    return 0;
+}
+
+// str(x): строка остаётся, число конвертируется в строку (i32_to_str).
+fn emit_str_conv() -> int {
+    let base = get(0, 7);
+    expect(20);
+    if (tkind() == 21) { adv(); ev(65); ev_sleb(0); set(0, 5, 1); set(0, 7, base); tp(T_STR()); return 0; }
+    level_or();
+    let xt = load32(TSTK() + base * 4);
+    expect(21);
+    if (xt != T_STR()) { ev(16); ev_leb(I32S_FI()); }
+    set(0, 5, 1); set(0, 7, base); tp(T_STR());
+    return 0;
+}
+// int(x): строку парсим (str_to_i32), число как есть (f64-усечение не поддержано).
+fn emit_int_conv() -> int {
+    let base = get(0, 7);
+    expect(20);
+    if (tkind() == 21) { adv(); ev(65); ev_sleb(0); set(0, 5, 1); set(0, 7, base); tp(T_INT()); return 0; }
+    level_or();
+    let xt = load32(TSTK() + base * 4);
+    expect(21);
+    if (xt == T_STR()) { ev(16); ev_leb(S2I_FI()); }
+    set(0, 5, 1); set(0, 7, base); tp(T_INT());
+    return 0;
+}
+
+// push(arr, x): arr[len]=x; arr.len=len+1; результат — arr.
+// Стек после разбора: [arr, x].
+fn emit_push_call() -> int {
+    let base = get(0, 7);
+    expect(20); level_or();
+    if (tkind() == 24) { adv(); }
+    level_or(); expect(21);
+    let xl = reserve(); ev(33); ev_leb(xl);
+    let al = reserve(); ev(33); ev_leb(al);
+    emit_push_seq(al, xl);
+    set(0, 5, 1);
+    set(0, 7, base); tp(T_INT());
+    return 0;
+}
+
+// Общая последовательность push для уже сохранённых в локалях arr/x.
+fn emit_push_seq(al, xl) -> int {
+    ev(32); ev_leb(al); ev(32); ev_leb(al); ev(40); ev(2); ev(0); ev(65); ev_sleb(4); ev(108); ev(106); ev(65); ev_sleb(4); ev(106); ev(32); ev_leb(xl); ev(54); ev(2); ev(0);
+    ev(32); ev_leb(al); ev(32); ev_leb(al); ev(40); ev(2); ev(0); ev(65); ev_sleb(1); ev(106); ev(54); ev(2); ev(0);
+    ev(32); ev_leb(al);
+    return 0;
+}
+
+// Общая последовательность pop для arr в локали: len--; результат arr[len].
+fn emit_pop_seq(al) -> int {
+    ev(32); ev_leb(al); ev(32); ev_leb(al); ev(40); ev(2); ev(0); ev(65); ev_sleb(1); ev(107); ev(54); ev(2); ev(0);
+    ev(32); ev_leb(al); ev(32); ev_leb(al); ev(40); ev(2); ev(0); ev(65); ev_sleb(4); ev(108); ev(106); ev(65); ev_sleb(4); ev(106); ev(40); ev(2); ev(0);
+    return 0;
+}
 fn emit_call_named(fidx, is_print) -> int {
+    let base = get(0, 7);
     expect(20);
     let argc = 0;
     while (tkind() != 21 && tkind() != 0) {
@@ -352,19 +483,25 @@ fn emit_call_named(fidx, is_print) -> int {
     }
     expect(21);
     ev(16); ev_leb(fidx);
-    if (is_print == 1) { set(0, 5, 0); } else { set(0, 5, 1); }
+    set(0, 7, base);
+    if (is_print == 1) { set(0, 5, 0); }
+    else {
+        set(0, 5, 1);
+        // fidx = find_func(...)+1, функция index = fidx-1.
+        tp(load32(FNRET() + (fidx - 1) * 4));
+    }
     return 0;
 }
 
 fn level_primary() -> int {
     let k = tkind();
-    if (k == 1) { ev(65); ev_sleb(tval()); adv(); set(0, 5, 1); return 0; }
-    if (k == 90) { ev(65); ev_sleb(1); adv(); set(0, 5, 1); return 0; }
-    if (k == 91) { ev(65); ev_sleb(0); adv(); set(0, 5, 1); return 0; }
+    if (k == 1) { ev(65); ev_sleb(tval()); adv(); set(0, 5, 1); tp(T_INT()); return 0; }
+    if (k == 90) { ev(65); ev_sleb(1); adv(); set(0, 5, 1); tp(T_INT()); return 0; }
+    if (k == 91) { ev(65); ev_sleb(0); adv(); set(0, 5, 1); tp(T_INT()); return 0; }
     if (k == 3) {
         let q = tval(); let ql = tlen();
         let addr = str_addr(q + 1, ql - 2);
-        ev(65); ev_sleb(addr); adv(); set(0, 5, 1); return 0;
+        ev(65); ev_sleb(addr); adv(); set(0, 5, 1); tp(T_STR()); return 0;
     }
     if (k == 20) { adv(); level_or(); expect(21); return 0; }
     if (k == 80) { return level_array(); }
@@ -374,36 +511,81 @@ fn level_primary() -> int {
         let off = tval(); let ln = tlen(); adv();
         if (tkind() == 20) { return emit_call(off, ln); }
         let li = find_local(off, ln);
-        if (li >= 0) { ev(32); ev_leb(li); set(0, 5, 1); return 0; }
+        if (li >= 0) { ev(32); ev_leb(li); set(0, 5, 1); tp(local_tp(li)); return 0; }
         err(); return 0;
     }
-    err(); set(0, 5, 1); return 0;
+    err(); set(0, 5, 1); tp(T_INT()); return 0;
 }
 
 // Постфиксные операции: индексация a[i] и поле .length.
 fn level_postfix() -> int {
+    let base = get(0, 7);
     level_primary();
     while (true) {
         let k = tkind();
         if (k == 80) {
+            let ot = load32(TSTK() + base * 4);
             adv(); level_or(); expect(81);
-            ev(65); ev_sleb(4); ev(108);   // idx*4
-            ev(106);                        // obj + idx*4
-            ev(65); ev_sleb(4); ev(106);    // + 4 (после заголовка длины)
-            ev(40); ev(2); ev(0);           // i32.load
+            if (ot == T_STR()) {
+                // Индексация строки → байт-символ (str_char_at), не элемент массива.
+                ev(16); ev_leb(SCHR_FI());
+            } else {
+                ev(65); ev_sleb(4); ev(108);   // idx*4
+                ev(106);                        // obj + idx*4
+                ev(65); ev_sleb(4); ev(106);    // + 4 (после заголовка длины)
+                ev(40); ev(2); ev(0);           // i32.load
+            }
             set(0, 5, 1);
+            set(0, 7, base); tp(T_INT());
         } else {
             if (k == 29) {
                 adv();
                 let a = tval(); let al = tlen();
                 expect_ident();
-                if (is_lit(a, al, "length", 6)) { ev(40); ev(2); ev(0); set(0, 5, 1); }
-                else { err(); }
+                if (tkind() == 20) { level_method(a, al); }
+                else {
+                    if (is_lit(a, al, "length", 6)) { ev(40); ev(2); ev(0); set(0, 5, 1); set(0, 7, base); tp(T_INT()); }
+                    else { err(); }
+                }
             } else { return 0; }
         }
     }
     return 0;
 }
+// Метод-вызов obj.name(args). Объект уже лежит на стеке (из level_postfix).
+// Поддерживаются: push(x), pop(), length().
+fn level_method(off, ln) -> int {
+    if (is_lit(off, ln, "push", 4)) {
+        let al = reserve(); ev(33); ev_leb(al);
+        expect(20); level_or(); expect(21);
+        let xl = reserve(); ev(33); ev_leb(xl);
+        emit_push_seq(al, xl);
+        set(0, 5, 1); return 0;
+    }
+    if (is_lit(off, ln, "pop", 3)) {
+        let al = reserve(); ev(33); ev_leb(al);
+        expect(20); expect(21);
+        emit_pop_seq(al);
+        set(0, 5, 1); return 0;
+    }
+    if (is_lit(off, ln, "length", 6)) {
+        expect(20); expect(21);
+        ev(40); ev(2); ev(0);
+        set(0, 5, 1); return 0;
+    }
+    if (is_lit(off, ln, "to_str", 6) || is_lit(off, ln, "toString", 8)) {
+        expect(20); expect(21);
+        ev(16); ev_leb(I32S_FI());
+        set(0, 5, 1); return 0;
+    }
+    if (is_lit(off, ln, "to_int", 6) || is_lit(off, ln, "toInt", 5)) {
+        expect(20); expect(21);
+        ev(16); ev_leb(S2I_FI());
+        set(0, 5, 1); return 0;
+    }
+    err(); return 0;
+}
+
 fn level_unary() -> int { return level_postfix(); }
 
 // Число элементов литерала массива: текущий токен — '['. Сканируем до
@@ -432,6 +614,7 @@ fn count_elems() -> int {
 
 // Литерал массива [e0, e1, ...] -> [len u32][e0][e1]... в линейной памяти.
 fn level_array() -> int {
+    let base = get(0, 7);
     adv();
     let cnt = count_elems();
     let size = 4 + cnt * 4;
@@ -441,7 +624,9 @@ fn level_array() -> int {
     ev(33); ev_leb(t);
     ev(32); ev_leb(t); ev(65); ev_sleb(cnt); ev(54); ev(2); ev(0);
     let i = 0;
+    set(0, 7, base + 1);
     while (tkind() != 81 && tkind() != 0) {
+        set(0, 7, base + 1);
         ev(32); ev_leb(t); ev(65); ev_sleb(4 + i * 4); ev(106);
         level_or();
         ev(54); ev(2); ev(0);
@@ -451,6 +636,7 @@ fn level_array() -> int {
     expect(81);
     ev(32); ev_leb(t);
     set(0, 5, 1);
+    set(0, 7, base); tp(T_INT());
     return 0;
 }
 
@@ -458,15 +644,18 @@ fn parse_assign() -> int {
     let noff = tval(); let nlen = tlen();
     adv(); adv();
     level_or();
+    let vt = tpop();
     let li = find_local(noff, nlen);
-    if (li < 0) { err(); } else { ev(33); ev_leb(li); ev(32); ev_leb(li); }
+    if (li < 0) { err(); } else { ev(33); ev_leb(li); ev(32); ev_leb(li); set_local_tp(li, vt); }
     set(0, 5, 1);
+    tp(vt);
     return 0;
 }
 
 fn level_or() -> int {
     if (is_ident_kind(tkind()) && tkind_at(1) == 27) { return parse_assign(); }
     if (is_index_assign()) { return parse_index_assign(); }
+    let base = get(0, 7);
     level_and();
     while (tkind() == 47) {
         adv();
@@ -474,6 +663,7 @@ fn level_or() -> int {
         level_and();
         ev(69); ev(69);
         ev(11);
+        set(0, 7, base); tp(T_INT());
     }
     return 0;
 }
@@ -531,11 +721,13 @@ fn parse_index_assign() -> int {
             ev(54); ev(2); ev(0);
             ev(32); ev_leb(val);
             set(0, 5, 1);
+            tp(T_INT());
         }
     }
     return 0;
 }
 fn level_and() -> int {
+    let base = get(0, 7);
     level_eq();
     while (tkind() == 46) {
         adv();
@@ -544,54 +736,96 @@ fn level_and() -> int {
         ev(69); ev(69);
         ev(5); ev(65); ev_sleb(0);
         ev(11);
+        set(0, 7, base); tp(T_INT());
     }
     return 0;
 }
+// Каждый уровень фиксирует base стека типов до левого операнда; типы операндов
+// лежат по base и base+1, результат — по base. Устойчиво к несбалансировке.
 fn level_eq() -> int {
+    let base = get(0, 7);
     level_cmp();
     while (tkind() == 40 || tkind() == 41) {
-        let k = tkind(); adv(); level_cmp();
-        if (k == 40) { ev(70); } else { ev(71); }
+        let k = tkind(); adv();
+        let lt = load32(TSTK() + base * 4);
+        level_cmp();
+        let rt = load32(TSTK() + (base + 1) * 4);
+        if (lt == T_STR() || rt == T_STR()) {
+            // Сравнение строк по содержимому (str_eq), как в oracle.
+            ev(16); ev_leb(SEQ_FI());
+            if (k == 41) { ev(69); }
+        } else {
+            if (k == 40) { ev(70); } else { ev(71); }
+        }
+        set(0, 7, base); tp(T_INT());
     }
     return 0;
 }
 fn level_cmp() -> int {
+    let base = get(0, 7);
     level_bit();
     while (tkind() == 42 || tkind() == 43 || tkind() == 44 || tkind() == 45) {
-        let k = tkind(); adv(); level_bit();
+        let k = tkind(); adv();
+        level_bit();
         if (k == 42) { ev(72); } else { if (k == 43) { ev(74); } else { if (k == 44) { ev(76); } else { ev(78); } } }
+        set(0, 7, base); tp(T_INT());
     }
     return 0;
 }
 fn level_bit() -> int {
+    let base = get(0, 7);
     level_shift();
     while (tkind() == 48 || tkind() == 49 || tkind() == 50) {
-        let k = tkind(); adv(); level_shift();
+        let k = tkind(); adv();
+        level_shift();
         if (k == 48) { ev(113); } else { if (k == 49) { ev(114); } else { ev(115); } }
+        set(0, 7, base); tp(T_INT());
     }
     return 0;
 }
 fn level_shift() -> int {
+    let base = get(0, 7);
     level_add();
     while (tkind() == 51 || tkind() == 52) {
-        let k = tkind(); adv(); level_add();
+        let k = tkind(); adv();
+        level_add();
         if (k == 51) { ev(116); } else { ev(117); }
+        set(0, 7, base); tp(T_INT());
     }
     return 0;
 }
 fn level_add() -> int {
+    let base = get(0, 7);
     level_mul();
     while (tkind() == 30 || tkind() == 31) {
-        let k = tkind(); adv(); level_mul();
-        if (k == 30) { ev(106); } else { ev(107); }
+        let k = tkind(); adv();
+        let lt = load32(TSTK() + base * 4);
+        level_mul();
+        let rt = load32(TSTK() + (base + 1) * 4);
+        if (k == 30 && (lt == T_STR() || rt == T_STR())) {
+            // Конкатенация строк: "+" над строками — не арифметика.
+            // Не-строковый операнд коэрцится в строку (i32_to_str), как oracle.
+            let rl = reserve(); ev(33); ev_leb(rl);
+            let ll = reserve(); ev(33); ev_leb(ll);
+            ev(32); ev_leb(ll); if (lt != T_STR()) { ev(16); ev_leb(I32S_FI()); }
+            ev(32); ev_leb(rl); if (rt != T_STR()) { ev(16); ev_leb(I32S_FI()); }
+            ev(16); ev_leb(SCAT_FI());
+            set(0, 7, base); tp(T_STR());
+        } else {
+            if (k == 30) { ev(106); } else { ev(107); }
+            set(0, 7, base); tp(T_INT());
+        }
     }
     return 0;
 }
 fn level_mul() -> int {
+    let base = get(0, 7);
     level_unary();
     while (tkind() == 32 || tkind() == 33 || tkind() == 34) {
-        let k = tkind(); adv(); level_unary();
+        let k = tkind(); adv();
+        level_unary();
         if (k == 32) { ev(108); } else { if (k == 33) { ev(109); } else { ev(111); } }
+        set(0, 7, base); tp(T_INT());
     }
     return 0;
 }
@@ -601,6 +835,7 @@ fn level_mul() -> int {
 fn stmts() -> int {
     while (tkind() != 23 && tkind() != 0) {
         let before = get(0, 0);
+        set(0, 7, 0);              // тип-стек выравнивается на границе инструкции
         stmt();
         if (get(0, 0) == before) { adv(); }
     }
@@ -623,8 +858,9 @@ fn st_assign() -> int {
     let noff = tval(); let nlen = tlen();
     expect_ident(); expect(27);
     level_or();
+    let vt = tpop();
     let li = find_local(noff, nlen);
-    if (li < 0) { err(); } else { ev(33); ev_leb(li); }
+    if (li < 0) { err(); } else { ev(33); ev_leb(li); set_local_tp(li, vt); }
     expect(25); set(0, 5, 0);
     return 0;
 }
@@ -634,10 +870,12 @@ fn st_let() -> int {
     expect_ident();
     if (tkind() == 26) { adv(); skip_type(); }
     set(0, 5, 0);
-    if (tkind() == 27) { adv(); level_or(); } else { ev(65); ev_sleb(0); }
+    let vt = T_INT();
+    if (tkind() == 27) { adv(); level_or(); vt = tpop(); } else { ev(65); ev_sleb(0); }
     expect(25);
     let idx = get(0, 3);
     add_local(noff, nlen, idx);
+    set_local_tp(idx, vt);
     ev(33); ev_leb(idx);
     return 0;
 }
@@ -668,8 +906,56 @@ fn st_while() -> int {
     ev(12); ev_leb(0); ev(11); ev(11);
     return 0;
 }
+// Различает `for (let x in arr)` от C-стиля `for (let x = ...)`.
+// Текущий токен — `let`; смотрим вперёд: let IDENT [ : T ] in ...
+fn is_for_in() -> bool {
+    if (tkind() != 10) { return false; }
+    if (!is_ident_kind(tkind_at(1))) { return false; }
+    let t2 = tkind_at(2);
+    if (t2 == 17) { return true; }
+    if (t2 != 26) { return false; }
+    let j = 3;
+    while (load32(KIND() + (get(0, 0) + j) * 4) != 0) {
+        let k = load32(KIND() + (get(0, 0) + j) * 4);
+        if (k == 17) { return true; }
+        if (k == 27) { return false; }
+        j = j + 1;
+    }
+    return false;
+}
+
+// for (let x in arr) { body } — итерация по массиву [len u32][e0..].
+fn st_for_in() -> int {
+    adv();                                   // let
+    let voff = tval(); let vlen = tlen();
+    expect_ident();
+    if (tkind() == 26) { adv(); skip_type(); }
+    expect(17);                              // in
+    level_or();                              // iterable
+    let arr = reserve(); ev(33); ev_leb(arr);
+    let idx = reserve(); ev(65); ev_sleb(0); ev(33); ev_leb(idx);
+    let v = add_local(voff, vlen, get(0, 3));
+    expect(21);
+    ev(2); ev(64); ev(3); ev(64);
+    ev(32); ev_leb(idx);
+    ev(32); ev_leb(arr); ev(40); ev(2); ev(0);   // len
+    ev(78);                                       // i32.ge_s
+    ev(13); ev_leb(1);                            // br_if 1 (выход)
+    ev(32); ev_leb(arr);
+    ev(32); ev_leb(idx); ev(65); ev_sleb(4); ev(108); ev(106);
+    ev(65); ev_sleb(4); ev(106);
+    ev(40); ev(2); ev(0);                         // load
+    ev(33); ev_leb(v);
+    expect(22); stmts(); expect(23);
+    ev(32); ev_leb(idx); ev(65); ev_sleb(1); ev(106); ev(33); ev_leb(idx);
+    ev(12); ev_leb(0); ev(11); ev(11);
+    set(0, 5, 0);
+    return 0;
+}
+
 fn st_for() -> int {
     adv(); expect(20);
+    if (is_for_in()) { return st_for_in(); }
     if (tkind() == 10) { st_let(); } else { if (tkind() != 25) { level_or(); ev(26); expect(25); } else { adv(); } }
     ev(2); ev(64); ev(3); ev(64);
     if (tkind() != 25) { level_or(); } else { ev(65); ev_sleb(1); }
@@ -705,12 +991,28 @@ fn scan_signatures() -> int {
                 prev = kk; j = j + 1;
             }
             store32(FNNP() + cnt * 4, p);
+            store32(FNRET() + cnt * 4, fn_ret_tp(total, i));
             cnt = cnt + 1;
         }
         i = i + 1;
     }
     set(0, 2, cnt);
     return cnt;
+}
+
+// Тип результата функции для выбора строковых/числовых опкодов: строковым
+// считаем функцию с аннотацией `-> string`; иначе int (как oracle-дефолт).
+fn fn_ret_tp(total, ftok) -> int {
+    let j = ftok + 2;                  // после имени: '('
+    while (j < total && load32(KIND() + j * 4) != 21) { j = j + 1; }
+    if (j + 1 >= total) { return T_INT(); }
+    if (load32(KIND() + (j + 1) * 4) != 28) { return T_INT(); }   // нет '->'
+    let rt = j + 2;
+    if (load32(KIND() + rt * 4) == 2
+        && is_lit(load32(TVAL() + rt * 4), load32(TLEN() + rt * 4), "string", 6)) {
+        return T_STR();
+    }
+    return T_INT();
 }
 fn skip_type() -> int {
     while (tkind() != 24 && tkind() != 21 && tkind() != 22 && tkind() != 0) { adv(); }
@@ -808,6 +1110,156 @@ fn helper_bodies() -> int {
     store32(CODEOF() + (nf() + 1) * 4, load32(CODEB()));
     store32(CODELN() + (nf() + 1) * 4, blen(BODYC()));
     bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+
+    // str_concat(a,b)->ptr: [len u32][utf8] с общим заголовком длины.
+    // locals: params 0 a,1 b; declared 2 alen,3 blen,4 p.
+    binit(BODYC());
+    bleb(BODYC(), 1); bleb(BODYC(), 3); bput(BODYC(), 127);
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 2);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 3);
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 106);
+    bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106);
+    bput(BODYC(), 16); bleb(BODYC(), ALLOC_FI()); bput(BODYC(), 33); bleb(BODYC(), 4);
+    // store len at p
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 106); bput(BODYC(), 54); bput(BODYC(), 2); bput(BODYC(), 0);
+    // mem_copy(p+4, a+4, alen)  — memcopy возвращает i32, гасим drop(26)
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 2);
+    bput(BODYC(), 16); bleb(BODYC(), MEM_FI()); bput(BODYC(), 26);
+    // mem_copy(p+4+alen, b+4, blen)
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106); bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 3);
+    bput(BODYC(), 16); bleb(BODYC(), MEM_FI()); bput(BODYC(), 26);
+    bput(BODYC(), 32); bleb(BODYC(), 4);
+    bput(BODYC(), 11);
+    store32(CODEOF() + (nf() + 2) * 4, load32(CODEB()));
+    store32(CODELN() + (nf() + 2) * 4, blen(BODYC()));
+    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+
+    // str_eq(a,b)->i32 (1/0): ранние return в void-ветках (без смешанных if).
+    // locals: params 0 a,1 b; declared 2 i,3 len.
+    binit(BODYC());
+    bleb(BODYC(), 1); bleb(BODYC(), 2); bput(BODYC(), 127);
+    // if load(a) != load(b) return 0
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0);
+    bput(BODYC(), 71); bput(BODYC(), 4); bput(BODYC(), 64);
+    bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 15); bput(BODYC(), 11);
+    // len = load(a)
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 3);
+    // i = 0
+    bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 2);
+    bput(BODYC(), 2); bput(BODYC(), 64); bput(BODYC(), 3); bput(BODYC(), 64);
+    // if i >= len break
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 79); bput(BODYC(), 13); bleb(BODYC(), 1);
+    // if a[4+i] != b[4+i] return 0
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106); bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 106); bput(BODYC(), 45); bput(BODYC(), 0); bput(BODYC(), 0);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106); bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 106); bput(BODYC(), 45); bput(BODYC(), 0); bput(BODYC(), 0);
+    bput(BODYC(), 71); bput(BODYC(), 4); bput(BODYC(), 64); bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 15); bput(BODYC(), 11);
+    // i++
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 106); bput(BODYC(), 33); bleb(BODYC(), 2);
+    bput(BODYC(), 12); bleb(BODYC(), 0); bput(BODYC(), 11); bput(BODYC(), 11);
+    bput(BODYC(), 65); bleb(BODYC(), 1);
+    bput(BODYC(), 11);
+    store32(CODEOF() + (nf() + 3) * 4, load32(CODEB()));
+    store32(CODELN() + (nf() + 3) * 4, blen(BODYC()));
+    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+
+    // str_char_at(ptr,i)->i32: байт по i в [0,len), иначе -1. Void-ветки с return.
+    binit(BODYC());
+    bleb(BODYC(), 0);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 72); bput(BODYC(), 4); bput(BODYC(), 64);
+    bput(BODYC(), 65); bsleb(BODYC(), -1); bput(BODYC(), 15); bput(BODYC(), 11);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0); bput(BODYC(), 79); bput(BODYC(), 4); bput(BODYC(), 64);
+    bput(BODYC(), 65); bsleb(BODYC(), -1); bput(BODYC(), 15); bput(BODYC(), 11);
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106); bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 106); bput(BODYC(), 45); bput(BODYC(), 0); bput(BODYC(), 0);
+    bput(BODYC(), 11);
+    store32(CODEOF() + (nf() + 4) * 4, load32(CODEB()));
+    store32(CODELN() + (nf() + 4) * 4, blen(BODYC()));
+    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+
+    // i32_to_str(n)->ptr: "<n>" в [len][utf8] (как в oracle). Переносим -n.
+    // locals: param 0 n; declared 1 neg,2 v,3 digits,4 i,5 p.
+    binit(BODYC());
+    bleb(BODYC(), 1); bleb(BODYC(), 5); bput(BODYC(), 127);
+    // neg = n < 0
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 72); bput(BODYC(), 33); bleb(BODYC(), 1);
+    // v = neg ? 0-n : n
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 4); bput(BODYC(), 64);
+    bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 107); bput(BODYC(), 33); bleb(BODYC(), 2);
+    bput(BODYC(), 5);
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 2);
+    bput(BODYC(), 11);
+    // digits = 1; i = v
+    bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 33); bleb(BODYC(), 3);
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 33); bleb(BODYC(), 4);
+    bput(BODYC(), 2); bput(BODYC(), 64); bput(BODYC(), 3); bput(BODYC(), 64);
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 65); bleb(BODYC(), 10); bput(BODYC(), 73); bput(BODYC(), 13); bleb(BODYC(), 1);
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 65); bleb(BODYC(), 10); bput(BODYC(), 110); bput(BODYC(), 33); bleb(BODYC(), 4);
+    bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 106); bput(BODYC(), 33); bleb(BODYC(), 3);
+    bput(BODYC(), 12); bleb(BODYC(), 0); bput(BODYC(), 11); bput(BODYC(), 11);
+    // p = alloc(4 + digits + neg)
+    bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 106); bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 106);
+    bput(BODYC(), 16); bleb(BODYC(), ALLOC_FI()); bput(BODYC(), 33); bleb(BODYC(), 5);
+    // store len = digits + neg
+    bput(BODYC(), 32); bleb(BODYC(), 5); bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 106); bput(BODYC(), 54); bput(BODYC(), 2); bput(BODYC(), 0);
+    // if neg: p[4] = '-'
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 4); bput(BODYC(), 64);
+    bput(BODYC(), 32); bleb(BODYC(), 5); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106); bput(BODYC(), 65); bleb(BODYC(), 45); bput(BODYC(), 58); bput(BODYC(), 0); bput(BODYC(), 0);
+    bput(BODYC(), 11);
+    // i = digits; loop { if i==0 break; i--; p[4+neg+i]='0'+v%10; v/=10 }
+    bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 33); bleb(BODYC(), 4);
+    bput(BODYC(), 2); bput(BODYC(), 64); bput(BODYC(), 3); bput(BODYC(), 64);
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 69); bput(BODYC(), 13); bleb(BODYC(), 1);
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 107); bput(BODYC(), 33); bleb(BODYC(), 4);
+    bput(BODYC(), 32); bleb(BODYC(), 5); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106); bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 106); bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 65); bleb(BODYC(), 10); bput(BODYC(), 112); bput(BODYC(), 65); bleb(BODYC(), 48); bput(BODYC(), 106);
+    bput(BODYC(), 58); bput(BODYC(), 0); bput(BODYC(), 0);
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 65); bleb(BODYC(), 10); bput(BODYC(), 110); bput(BODYC(), 33); bleb(BODYC(), 2);
+    bput(BODYC(), 12); bleb(BODYC(), 0); bput(BODYC(), 11); bput(BODYC(), 11);
+    bput(BODYC(), 32); bleb(BODYC(), 5);
+    bput(BODYC(), 11);
+    store32(CODEOF() + (nf() + 5) * 4, load32(CODEB()));
+    store32(CODELN() + (nf() + 5) * 4, blen(BODYC()));
+    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+
+    // str_to_i32(ptr)->i32: опциональный '-' и ASCII-цифры.
+    // locals: param 0 ptr; declared 1 len,2 i,3 neg,4 acc,5 c.
+    binit(BODYC());
+    bleb(BODYC(), 1); bleb(BODYC(), 5); bput(BODYC(), 127);
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 1);
+    bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 2);
+    bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 3);
+    bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 4);
+    // if len>0 && ptr[4]=='-' { neg=1; i=1 }
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 74); bput(BODYC(), 4); bput(BODYC(), 64);
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106); bput(BODYC(), 45); bput(BODYC(), 0); bput(BODYC(), 0); bput(BODYC(), 65); bleb(BODYC(), 45); bput(BODYC(), 70); bput(BODYC(), 4); bput(BODYC(), 64);
+    bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 33); bleb(BODYC(), 3);
+    bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 33); bleb(BODYC(), 2);
+    bput(BODYC(), 11); bput(BODYC(), 11);
+    bput(BODYC(), 2); bput(BODYC(), 64); bput(BODYC(), 3); bput(BODYC(), 64);
+    // if i>=len break
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 79); bput(BODYC(), 13); bleb(BODYC(), 1);
+    // c = ptr[4+i]
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106); bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 106); bput(BODYC(), 45); bput(BODYC(), 0); bput(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 5);
+    // if c < '0' break; if c > '9' break
+    bput(BODYC(), 32); bleb(BODYC(), 5); bput(BODYC(), 65); bleb(BODYC(), 48); bput(BODYC(), 72); bput(BODYC(), 13); bleb(BODYC(), 1);
+    bput(BODYC(), 32); bleb(BODYC(), 5); bput(BODYC(), 65); bleb(BODYC(), 57); bput(BODYC(), 74); bput(BODYC(), 13); bleb(BODYC(), 1);
+    // acc = acc*10 + (c-'0')
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 65); bleb(BODYC(), 10); bput(BODYC(), 108); bput(BODYC(), 32); bleb(BODYC(), 5); bput(BODYC(), 65); bleb(BODYC(), 48); bput(BODYC(), 107); bput(BODYC(), 106); bput(BODYC(), 33); bleb(BODYC(), 4);
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 106); bput(BODYC(), 33); bleb(BODYC(), 2);
+    bput(BODYC(), 12); bleb(BODYC(), 0); bput(BODYC(), 11); bput(BODYC(), 11);
+    // neg ? -acc : acc  (if с результатом i32 = 0x7f)
+    bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 4); bput(BODYC(), 127);
+    bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 107); bput(BODYC(), 5);
+    bput(BODYC(), 32); bleb(BODYC(), 4);
+    bput(BODYC(), 11);   // end if (i32)
+    bput(BODYC(), 11);   // end function
+    store32(CODEOF() + (nf() + 6) * 4, load32(CODEB()));
+    store32(CODELN() + (nf() + 6) * 4, blen(BODYC()));
+    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
     return 0;
 }
 
@@ -838,13 +1290,18 @@ fn build_module() -> int {
     bput(SCRB(), 0); bleb(SCRB(), 0);
     emit_sec(2, SCRB());
 
-    // func section: n user + alloc + memcopy
+    // func section: n user + alloc + memcopy + str_concat + str_eq + str_char_at
     binit(SCRB());
-    bleb(SCRB(), n + 2);
+    bleb(SCRB(), n + 2 + 5);
     let i = 0;
     while (i < n) { bleb(SCRB(), load32(FNNP() + i * 4) + 1); i = i + 1; }
     bleb(SCRB(), 2);   // alloc: (i32)->i32 = type2
     bleb(SCRB(), 4);   // memcopy: (i32,i32,i32)->i32 = type4
+    bleb(SCRB(), 3);   // str_concat: (i32,i32)->i32 = type3
+    bleb(SCRB(), 3);   // str_eq
+    bleb(SCRB(), 3);   // str_char_at
+    bleb(SCRB(), 2);   // i32_to_str: (i32)->i32 = type2
+    bleb(SCRB(), 2);   // str_to_i32: (i32)->i32 = type2
     emit_sec(3, SCRB());
 
     // memory: 16 pages
@@ -867,11 +1324,11 @@ fn build_module() -> int {
     bput(SCRB(), 0); bleb(SCRB(), find_main() + 1);
     emit_sec(7, SCRB());
 
-    // code section: n + 2 bodies
+    // code section: n + 7 bodies (user + alloc + memcopy + 3 str + 2 conv helpers)
     binit(SCRB());
-    bleb(SCRB(), n + 2);
+    bleb(SCRB(), n + 7);
     i = 0;
-    while (i < n + 2) {
+    while (i < n + 7) {
         bleb(SCRB(), load32(CODELN() + i * 4));
         let q = 0;
         while (q < load32(CODELN() + i * 4)) {
@@ -910,7 +1367,7 @@ fn compile_program() -> int {
     let reserve = alloc(4100000);   // гарантировать рост памяти под все области
     store32(reserve, 0);
     binit(OUTB()); binit(SCRB()); binit(FNB()); binit(CODEB()); binit(BODYC()); binit(DATAB());
-    set(0, 4, 0); set(0, 5, 0); set(0, 6, 0);
+    set(0, 4, 0); set(0, 5, 0); set(0, 6, 0); set(0, 7, 0);
     let nt = tokenize();
     set(0, 1, nt);
     let n = scan_signatures();

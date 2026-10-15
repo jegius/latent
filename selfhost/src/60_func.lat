@@ -14,12 +14,28 @@ fn scan_signatures() -> int {
                 prev = kk; j = j + 1;
             }
             store32(FNNP() + cnt * 4, p);
+            store32(FNRET() + cnt * 4, fn_ret_tp(total, i));
             cnt = cnt + 1;
         }
         i = i + 1;
     }
     set(0, 2, cnt);
     return cnt;
+}
+
+// Тип результата функции для выбора строковых/числовых опкодов: строковым
+// считаем функцию с аннотацией `-> string`; иначе int (как oracle-дефолт).
+fn fn_ret_tp(total, ftok) -> int {
+    let j = ftok + 2;                  // после имени: '('
+    while (j < total && load32(KIND() + j * 4) != 21) { j = j + 1; }
+    if (j + 1 >= total) { return T_INT(); }
+    if (load32(KIND() + (j + 1) * 4) != 28) { return T_INT(); }   // нет '->'
+    let rt = j + 2;
+    if (load32(KIND() + rt * 4) == 2
+        && is_lit(load32(TVAL() + rt * 4), load32(TLEN() + rt * 4), "string", 6)) {
+        return T_STR();
+    }
+    return T_INT();
 }
 fn skip_type() -> int {
     while (tkind() != 24 && tkind() != 21 && tkind() != 22 && tkind() != 0) { adv(); }

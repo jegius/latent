@@ -1,5 +1,8 @@
 // --- фиксированные адреса областей ---
-fn INPUT() -> int { return 32768; }      // 32K
+// Входной исходник вынесен в отдельную высокую область (128K): он растёт
+// вместе с компилятором, и раньше при исходнике >32K хвост залезал на OUTB,
+// который binit() занулял при старте — это молча портило последние токены.
+fn INPUT() -> int { return 3145728; }    // 128K (выше всех рабочих областей)
 fn OUTB() -> int { return 65536; }       // 192K готовый wasm
 fn SCRB() -> int { return 262144; }      // 192K скретч секции
 fn FNB() -> int { return 458752; }       // 192K тело текущей функции
@@ -22,7 +25,24 @@ fn DATAB() -> int { return 2326528; }    // 256K
 fn STRO() -> int { return 2588672; }     // 128K
 fn STRL() -> int { return 2719744; }     // 128K
 fn STRA() -> int { return 2850816; }     // 128K
+fn LOTP() -> int { return 2981888; }     // 32K  тип локальной (0=int 1=float 2=str)
+fn TSTK() -> int { return 3014656; }     // 32K  стек типов выражений
+fn FNRET() -> int { return 3047424; }    // 32K  тип результата функции
+fn FPT() -> int { return 3080192; }      // 32K  типы параметров функций (stride 8)
+fn FLOATB() -> int { return 3112960; }   // 32K  f64-константы (8 байт/слот)
 
-// Слоты состояния: 0=PC 1=NT 2=NF 3=NL 4=status 5=produces 6=NS(strings)
+// Слоты состояния: 0=PC 1=NT 2=NF 3=NL 4=status 5=produces 6=NS(strings) 7=TS
 fn get(st, k) -> int { return load32(ST() + st * 4 + k * 4); }
 fn set(st, k, v) -> int { store32(ST() + st * 4 + k * 4, v); return v; }
+
+// Типы значений выражений (для выбора опкодов и строковых операций).
+fn T_INT() -> int { return 0; }
+fn T_FLT() -> int { return 1; }
+fn T_STR() -> int { return 2; }
+
+// Стек типов: эмиссия выражений идёт снизу вверх, поэтому тип операнда
+// доступен сразу после его эмиссии — это зеркало стека значений WASM.
+fn tp(t) -> int { let p = get(0, 7); store32(TSTK() + p * 4, t); set(0, 7, p + 1); return t; }
+// Толерантный pop: пустой стек типов считаем int (не критично для опкодов).
+fn tpop() -> int { let p = get(0, 7); if (p <= 0) { return T_INT(); } set(0, 7, p - 1); return load32(TSTK() + (p - 1) * 4); }
+fn ttop() -> int { let p = get(0, 7); if (p <= 0) { return T_INT(); } return load32(TSTK() + (p - 1) * 4); }

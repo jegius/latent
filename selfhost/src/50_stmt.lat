@@ -2,6 +2,7 @@
 fn stmts() -> int {
     while (tkind() != 23 && tkind() != 0) {
         let before = get(0, 0);
+        set(0, 7, 0);              // тип-стек выравнивается на границе инструкции
         stmt();
         if (get(0, 0) == before) { adv(); }
     }
@@ -24,8 +25,9 @@ fn st_assign() -> int {
     let noff = tval(); let nlen = tlen();
     expect_ident(); expect(27);
     level_or();
+    let vt = tpop();
     let li = find_local(noff, nlen);
-    if (li < 0) { err(); } else { ev(33); ev_leb(li); }
+    if (li < 0) { err(); } else { ev(33); ev_leb(li); set_local_tp(li, vt); }
     expect(25); set(0, 5, 0);
     return 0;
 }
@@ -35,10 +37,12 @@ fn st_let() -> int {
     expect_ident();
     if (tkind() == 26) { adv(); skip_type(); }
     set(0, 5, 0);
-    if (tkind() == 27) { adv(); level_or(); } else { ev(65); ev_sleb(0); }
+    let vt = T_INT();
+    if (tkind() == 27) { adv(); level_or(); vt = tpop(); } else { ev(65); ev_sleb(0); }
     expect(25);
     let idx = get(0, 3);
     add_local(noff, nlen, idx);
+    set_local_tp(idx, vt);
     ev(33); ev_leb(idx);
     return 0;
 }
@@ -69,8 +73,56 @@ fn st_while() -> int {
     ev(12); ev_leb(0); ev(11); ev(11);
     return 0;
 }
+// Различает `for (let x in arr)` от C-стиля `for (let x = ...)`.
+// Текущий токен — `let`; смотрим вперёд: let IDENT [ : T ] in ...
+fn is_for_in() -> bool {
+    if (tkind() != 10) { return false; }
+    if (!is_ident_kind(tkind_at(1))) { return false; }
+    let t2 = tkind_at(2);
+    if (t2 == 17) { return true; }
+    if (t2 != 26) { return false; }
+    let j = 3;
+    while (load32(KIND() + (get(0, 0) + j) * 4) != 0) {
+        let k = load32(KIND() + (get(0, 0) + j) * 4);
+        if (k == 17) { return true; }
+        if (k == 27) { return false; }
+        j = j + 1;
+    }
+    return false;
+}
+
+// for (let x in arr) { body } — итерация по массиву [len u32][e0..].
+fn st_for_in() -> int {
+    adv();                                   // let
+    let voff = tval(); let vlen = tlen();
+    expect_ident();
+    if (tkind() == 26) { adv(); skip_type(); }
+    expect(17);                              // in
+    level_or();                              // iterable
+    let arr = reserve(); ev(33); ev_leb(arr);
+    let idx = reserve(); ev(65); ev_sleb(0); ev(33); ev_leb(idx);
+    let v = add_local(voff, vlen, get(0, 3));
+    expect(21);
+    ev(2); ev(64); ev(3); ev(64);
+    ev(32); ev_leb(idx);
+    ev(32); ev_leb(arr); ev(40); ev(2); ev(0);   // len
+    ev(78);                                       // i32.ge_s
+    ev(13); ev_leb(1);                            // br_if 1 (выход)
+    ev(32); ev_leb(arr);
+    ev(32); ev_leb(idx); ev(65); ev_sleb(4); ev(108); ev(106);
+    ev(65); ev_sleb(4); ev(106);
+    ev(40); ev(2); ev(0);                         // load
+    ev(33); ev_leb(v);
+    expect(22); stmts(); expect(23);
+    ev(32); ev_leb(idx); ev(65); ev_sleb(1); ev(106); ev(33); ev_leb(idx);
+    ev(12); ev_leb(0); ev(11); ev(11);
+    set(0, 5, 0);
+    return 0;
+}
+
 fn st_for() -> int {
     adv(); expect(20);
+    if (is_for_in()) { return st_for_in(); }
     if (tkind() == 10) { st_let(); } else { if (tkind() != 25) { level_or(); ev(26); expect(25); } else { adv(); } }
     ev(2); ev(64); ev(3); ev(64);
     if (tkind() != 25) { level_or(); } else { ev(65); ev_sleb(1); }

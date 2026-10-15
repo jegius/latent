@@ -5,22 +5,34 @@ fn ev_sleb(v) -> int { return bsleb(FNB(), v); }
 fn nf() -> int { return get(0, 2); }
 fn ALLOC_FI() -> int { return get(0, 2) + 1; }
 fn MEM_FI() -> int { return get(0, 2) + 2; }
+fn SCAT_FI() -> int { return get(0, 2) + 3; }   // str_concat(a,b)->ptr
+fn SEQ_FI() -> int { return get(0, 2) + 4; }    // str_eq(a,b)->i32
+fn SCHR_FI() -> int { return get(0, 2) + 5; }   // str_char_at(ptr,idx)->i32
+fn I32S_FI() -> int { return get(0, 2) + 6; }   // i32_to_str(n)->ptr
+fn S2I_FI() -> int { return get(0, 2) + 7; }    // str_to_i32(ptr)->i32
+fn NHELP() -> int { return 7; }                 // alloc+memcopy+3 str+2 conv
 
 fn emit_bi1(fi, opcode, align) -> int {
+    let base = get(0, 7);
     expect(20); level_or(); expect(21);
     if (opcode == 0) { ev(16); ev_leb(fi); } else { ev(opcode); ev(align); ev(0); }
     set(0, 5, 1);
+    set(0, 7, base); tp(T_INT());
     return 0;
 }
 fn emit_bi2(fi, opcode, align, produces) -> int {
+    let base = get(0, 7);
     expect(20); level_or();
     if (tkind() == 24) { adv(); }
     level_or(); expect(21);
     if (opcode == 0) { ev(16); ev_leb(fi); } else { ev(opcode); ev(align); ev(0); }
     set(0, 5, produces);
+    set(0, 7, base);
+    if (produces == 1) { tp(T_INT()); }
     return 0;
 }
 fn emit_memcopy() -> int {
+    let base = get(0, 7);
     expect(20); level_or();
     if (tkind() == 24) { adv(); }
     level_or();
@@ -28,6 +40,7 @@ fn emit_memcopy() -> int {
     level_or(); expect(21);
     ev(16); ev_leb(MEM_FI());
     set(0, 5, 1);
+    set(0, 7, base); tp(T_INT());
     return 0;
 }
 
@@ -39,11 +52,105 @@ fn emit_call(off, ln) -> int {
     if (is_lit(off, ln, "load32", 6)) { return emit_bi1(0, 40, 2); }
     if (is_lit(off, ln, "store8", 6)) { return emit_bi2(0, 58, 0, 0); }
     if (is_lit(off, ln, "store32", 7)) { return emit_bi2(0, 54, 2, 0); }
+    if (is_lit(off, ln, "len", 3)) { return emit_len(); }
+    if (is_lit(off, ln, "push", 4)) { return emit_push_call(); }
+    if (is_lit(off, ln, "assert", 6)) { return emit_assert(); }
+    if (is_lit(off, ln, "assert_eq", 9)) { return emit_assert_eq(); }
+    if (is_lit(off, ln, "str", 3)) { return emit_str_conv(); }
+    if (is_lit(off, ln, "int", 3)) { return emit_int_conv(); }
     let fi = find_func(off, ln);
     if (fi < 0) { err(); return 0; }
     return emit_call_named(fi + 1, 0);
 }
+
+// len(x) -> длина из заголовка [len u32][...] (общее представление строк/массивов).
+fn emit_len() -> int {
+    let base = get(0, 7);
+    expect(20); level_or(); expect(21);
+    ev(40); ev(2); ev(0);
+    set(0, 5, 1);
+    set(0, 7, base); tp(T_INT());
+    return 0;
+}
+
+// assert(cond): if !cond { unreachable }.
+fn emit_assert() -> int {
+    let base = get(0, 7);
+    expect(20); level_or(); expect(21);
+    ev(69); ev(4); ev(64); ev(0); ev(11);
+    set(0, 5, 0);
+    set(0, 7, base);
+    return 0;
+}
+
+// assert_eq(a, b): if a != b { unreachable } (i32-равенство, как в oracle).
+fn emit_assert_eq() -> int {
+    let base = get(0, 7);
+    expect(20); level_or();
+    if (tkind() == 24) { adv(); }
+    level_or(); expect(21);
+    ev(70); ev(69); ev(4); ev(64); ev(0); ev(11);
+    set(0, 5, 0);
+    set(0, 7, base);
+    return 0;
+}
+
+// str(x): строка остаётся, число конвертируется в строку (i32_to_str).
+fn emit_str_conv() -> int {
+    let base = get(0, 7);
+    expect(20);
+    if (tkind() == 21) { adv(); ev(65); ev_sleb(0); set(0, 5, 1); set(0, 7, base); tp(T_STR()); return 0; }
+    level_or();
+    let xt = load32(TSTK() + base * 4);
+    expect(21);
+    if (xt != T_STR()) { ev(16); ev_leb(I32S_FI()); }
+    set(0, 5, 1); set(0, 7, base); tp(T_STR());
+    return 0;
+}
+// int(x): строку парсим (str_to_i32), число как есть (f64-усечение не поддержано).
+fn emit_int_conv() -> int {
+    let base = get(0, 7);
+    expect(20);
+    if (tkind() == 21) { adv(); ev(65); ev_sleb(0); set(0, 5, 1); set(0, 7, base); tp(T_INT()); return 0; }
+    level_or();
+    let xt = load32(TSTK() + base * 4);
+    expect(21);
+    if (xt == T_STR()) { ev(16); ev_leb(S2I_FI()); }
+    set(0, 5, 1); set(0, 7, base); tp(T_INT());
+    return 0;
+}
+
+// push(arr, x): arr[len]=x; arr.len=len+1; результат — arr.
+// Стек после разбора: [arr, x].
+fn emit_push_call() -> int {
+    let base = get(0, 7);
+    expect(20); level_or();
+    if (tkind() == 24) { adv(); }
+    level_or(); expect(21);
+    let xl = reserve(); ev(33); ev_leb(xl);
+    let al = reserve(); ev(33); ev_leb(al);
+    emit_push_seq(al, xl);
+    set(0, 5, 1);
+    set(0, 7, base); tp(T_INT());
+    return 0;
+}
+
+// Общая последовательность push для уже сохранённых в локалях arr/x.
+fn emit_push_seq(al, xl) -> int {
+    ev(32); ev_leb(al); ev(32); ev_leb(al); ev(40); ev(2); ev(0); ev(65); ev_sleb(4); ev(108); ev(106); ev(65); ev_sleb(4); ev(106); ev(32); ev_leb(xl); ev(54); ev(2); ev(0);
+    ev(32); ev_leb(al); ev(32); ev_leb(al); ev(40); ev(2); ev(0); ev(65); ev_sleb(1); ev(106); ev(54); ev(2); ev(0);
+    ev(32); ev_leb(al);
+    return 0;
+}
+
+// Общая последовательность pop для arr в локали: len--; результат arr[len].
+fn emit_pop_seq(al) -> int {
+    ev(32); ev_leb(al); ev(32); ev_leb(al); ev(40); ev(2); ev(0); ev(65); ev_sleb(1); ev(107); ev(54); ev(2); ev(0);
+    ev(32); ev_leb(al); ev(32); ev_leb(al); ev(40); ev(2); ev(0); ev(65); ev_sleb(4); ev(108); ev(106); ev(65); ev_sleb(4); ev(106); ev(40); ev(2); ev(0);
+    return 0;
+}
 fn emit_call_named(fidx, is_print) -> int {
+    let base = get(0, 7);
     expect(20);
     let argc = 0;
     while (tkind() != 21 && tkind() != 0) {
@@ -52,19 +159,25 @@ fn emit_call_named(fidx, is_print) -> int {
     }
     expect(21);
     ev(16); ev_leb(fidx);
-    if (is_print == 1) { set(0, 5, 0); } else { set(0, 5, 1); }
+    set(0, 7, base);
+    if (is_print == 1) { set(0, 5, 0); }
+    else {
+        set(0, 5, 1);
+        // fidx = find_func(...)+1, функция index = fidx-1.
+        tp(load32(FNRET() + (fidx - 1) * 4));
+    }
     return 0;
 }
 
 fn level_primary() -> int {
     let k = tkind();
-    if (k == 1) { ev(65); ev_sleb(tval()); adv(); set(0, 5, 1); return 0; }
-    if (k == 90) { ev(65); ev_sleb(1); adv(); set(0, 5, 1); return 0; }
-    if (k == 91) { ev(65); ev_sleb(0); adv(); set(0, 5, 1); return 0; }
+    if (k == 1) { ev(65); ev_sleb(tval()); adv(); set(0, 5, 1); tp(T_INT()); return 0; }
+    if (k == 90) { ev(65); ev_sleb(1); adv(); set(0, 5, 1); tp(T_INT()); return 0; }
+    if (k == 91) { ev(65); ev_sleb(0); adv(); set(0, 5, 1); tp(T_INT()); return 0; }
     if (k == 3) {
         let q = tval(); let ql = tlen();
         let addr = str_addr(q + 1, ql - 2);
-        ev(65); ev_sleb(addr); adv(); set(0, 5, 1); return 0;
+        ev(65); ev_sleb(addr); adv(); set(0, 5, 1); tp(T_STR()); return 0;
     }
     if (k == 20) { adv(); level_or(); expect(21); return 0; }
     if (k == 80) { return level_array(); }
@@ -74,36 +187,81 @@ fn level_primary() -> int {
         let off = tval(); let ln = tlen(); adv();
         if (tkind() == 20) { return emit_call(off, ln); }
         let li = find_local(off, ln);
-        if (li >= 0) { ev(32); ev_leb(li); set(0, 5, 1); return 0; }
+        if (li >= 0) { ev(32); ev_leb(li); set(0, 5, 1); tp(local_tp(li)); return 0; }
         err(); return 0;
     }
-    err(); set(0, 5, 1); return 0;
+    err(); set(0, 5, 1); tp(T_INT()); return 0;
 }
 
 // Постфиксные операции: индексация a[i] и поле .length.
 fn level_postfix() -> int {
+    let base = get(0, 7);
     level_primary();
     while (true) {
         let k = tkind();
         if (k == 80) {
+            let ot = load32(TSTK() + base * 4);
             adv(); level_or(); expect(81);
-            ev(65); ev_sleb(4); ev(108);   // idx*4
-            ev(106);                        // obj + idx*4
-            ev(65); ev_sleb(4); ev(106);    // + 4 (после заголовка длины)
-            ev(40); ev(2); ev(0);           // i32.load
+            if (ot == T_STR()) {
+                // Индексация строки → байт-символ (str_char_at), не элемент массива.
+                ev(16); ev_leb(SCHR_FI());
+            } else {
+                ev(65); ev_sleb(4); ev(108);   // idx*4
+                ev(106);                        // obj + idx*4
+                ev(65); ev_sleb(4); ev(106);    // + 4 (после заголовка длины)
+                ev(40); ev(2); ev(0);           // i32.load
+            }
             set(0, 5, 1);
+            set(0, 7, base); tp(T_INT());
         } else {
             if (k == 29) {
                 adv();
                 let a = tval(); let al = tlen();
                 expect_ident();
-                if (is_lit(a, al, "length", 6)) { ev(40); ev(2); ev(0); set(0, 5, 1); }
-                else { err(); }
+                if (tkind() == 20) { level_method(a, al); }
+                else {
+                    if (is_lit(a, al, "length", 6)) { ev(40); ev(2); ev(0); set(0, 5, 1); set(0, 7, base); tp(T_INT()); }
+                    else { err(); }
+                }
             } else { return 0; }
         }
     }
     return 0;
 }
+// Метод-вызов obj.name(args). Объект уже лежит на стеке (из level_postfix).
+// Поддерживаются: push(x), pop(), length().
+fn level_method(off, ln) -> int {
+    if (is_lit(off, ln, "push", 4)) {
+        let al = reserve(); ev(33); ev_leb(al);
+        expect(20); level_or(); expect(21);
+        let xl = reserve(); ev(33); ev_leb(xl);
+        emit_push_seq(al, xl);
+        set(0, 5, 1); return 0;
+    }
+    if (is_lit(off, ln, "pop", 3)) {
+        let al = reserve(); ev(33); ev_leb(al);
+        expect(20); expect(21);
+        emit_pop_seq(al);
+        set(0, 5, 1); return 0;
+    }
+    if (is_lit(off, ln, "length", 6)) {
+        expect(20); expect(21);
+        ev(40); ev(2); ev(0);
+        set(0, 5, 1); return 0;
+    }
+    if (is_lit(off, ln, "to_str", 6) || is_lit(off, ln, "toString", 8)) {
+        expect(20); expect(21);
+        ev(16); ev_leb(I32S_FI());
+        set(0, 5, 1); return 0;
+    }
+    if (is_lit(off, ln, "to_int", 6) || is_lit(off, ln, "toInt", 5)) {
+        expect(20); expect(21);
+        ev(16); ev_leb(S2I_FI());
+        set(0, 5, 1); return 0;
+    }
+    err(); return 0;
+}
+
 fn level_unary() -> int { return level_postfix(); }
 
 // Число элементов литерала массива: текущий токен — '['. Сканируем до
@@ -132,6 +290,7 @@ fn count_elems() -> int {
 
 // Литерал массива [e0, e1, ...] -> [len u32][e0][e1]... в линейной памяти.
 fn level_array() -> int {
+    let base = get(0, 7);
     adv();
     let cnt = count_elems();
     let size = 4 + cnt * 4;
@@ -141,7 +300,9 @@ fn level_array() -> int {
     ev(33); ev_leb(t);
     ev(32); ev_leb(t); ev(65); ev_sleb(cnt); ev(54); ev(2); ev(0);
     let i = 0;
+    set(0, 7, base + 1);
     while (tkind() != 81 && tkind() != 0) {
+        set(0, 7, base + 1);
         ev(32); ev_leb(t); ev(65); ev_sleb(4 + i * 4); ev(106);
         level_or();
         ev(54); ev(2); ev(0);
@@ -151,6 +312,7 @@ fn level_array() -> int {
     expect(81);
     ev(32); ev_leb(t);
     set(0, 5, 1);
+    set(0, 7, base); tp(T_INT());
     return 0;
 }
 
@@ -158,15 +320,18 @@ fn parse_assign() -> int {
     let noff = tval(); let nlen = tlen();
     adv(); adv();
     level_or();
+    let vt = tpop();
     let li = find_local(noff, nlen);
-    if (li < 0) { err(); } else { ev(33); ev_leb(li); ev(32); ev_leb(li); }
+    if (li < 0) { err(); } else { ev(33); ev_leb(li); ev(32); ev_leb(li); set_local_tp(li, vt); }
     set(0, 5, 1);
+    tp(vt);
     return 0;
 }
 
 fn level_or() -> int {
     if (is_ident_kind(tkind()) && tkind_at(1) == 27) { return parse_assign(); }
     if (is_index_assign()) { return parse_index_assign(); }
+    let base = get(0, 7);
     level_and();
     while (tkind() == 47) {
         adv();
@@ -174,6 +339,7 @@ fn level_or() -> int {
         level_and();
         ev(69); ev(69);
         ev(11);
+        set(0, 7, base); tp(T_INT());
     }
     return 0;
 }
@@ -231,11 +397,13 @@ fn parse_index_assign() -> int {
             ev(54); ev(2); ev(0);
             ev(32); ev_leb(val);
             set(0, 5, 1);
+            tp(T_INT());
         }
     }
     return 0;
 }
 fn level_and() -> int {
+    let base = get(0, 7);
     level_eq();
     while (tkind() == 46) {
         adv();
@@ -244,54 +412,96 @@ fn level_and() -> int {
         ev(69); ev(69);
         ev(5); ev(65); ev_sleb(0);
         ev(11);
+        set(0, 7, base); tp(T_INT());
     }
     return 0;
 }
+// Каждый уровень фиксирует base стека типов до левого операнда; типы операндов
+// лежат по base и base+1, результат — по base. Устойчиво к несбалансировке.
 fn level_eq() -> int {
+    let base = get(0, 7);
     level_cmp();
     while (tkind() == 40 || tkind() == 41) {
-        let k = tkind(); adv(); level_cmp();
-        if (k == 40) { ev(70); } else { ev(71); }
+        let k = tkind(); adv();
+        let lt = load32(TSTK() + base * 4);
+        level_cmp();
+        let rt = load32(TSTK() + (base + 1) * 4);
+        if (lt == T_STR() || rt == T_STR()) {
+            // Сравнение строк по содержимому (str_eq), как в oracle.
+            ev(16); ev_leb(SEQ_FI());
+            if (k == 41) { ev(69); }
+        } else {
+            if (k == 40) { ev(70); } else { ev(71); }
+        }
+        set(0, 7, base); tp(T_INT());
     }
     return 0;
 }
 fn level_cmp() -> int {
+    let base = get(0, 7);
     level_bit();
     while (tkind() == 42 || tkind() == 43 || tkind() == 44 || tkind() == 45) {
-        let k = tkind(); adv(); level_bit();
+        let k = tkind(); adv();
+        level_bit();
         if (k == 42) { ev(72); } else { if (k == 43) { ev(74); } else { if (k == 44) { ev(76); } else { ev(78); } } }
+        set(0, 7, base); tp(T_INT());
     }
     return 0;
 }
 fn level_bit() -> int {
+    let base = get(0, 7);
     level_shift();
     while (tkind() == 48 || tkind() == 49 || tkind() == 50) {
-        let k = tkind(); adv(); level_shift();
+        let k = tkind(); adv();
+        level_shift();
         if (k == 48) { ev(113); } else { if (k == 49) { ev(114); } else { ev(115); } }
+        set(0, 7, base); tp(T_INT());
     }
     return 0;
 }
 fn level_shift() -> int {
+    let base = get(0, 7);
     level_add();
     while (tkind() == 51 || tkind() == 52) {
-        let k = tkind(); adv(); level_add();
+        let k = tkind(); adv();
+        level_add();
         if (k == 51) { ev(116); } else { ev(117); }
+        set(0, 7, base); tp(T_INT());
     }
     return 0;
 }
 fn level_add() -> int {
+    let base = get(0, 7);
     level_mul();
     while (tkind() == 30 || tkind() == 31) {
-        let k = tkind(); adv(); level_mul();
-        if (k == 30) { ev(106); } else { ev(107); }
+        let k = tkind(); adv();
+        let lt = load32(TSTK() + base * 4);
+        level_mul();
+        let rt = load32(TSTK() + (base + 1) * 4);
+        if (k == 30 && (lt == T_STR() || rt == T_STR())) {
+            // Конкатенация строк: "+" над строками — не арифметика.
+            // Не-строковый операнд коэрцится в строку (i32_to_str), как oracle.
+            let rl = reserve(); ev(33); ev_leb(rl);
+            let ll = reserve(); ev(33); ev_leb(ll);
+            ev(32); ev_leb(ll); if (lt != T_STR()) { ev(16); ev_leb(I32S_FI()); }
+            ev(32); ev_leb(rl); if (rt != T_STR()) { ev(16); ev_leb(I32S_FI()); }
+            ev(16); ev_leb(SCAT_FI());
+            set(0, 7, base); tp(T_STR());
+        } else {
+            if (k == 30) { ev(106); } else { ev(107); }
+            set(0, 7, base); tp(T_INT());
+        }
     }
     return 0;
 }
 fn level_mul() -> int {
+    let base = get(0, 7);
     level_unary();
     while (tkind() == 32 || tkind() == 33 || tkind() == 34) {
-        let k = tkind(); adv(); level_unary();
+        let k = tkind(); adv();
+        level_unary();
         if (k == 32) { ev(108); } else { if (k == 33) { ev(109); } else { ev(111); } }
+        set(0, 7, base); tp(T_INT());
     }
     return 0;
 }
