@@ -63,6 +63,9 @@ fn emit_call(off, ln) -> int {
         // Конструктор enum-варианта: Tag(args) → [tag i32][fields...].
         let tag = variant_tag(off, ln);
         if (tag >= 0) { return emit_variant(tag, variant_arity(off, ln)); }
+        // Локаль, хранящая замыкание → косвенный вызов.
+        let li = find_local(off, ln);
+        if (li >= 0) { return emit_indirect_call(li); }
         err(); return 0;
     }
     return emit_call_named(fi + 1, 0);
@@ -219,6 +222,7 @@ fn level_primary() -> int {
     if (k == 94) { adv(); ev(32); ev_leb(0); set(0, 5, 1); tp(T_INT()); set(0, 8, load32(FNCLS() + load32(CURFI()) * 4)); return 0; }
     if (k == 93) { return level_new(); }
     if (k == 95) { return level_match(); }
+    if (k == 11) { return level_lambda(); }
     if (is_ident_kind(k)) {
         let off = tval(); let ln = tlen();
         // 0-арный enum-вариант как значение (без скобок).
@@ -234,6 +238,66 @@ fn level_primary() -> int {
         err(); return 0;
     }
     err(); set(0, 5, 1); tp(T_INT()); set(0, 8, -1); return 0;
+}
+
+// Литерал лямбды `fn(params) => expr` / `fn(params) { ... }` → closure-указатель
+// [table_slot i32][env_ptr i32]. Лямбда уже вынесена в отдельную функцию
+// (scan_lambdas); здесь создаётся env с захватами и сам closure-объект.
+fn level_lambda() -> int {
+    let li = lambda_at(get(0, 0));
+    if (li < 0) { err(); return 0; }
+    let nc = cap_count(li);
+    // env = alloc(4*nc) или 0
+    let env = reserve();
+    if (nc > 0) {
+        ev(65); ev_sleb(4 * nc); ev(16); ev_leb(ALLOC_FI()); ev(33); ev_leb(env);
+    } else {
+        ev(65); ev_sleb(0); ev(33); ev_leb(env);
+    }
+    let c = 0;
+    while (c < nc) {
+        let locali = find_local(cap_name_off(li, c), cap_name_len(li, c));
+        if (locali >= 0) {
+            ev(32); ev_leb(env); ev(65); ev_sleb(c * 4); ev(106);
+            ev(32); ev_leb(locali);
+            ev(54); ev(2); ev(0);
+        }
+        c = c + 1;
+    }
+    // closure = alloc(8); [0]=table_slot(=индекс функции); [4]=env
+    let cl = reserve();
+    ev(65); ev_sleb(8); ev(16); ev_leb(ALLOC_FI()); ev(33); ev_leb(cl);
+    ev(32); ev_leb(cl); ev(65); ev_sleb(lam_fn(li)); ev(54); ev(2); ev(0);
+    ev(32); ev_leb(cl); ev(65); ev_sleb(4); ev(106); ev(32); ev_leb(env); ev(54); ev(2); ev(0);
+    ev(32); ev_leb(cl);
+    // Пропускаем тело лямбды до его конца (оно уже скомпилировано отдельно).
+    set(0, 0, lam_body_end(li));
+    set(0, 5, 1); tp(T_INT()); set(0, 8, -1);
+    return 0;
+}
+
+// Косвенный вызов замыкания: callee — локаль, хранящая closure-указатель.
+// events: env в локали, аргументы, индекс таблицы; всё через call_indirect.
+fn emit_indirect_call(callee_slot) -> int {
+    let base = get(0, 7);
+    expect(20);                   // '('
+    // env = [closure+4]: адрес сначала, затем load.
+    ev(32); ev_leb(callee_slot); ev(65); ev_sleb(4); ev(106); ev(40); ev(2); ev(0);
+    let envl = reserve(); ev(33); ev_leb(envl);
+    ev(32); ev_leb(envl);         // env — первый аргумент
+    let argc = 0;
+    while (tkind() != 21 && tkind() != 0) {
+        set(0, 7, base);
+        level_or();
+        argc = argc + 1;
+        if (tkind() == 24) { adv(); }
+    }
+    expect(21);
+    // table index = [closure+0]
+    ev(32); ev_leb(callee_slot); ev(40); ev(2); ev(0);
+    ev(17); ev_leb(argc + 2); ev(0);    // call_indirect: тип арности argc+1 (env)
+    set(0, 5, 1); set(0, 7, base); tp(T_INT()); set(0, 8, -1);
+    return 0;
 }
 
 // match scrut { case pat: expr, ... }: цепочка IF/ELSE, значение на стеке.

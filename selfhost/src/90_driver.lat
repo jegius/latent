@@ -1,16 +1,21 @@
 fn compile_program() -> int {
-    let reserve = alloc(4100000);   // гарантировать рост памяти под все области
+    let reserve = alloc(4600000);   // гарантировать рост памяти под все области
     store32(reserve, 0);
     binit(OUTB()); binit(SCRB()); binit(FNB()); binit(CODEB()); binit(BODYC()); binit(DATAB());
     set(0, 4, 0); set(0, 5, 0); set(0, 6, 0); set(0, 7, 0);
     set_ncls(0); set_nfcls(0); set_nmeth(0); set_nvar(4);
+    set_nlam(0); set_ncap(0);
     let nt = tokenize();
     set(0, 1, nt);
     scan_classes();
     scan_enums();
     let n = scan_signatures();
+    scan_lambdas();
+    register_lambdas();
     let i = 0;
     while (i < n) { compile_fn(i); i = i + 1; }
+    let li = 0;
+    while (li < nlam()) { compile_lambda(li); li = li + 1; }
     helper_bodies();
     build_module();
     return blen(OUTB());

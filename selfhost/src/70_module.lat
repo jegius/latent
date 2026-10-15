@@ -211,12 +211,13 @@ fn build_module() -> int {
     bput(OUTB(), 1); bput(OUTB(), 0); bput(OUTB(), 0); bput(OUTB(), 0);
     let n = nf();
 
-    // type section: (i32)->void; arity 0..5 -> i32; (i32,i32,i32)->i32 уже есть
+    // type section: (i32)->void (idx0); arity 0..8 -> i32 (idx1..9).
+    // Лямбда арности np+1 берёт тип-индекс np+2 (см. lam_tp) => np до 7.
     binit(SCRB());
-    bleb(SCRB(), 7);
+    bleb(SCRB(), 10);
     bput(SCRB(), 96); bleb(SCRB(), 1); bput(SCRB(), 127); bleb(SCRB(), 0);
     let a = 0;
-    while (a < 6) {
+    while (a < 9) {
         bput(SCRB(), 96); bleb(SCRB(), a);
         let q = 0; while (q < a) { bput(SCRB(), 127); q = q + 1; }
         bleb(SCRB(), 1); bput(SCRB(), 127);
@@ -232,9 +233,10 @@ fn build_module() -> int {
     bput(SCRB(), 0); bleb(SCRB(), 0);
     emit_sec(2, SCRB());
 
-    // func section: n user + alloc + memcopy + str_concat + str_eq + str_char_at
+    // func section: n user + 7 хелперов + лямбды
+    let nl = nlam();
     binit(SCRB());
-    bleb(SCRB(), n + 2 + 5);
+    bleb(SCRB(), n + 7 + nl);
     let i = 0;
     while (i < n) { bleb(SCRB(), load32(FNNP() + i * 4) + 1); i = i + 1; }
     bleb(SCRB(), 2);   // alloc: (i32)->i32 = type2
@@ -244,7 +246,20 @@ fn build_module() -> int {
     bleb(SCRB(), 3);   // str_char_at
     bleb(SCRB(), 2);   // i32_to_str: (i32)->i32 = type2
     bleb(SCRB(), 2);   // str_to_i32: (i32)->i32 = type2
+    i = 0;
+    while (i < nl) { bleb(SCRB(), lam_tp(i)); i = i + 1; }
     emit_sec(3, SCRB());
+
+    // table section (id 4): funcref, если есть лямбды. Все функции модуля
+    // лежат в таблице по слотам = индексам функций (0..total-1).
+    if (nl > 0) {
+        binit(SCRB());
+        bleb(SCRB(), 1);            // 1 таблица
+        bput(SCRB(), 112);          // funcref
+        bput(SCRB(), 0);            // limits: min only
+        bleb(SCRB(), 1 + n + 7 + nl);
+        emit_sec(4, SCRB());
+    }
 
     // memory: 16 pages
     binit(SCRB());
@@ -266,11 +281,24 @@ fn build_module() -> int {
     bput(SCRB(), 0); bleb(SCRB(), find_main() + 1);
     emit_sec(7, SCRB());
 
-    // code section: n + 7 bodies (user + alloc + memcopy + 3 str + 2 conv helpers)
+    // element section (id 9): все функции модуля в таблице (слот = индекс).
+    if (nl > 0) {
+        binit(SCRB());
+        bleb(SCRB(), 1);            // 1 сегмент
+        bput(SCRB(), 0);            // active, table 0
+        bput(SCRB(), 65); bleb(SCRB(), 0); bput(SCRB(), 11);   // offset = 0
+        let tot = 1 + n + 7 + nl;
+        bleb(SCRB(), tot);
+        let q = 0;
+        while (q < tot) { bleb(SCRB(), q); q = q + 1; }
+        emit_sec(9, SCRB());
+    }
+
+    // code section: n + 7 + nl bodies
     binit(SCRB());
-    bleb(SCRB(), n + 7);
+    bleb(SCRB(), n + 7 + nl);
     i = 0;
-    while (i < n + 7) {
+    while (i < n + 7 + nl) {
         bleb(SCRB(), load32(CODELN() + i * 4));
         let q = 0;
         while (q < load32(CODELN() + i * 4)) {

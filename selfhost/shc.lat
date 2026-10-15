@@ -66,6 +66,25 @@ fn VNL() -> int { return 3796992; }      // 16K  вариант: длина им
 fn VTAG() -> int { return 3813376; }     // 4K   вариант: тег
 fn VARY() -> int { return 3817472; }     // 4K   вариант: арность
 fn NVAR() -> int { return 3821568; }     // 4K   число вариантов
+// --- таблицы лямбд (замыканий) ---
+// Раскладка: 32K-массивы индексируются номером лямбды (<~2048 штук), 4K-
+// массивы — под мелкие счётчики. Всё выровнено по 32K на границах блоков.
+fn LAMTOK() -> int { return 3932160; }   // 32K  токен `fn` лямбды
+fn LAMNP() -> int { return 3964928; }    // 32K  число параметров лямбды
+fn LAMS0() -> int { return 3997696; }    // 32K  первый индекс захвата лямбды
+fn LAMNC() -> int { return 4030464; }    // 32K  число захватов лямбды
+fn LAMBODY() -> int { return 4063232; }  // 32K  токен начала тела лямбды
+fn LAMBEND() -> int { return 4096000; }  // 32K  токен конца тела (исключая)
+fn CAPO() -> int { return 4128768; }     // 32K  захват: оффсет имени
+fn CAPL() -> int { return 4161536; }     // 32K  захват: длина имени
+fn LPOFF() -> int { return 4194304; }    // 32K  параметр лямбды: оффсет имени
+fn LPLEN() -> int { return 4227072; }    // 32K  параметр лямбды: длина имени
+fn LAMFN() -> int { return 4259840; }    // 32K  индекс функции лямбды
+fn NLAM() -> int { return 4292608; }     // 4K   число лямбд
+fn NCAP() -> int { return 4296704; }     // 4K   всего записей захватов
+fn LAMBLK() -> int { return 4300800; }   // 4K   тело лямбды — блок (1) или выражение (0)
+fn NPNL() -> int { return 4304896; }     // 4K   всего параметров лямбд
+fn NBASE() -> int { return 4308992; }    // 4K   индекс первой функции лямбды
 
 // Слоты состояния: 0=PC 1=NT 2=NF 3=NL 4=status 5=produces 6=NS(strings) 7=TS
 fn get(st, k) -> int { return load32(ST() + st * 4 + k * 4); }
@@ -180,6 +199,7 @@ fn punct_kind(c, d) -> int {
     if (c == 45) { return 31; }
     if (c == 47) { return 33; }
     if (c == 61 && d == 61) { return 40; }
+    if (c == 61 && d == 62) { return 99; }
     if (c == 61) { return 27; }
     if (c == 33 && d == 61) { return 41; }
     if (c == 33) { return 53; }
@@ -197,7 +217,7 @@ fn punct_kind(c, d) -> int {
     return 0;
 }
 fn punct_len(k) -> int {
-    if (k == 28 || k == 40 || k == 41 || k == 44 || k == 45 || k == 46 || k == 47 || k == 51 || k == 52) { return 2; }
+    if (k == 28 || k == 40 || k == 41 || k == 44 || k == 45 || k == 46 || k == 47 || k == 51 || k == 52 || k == 99) { return 2; }
     return 1;
 }
 
@@ -577,6 +597,284 @@ fn fn_has_result(fi) -> bool {
     return false;
 }
 
+// ===== часть: 36_lambda.lat =====
+// ============================ ЛЯМБДЫ / ЗАМЫКАНИЯ ============================
+// Первый проход: находит `fn` внутри тел (не методы, не верхний уровень),
+// регистрирует параметры, границы тела и захваты (свободные имена).
+// Closure representation: [table_slot i32][env_ptr i32]; env хранит
+// захваченные i32 по слотам. Косвенный вызов — call_indirect с типом
+// (env, params...) -> i32.
+
+fn nlam() -> int { return load32(NLAM()); }
+fn set_nlam(v) -> int { store32(NLAM(), v); return v; }
+fn ncap() -> int { return load32(NCAP()); }
+fn set_ncap(v) -> int { store32(NCAP(), v); return v; }
+
+// Область параметров/захватов физически одна: LPST..(LPST+4*np-1) для
+// параметров, CAPO/CAPL — для захватов (отдельные массивы).
+
+fn skip_lambda_body(j, total) -> int {
+    // j указывает на `{` или на начало выражения `=>`.
+    while (j < total && load32(KIND() + j * 4) != 27 && load32(KIND() + j * 4) != 22) { j = j + 1; }
+    return j;
+}
+
+// Собирает захваты лямбды `li`: свободные идентификаторы тела, не являющиеся
+// параметрами, локальными объявлениями тела или функциями верхнего уровня.
+// Параметры лямбды лежат в сквозном массиве LPOFF/LPLEN, начиная с индекса
+// параметров этой лямбды (нужно вычислить смещение).
+fn scan_lambda_captures(bs, be, is_blk, np, li, poff, plen) -> int {
+    let first = ncap();
+    let pbase = param_base(li);
+    let i = bs;
+    while (i < be) {
+        let tk = load32(KIND() + i * 4);
+        if (tk == 2) {
+            let off = load32(TVAL() + i * 4); let ln = load32(TLEN() + i * 4);
+            if (!is_cap_param(pbase, np, off, ln)
+                && !is_cap_local(bs, i, off, ln)
+                && find_func(off, ln) < 0
+                && variant_tag(off, ln) < 0
+                && !is_cap_dup(first, off, ln)
+                && !is_ident_kw(off, ln)) {
+                add_cap(off, ln);
+            }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Начало параметров лямбды li в сквозном массиве LPOFF/LPLEN.
+fn param_base(li) -> int {
+    let i = 0; let b = 0;
+    while (i < li) { b = b + load32(LAMNP() + i * 4); i = i + 1; }
+    return b;
+}
+
+fn is_ident_kw(off, ln) -> bool {
+    // Мягкие встроенные имена не захватываем.
+    if (is_lit(off, ln, "print", 5)) { return true; }
+    if (is_lit(off, ln, "len", 3)) { return true; }
+    if (is_lit(off, ln, "push", 4)) { return true; }
+    if (is_lit(off, ln, "str", 3)) { return true; }
+    if (is_lit(off, ln, "int", 3)) { return true; }
+    if (is_lit(off, ln, "true", 4) || is_lit(off, ln, "false", 5)) { return true; }
+    return false;
+}
+
+fn is_cap_param(pbase, np, off, ln) -> bool {
+    let i = 0;
+    while (i < np) {
+        if (name_eq(off, ln, load32(LPOFF() + (pbase + i) * 4), load32(LPLEN() + (pbase + i) * 4))) { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+// `let <this>` где-то в теле (до или после) — считаем локальным, не захватом.
+fn is_cap_local(bs, cur, off, ln) -> bool {
+    let i = bs;
+    while (i < cur) {
+        if (load32(KIND() + i * 4) == 10) {
+            if (name_eq(off, ln, load32(TVAL() + (i + 1) * 4), load32(TLEN() + (i + 1) * 4))) { return true; }
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn is_cap_dup(first, off, ln) -> bool {
+    let i = first;
+    let n = ncap();
+    while (i < n) {
+        if (name_eq(off, ln, load32(CAPO() + i * 4), load32(CAPL() + i * 4))) { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn add_cap(off, ln) -> int {
+    let i = ncap();
+    store32(CAPO() + i * 4, off); store32(CAPL() + i * 4, ln);
+    set_ncap(i + 1);
+    return i;
+}
+
+// Пропуск тела лямбды: блочное (`{...}`) или выражение до `,`/`;`/`}`/`)`.
+fn lambda_body_end(bs, is_blk, total) -> int {
+    if (is_blk == 1) {
+        let d = 0; let i = bs;
+        while (i < total) {
+            let tk = load32(KIND() + i * 4);
+            if (tk == 22) { d = d + 1; }
+            else { if (tk == 23) { d = d - 1; if (d == 0) { return i + 1; } } }
+            i = i + 1;
+        }
+        return i;
+    }
+    // выражение: до `,` `;` `}` `)` на верхнем уровне вложенности
+    let d = 0; let i = bs;
+    while (i < total) {
+        let tk = load32(KIND() + i * 4);
+        if (tk == 20 || tk == 80 || tk == 22) { d = d + 1; }
+        else {
+            if (tk == 21 || tk == 81 || tk == 23) {
+                if (d == 0) { return i; }
+                d = d - 1;
+            } else {
+                if (d == 0 && (tk == 24 || tk == 25)) { return i; }
+            }
+        }
+        i = i + 1;
+    }
+    return i;
+}
+
+fn scan_lambdas() -> int {
+    let total = get(0, 1);
+    let i = 0; let nl = 0; let depth = 0;
+    let npnl = 0;                 // сквозной счётчик параметров лямбд
+    while (i < total) {
+        let tk = load32(KIND() + i * 4);
+        if (tk == 22) { depth = depth + 1; i = i + 1; }
+        else {
+            if (tk == 23) { depth = depth - 1; i = i + 1; }
+            else {
+                if (tk == 11 && depth > 0 && method_class(i) < 0) {
+                    store32(LAMTOK() + nl * 4, i);
+                    let np = 0; let j = i + 2; let prev = 20;
+                    while (j < total && load32(KIND() + j * 4) != 21) {
+                        let kk = load32(KIND() + j * 4);
+                        if ((kk == 2 || (kk >= 10 && kk <= 19)) && (prev == 20 || prev == 24)) {
+                            store32(LPOFF() + npnl * 4, load32(TVAL() + j * 4));
+                            store32(LPLEN() + npnl * 4, load32(TLEN() + j * 4));
+                            np = np + 1; npnl = npnl + 1;
+                        }
+                        prev = kk; j = j + 1;
+                    }
+                    store32(LAMNP() + nl * 4, np);
+                    j = j + 1;                     // через ')'
+                    if (load32(KIND() + j * 4) == 28) {
+                        j = j + 1;
+                        while (j < total && load32(KIND() + j * 4) != 27 && load32(KIND() + j * 4) != 22) { j = j + 1; }
+                    }
+                    let is_blk = 0;
+                    if (load32(KIND() + j * 4) == 99) { j = j + 1; } else { is_blk = 1; }
+                    store32(LAMBLK() + nl * 4, is_blk);
+                    let bs = j;
+                    let be = lambda_body_end(bs, is_blk, total);
+                    store32(LAMBODY() + nl * 4, bs);
+                    store32(LAMBEND() + nl * 4, be);
+                    let first = ncap();
+                    store32(LAMS0() + nl * 4, first);
+                    scan_lambda_captures(bs, be, is_blk, np, nl, LPOFF(), LPLEN());
+                    store32(LAMNC() + nl * 4, ncap() - first);
+                    nl = nl + 1;
+                    i = be;
+                } else { i = i + 1; }
+            }
+        }
+    }
+    store32(NPNL(), npnl);
+    set_nlam(nl);
+    return nl;
+}
+
+fn lam_tok(li) -> int { return load32(LAMTOK() + li * 4); }
+fn lam_np(li) -> int { return load32(LAMNP() + li * 4); }
+fn lam_body_start(li) -> int { return load32(LAMBODY() + li * 4); }
+fn lam_body_end(li) -> int { return load32(LAMBEND() + li * 4); }
+fn lam_is_block(li) -> int { return load32(LAMBLK() + li * 4); }
+fn lam_fn(li) -> int { return load32(LAMFN() + li * 4); }
+
+// Лямбда по токену `fn` (-1 если нет).
+fn lambda_at(token) -> int {
+    let i = 0; let n = nlam();
+    while (i < n) {
+        if (load32(LAMTOK() + i * 4) == token) { return i; }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn cap_start(li) -> int { return load32(LAMS0() + li * 4); }
+fn cap_count(li) -> int { return load32(LAMNC() + li * 4); }
+fn cap_name_off(li, c) -> int { return load32(CAPO() + (cap_start(li) + c) * 4); }
+fn cap_name_len(li, c) -> int { return load32(CAPL() + (cap_start(li) + c) * 4); }
+
+// Модульный индекс функции лямбды: 1(import)+nf()+7(хелперы)+li.
+fn lam_fidx(li) -> int { return nf() + 8 + li; }
+// Тип лямбды: (env, params...) -> i32 = арность np+1.
+// В type-секции тип арности a имеет индекс a+1, значит индекс = np+2.
+fn lam_tp(li) -> int { return lam_np(li) + 2; }
+
+// Регистрирует индекс функции каждой лямбды (вызывается после scan_signatures,
+// когда nf() уже известно).
+fn register_lambdas() -> int {
+    let i = 0; let n = nlam();
+    while (i < n) {
+        store32(LAMFN() + i * 4, lam_fidx(i));
+        i = i + 1;
+    }
+    return n;
+}
+
+// Компилирует тело лямбды li в CODEB-слот lam_fidx(li).
+fn compile_lambda(li) -> int {
+    set(0, 0, lam_body_start(li));
+    binit(FNB());
+    set(0, 3, 0);
+    // Локаль 0 — env-указатель.
+    add_local(-2, 1, 0); set_local_tp(0, T_INT());
+    // Параметры.
+    let pbase = param_base(li);
+    let np = lam_np(li);
+    let pi = 0;
+    while (pi < np) {
+        let slot = get(0, 3);
+        add_local(load32(LPOFF() + (pbase + pi) * 4), load32(LPLEN() + (pbase + pi) * 4), slot);
+        set_local_tp(slot, T_INT());
+        pi = pi + 1;
+    }
+    // Захваты: читаем env[c] → свежие локали.
+    let nc = cap_count(li);
+    let ci = 0;
+    while (ci < nc) {
+        let slot = get(0, 3);
+        add_local(cap_name_off(li, ci), cap_name_len(li, ci), slot);
+        set_local_tp(slot, T_INT());
+        ev(32); ev_leb(0); ev(65); ev_sleb(ci * 4); ev(106); ev(40); ev(2); ev(0);
+        ev(33); ev_leb(slot);
+        ci = ci + 1;
+    }
+    // Тело.
+    if (lam_is_block(li) == 1) {
+        expect(22);
+        stmts();
+        expect(23);
+    } else {
+        level_or();
+        ev(15);   // return
+    }
+    let lb = load8(FNB() + 4 + load32(FNB()) - 1);
+    if (lb != 15) { ev(65); ev_sleb(0); }
+    ev(11);
+    // финальное тело: nlocals = все слоты минус (env + np)
+    binit(BODYC());
+    let nparams = np + 1;
+    let nlocals = get(0, 3) - nparams;
+    if (nlocals < 0) { nlocals = 0; }
+    if (nlocals > 0) { bleb(BODYC(), 1); bleb(BODYC(), nlocals); bput(BODYC(), 127); } else { bleb(BODYC(), 0); }
+    bcopy(BODYC(), FNB(), 0, blen(FNB()));
+    // Слот code-секции = индекс функции минус 1 (импорт print не имеет тела).
+    let slot = lam_fidx(li) - 1;
+    store32(CODEOF() + slot * 4, load32(CODEB()));
+    store32(CODELN() + slot * 4, blen(BODYC()));
+    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+    return 0;
+}
+
 // ===== часть: 40_emit_expr.lat =====
 // --- эмиссия ---
 fn ev(b) -> int { return bput(FNB(), b); }
@@ -643,6 +941,9 @@ fn emit_call(off, ln) -> int {
         // Конструктор enum-варианта: Tag(args) → [tag i32][fields...].
         let tag = variant_tag(off, ln);
         if (tag >= 0) { return emit_variant(tag, variant_arity(off, ln)); }
+        // Локаль, хранящая замыкание → косвенный вызов.
+        let li = find_local(off, ln);
+        if (li >= 0) { return emit_indirect_call(li); }
         err(); return 0;
     }
     return emit_call_named(fi + 1, 0);
@@ -799,6 +1100,7 @@ fn level_primary() -> int {
     if (k == 94) { adv(); ev(32); ev_leb(0); set(0, 5, 1); tp(T_INT()); set(0, 8, load32(FNCLS() + load32(CURFI()) * 4)); return 0; }
     if (k == 93) { return level_new(); }
     if (k == 95) { return level_match(); }
+    if (k == 11) { return level_lambda(); }
     if (is_ident_kind(k)) {
         let off = tval(); let ln = tlen();
         // 0-арный enum-вариант как значение (без скобок).
@@ -814,6 +1116,66 @@ fn level_primary() -> int {
         err(); return 0;
     }
     err(); set(0, 5, 1); tp(T_INT()); set(0, 8, -1); return 0;
+}
+
+// Литерал лямбды `fn(params) => expr` / `fn(params) { ... }` → closure-указатель
+// [table_slot i32][env_ptr i32]. Лямбда уже вынесена в отдельную функцию
+// (scan_lambdas); здесь создаётся env с захватами и сам closure-объект.
+fn level_lambda() -> int {
+    let li = lambda_at(get(0, 0));
+    if (li < 0) { err(); return 0; }
+    let nc = cap_count(li);
+    // env = alloc(4*nc) или 0
+    let env = reserve();
+    if (nc > 0) {
+        ev(65); ev_sleb(4 * nc); ev(16); ev_leb(ALLOC_FI()); ev(33); ev_leb(env);
+    } else {
+        ev(65); ev_sleb(0); ev(33); ev_leb(env);
+    }
+    let c = 0;
+    while (c < nc) {
+        let locali = find_local(cap_name_off(li, c), cap_name_len(li, c));
+        if (locali >= 0) {
+            ev(32); ev_leb(env); ev(65); ev_sleb(c * 4); ev(106);
+            ev(32); ev_leb(locali);
+            ev(54); ev(2); ev(0);
+        }
+        c = c + 1;
+    }
+    // closure = alloc(8); [0]=table_slot(=индекс функции); [4]=env
+    let cl = reserve();
+    ev(65); ev_sleb(8); ev(16); ev_leb(ALLOC_FI()); ev(33); ev_leb(cl);
+    ev(32); ev_leb(cl); ev(65); ev_sleb(lam_fn(li)); ev(54); ev(2); ev(0);
+    ev(32); ev_leb(cl); ev(65); ev_sleb(4); ev(106); ev(32); ev_leb(env); ev(54); ev(2); ev(0);
+    ev(32); ev_leb(cl);
+    // Пропускаем тело лямбды до его конца (оно уже скомпилировано отдельно).
+    set(0, 0, lam_body_end(li));
+    set(0, 5, 1); tp(T_INT()); set(0, 8, -1);
+    return 0;
+}
+
+// Косвенный вызов замыкания: callee — локаль, хранящая closure-указатель.
+// events: env в локали, аргументы, индекс таблицы; всё через call_indirect.
+fn emit_indirect_call(callee_slot) -> int {
+    let base = get(0, 7);
+    expect(20);                   // '('
+    // env = [closure+4]: адрес сначала, затем load.
+    ev(32); ev_leb(callee_slot); ev(65); ev_sleb(4); ev(106); ev(40); ev(2); ev(0);
+    let envl = reserve(); ev(33); ev_leb(envl);
+    ev(32); ev_leb(envl);         // env — первый аргумент
+    let argc = 0;
+    while (tkind() != 21 && tkind() != 0) {
+        set(0, 7, base);
+        level_or();
+        argc = argc + 1;
+        if (tkind() == 24) { adv(); }
+    }
+    expect(21);
+    // table index = [closure+0]
+    ev(32); ev_leb(callee_slot); ev(40); ev(2); ev(0);
+    ev(17); ev_leb(argc + 2); ev(0);    // call_indirect: тип арности argc+1 (env)
+    set(0, 5, 1); set(0, 7, base); tp(T_INT()); set(0, 8, -1);
+    return 0;
 }
 
 // match scrut { case pat: expr, ... }: цепочка IF/ELSE, значение на стеке.
@@ -1471,10 +1833,15 @@ fn st_for() -> int {
 // ===== часть: 60_func.lat =====
 // --- сборка функций ---
 fn scan_signatures() -> int {
-    let i = 0; let cnt = 0;
+    let i = 0; let cnt = 0; let depth = 0;
     let total = get(0, 1);
     while (i < total) {
-        if (load32(KIND() + i * 4) == 11) {
+        let tk = load32(KIND() + i * 4);
+        if (tk == 22) { depth = depth + 1; }
+        else { if (tk == 23) { depth = depth - 1; if (depth < 0) { depth = 0; } }
+        // Функция верхнего уровня (depth 0) или метод класса (записан в
+        // METHTOK скан-классов). Прочие `fn` внутри тел — лямбды (scan_lambdas).
+        else { if (tk == 11 && (depth == 0 || method_class(i) >= 0)) {
             store32(FNTOK() + cnt * 4, i);
             store32(FNOFF() + cnt * 4, load32(TVAL() + (i + 1) * 4));
             store32(FNLEN() + cnt * 4, load32(TLEN() + (i + 1) * 4));
@@ -1491,6 +1858,7 @@ fn scan_signatures() -> int {
             store32(FNNP() + cnt * 4, p);
             store32(FNRET() + cnt * 4, fn_ret_tp(total, i));
             cnt = cnt + 1;
+        } }
         }
         i = i + 1;
     }
@@ -1774,12 +2142,13 @@ fn build_module() -> int {
     bput(OUTB(), 1); bput(OUTB(), 0); bput(OUTB(), 0); bput(OUTB(), 0);
     let n = nf();
 
-    // type section: (i32)->void; arity 0..5 -> i32; (i32,i32,i32)->i32 уже есть
+    // type section: (i32)->void (idx0); arity 0..8 -> i32 (idx1..9).
+    // Лямбда арности np+1 берёт тип-индекс np+2 (см. lam_tp) => np до 7.
     binit(SCRB());
-    bleb(SCRB(), 7);
+    bleb(SCRB(), 10);
     bput(SCRB(), 96); bleb(SCRB(), 1); bput(SCRB(), 127); bleb(SCRB(), 0);
     let a = 0;
-    while (a < 6) {
+    while (a < 9) {
         bput(SCRB(), 96); bleb(SCRB(), a);
         let q = 0; while (q < a) { bput(SCRB(), 127); q = q + 1; }
         bleb(SCRB(), 1); bput(SCRB(), 127);
@@ -1795,9 +2164,10 @@ fn build_module() -> int {
     bput(SCRB(), 0); bleb(SCRB(), 0);
     emit_sec(2, SCRB());
 
-    // func section: n user + alloc + memcopy + str_concat + str_eq + str_char_at
+    // func section: n user + 7 хелперов + лямбды
+    let nl = nlam();
     binit(SCRB());
-    bleb(SCRB(), n + 2 + 5);
+    bleb(SCRB(), n + 7 + nl);
     let i = 0;
     while (i < n) { bleb(SCRB(), load32(FNNP() + i * 4) + 1); i = i + 1; }
     bleb(SCRB(), 2);   // alloc: (i32)->i32 = type2
@@ -1807,7 +2177,20 @@ fn build_module() -> int {
     bleb(SCRB(), 3);   // str_char_at
     bleb(SCRB(), 2);   // i32_to_str: (i32)->i32 = type2
     bleb(SCRB(), 2);   // str_to_i32: (i32)->i32 = type2
+    i = 0;
+    while (i < nl) { bleb(SCRB(), lam_tp(i)); i = i + 1; }
     emit_sec(3, SCRB());
+
+    // table section (id 4): funcref, если есть лямбды. Все функции модуля
+    // лежат в таблице по слотам = индексам функций (0..total-1).
+    if (nl > 0) {
+        binit(SCRB());
+        bleb(SCRB(), 1);            // 1 таблица
+        bput(SCRB(), 112);          // funcref
+        bput(SCRB(), 0);            // limits: min only
+        bleb(SCRB(), 1 + n + 7 + nl);
+        emit_sec(4, SCRB());
+    }
 
     // memory: 16 pages
     binit(SCRB());
@@ -1829,11 +2212,24 @@ fn build_module() -> int {
     bput(SCRB(), 0); bleb(SCRB(), find_main() + 1);
     emit_sec(7, SCRB());
 
-    // code section: n + 7 bodies (user + alloc + memcopy + 3 str + 2 conv helpers)
+    // element section (id 9): все функции модуля в таблице (слот = индекс).
+    if (nl > 0) {
+        binit(SCRB());
+        bleb(SCRB(), 1);            // 1 сегмент
+        bput(SCRB(), 0);            // active, table 0
+        bput(SCRB(), 65); bleb(SCRB(), 0); bput(SCRB(), 11);   // offset = 0
+        let tot = 1 + n + 7 + nl;
+        bleb(SCRB(), tot);
+        let q = 0;
+        while (q < tot) { bleb(SCRB(), q); q = q + 1; }
+        emit_sec(9, SCRB());
+    }
+
+    // code section: n + 7 + nl bodies
     binit(SCRB());
-    bleb(SCRB(), n + 7);
+    bleb(SCRB(), n + 7 + nl);
     i = 0;
-    while (i < n + 7) {
+    while (i < n + 7 + nl) {
         bleb(SCRB(), load32(CODELN() + i * 4));
         let q = 0;
         while (q < load32(CODELN() + i * 4)) {
@@ -1869,18 +2265,23 @@ fn find_main() -> int {
 
 // ===== часть: 90_driver.lat =====
 fn compile_program() -> int {
-    let reserve = alloc(4100000);   // гарантировать рост памяти под все области
+    let reserve = alloc(4600000);   // гарантировать рост памяти под все области
     store32(reserve, 0);
     binit(OUTB()); binit(SCRB()); binit(FNB()); binit(CODEB()); binit(BODYC()); binit(DATAB());
     set(0, 4, 0); set(0, 5, 0); set(0, 6, 0); set(0, 7, 0);
     set_ncls(0); set_nfcls(0); set_nmeth(0); set_nvar(4);
+    set_nlam(0); set_ncap(0);
     let nt = tokenize();
     set(0, 1, nt);
     scan_classes();
     scan_enums();
     let n = scan_signatures();
+    scan_lambdas();
+    register_lambdas();
     let i = 0;
     while (i < n) { compile_fn(i); i = i + 1; }
+    let li = 0;
+    while (li < nlam()) { compile_lambda(li); li = li + 1; }
     helper_bodies();
     build_module();
     return blen(OUTB());

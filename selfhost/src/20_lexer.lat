@@ -61,6 +61,7 @@ fn punct_kind(c, d) -> int {
     if (c == 45) { return 31; }
     if (c == 47) { return 33; }
     if (c == 61 && d == 61) { return 40; }
+    if (c == 61 && d == 62) { return 99; }
     if (c == 61) { return 27; }
     if (c == 33 && d == 61) { return 41; }
     if (c == 33) { return 53; }
@@ -78,7 +79,7 @@ fn punct_kind(c, d) -> int {
     return 0;
 }
 fn punct_len(k) -> int {
-    if (k == 28 || k == 40 || k == 41 || k == 44 || k == 45 || k == 46 || k == 47 || k == 51 || k == 52) { return 2; }
+    if (k == 28 || k == 40 || k == 41 || k == 44 || k == 45 || k == 46 || k == 47 || k == 51 || k == 52 || k == 99) { return 2; }
     return 1;
 }
 

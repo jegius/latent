@@ -1,0 +1,276 @@
+// ============================ ЛЯМБДЫ / ЗАМЫКАНИЯ ============================
+// Первый проход: находит `fn` внутри тел (не методы, не верхний уровень),
+// регистрирует параметры, границы тела и захваты (свободные имена).
+// Closure representation: [table_slot i32][env_ptr i32]; env хранит
+// захваченные i32 по слотам. Косвенный вызов — call_indirect с типом
+// (env, params...) -> i32.
+
+fn nlam() -> int { return load32(NLAM()); }
+fn set_nlam(v) -> int { store32(NLAM(), v); return v; }
+fn ncap() -> int { return load32(NCAP()); }
+fn set_ncap(v) -> int { store32(NCAP(), v); return v; }
+
+// Область параметров/захватов физически одна: LPST..(LPST+4*np-1) для
+// параметров, CAPO/CAPL — для захватов (отдельные массивы).
+
+fn skip_lambda_body(j, total) -> int {
+    // j указывает на `{` или на начало выражения `=>`.
+    while (j < total && load32(KIND() + j * 4) != 27 && load32(KIND() + j * 4) != 22) { j = j + 1; }
+    return j;
+}
+
+// Собирает захваты лямбды `li`: свободные идентификаторы тела, не являющиеся
+// параметрами, локальными объявлениями тела или функциями верхнего уровня.
+// Параметры лямбды лежат в сквозном массиве LPOFF/LPLEN, начиная с индекса
+// параметров этой лямбды (нужно вычислить смещение).
+fn scan_lambda_captures(bs, be, is_blk, np, li, poff, plen) -> int {
+    let first = ncap();
+    let pbase = param_base(li);
+    let i = bs;
+    while (i < be) {
+        let tk = load32(KIND() + i * 4);
+        if (tk == 2) {
+            let off = load32(TVAL() + i * 4); let ln = load32(TLEN() + i * 4);
+            if (!is_cap_param(pbase, np, off, ln)
+                && !is_cap_local(bs, i, off, ln)
+                && find_func(off, ln) < 0
+                && variant_tag(off, ln) < 0
+                && !is_cap_dup(first, off, ln)
+                && !is_ident_kw(off, ln)) {
+                add_cap(off, ln);
+            }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Начало параметров лямбды li в сквозном массиве LPOFF/LPLEN.
+fn param_base(li) -> int {
+    let i = 0; let b = 0;
+    while (i < li) { b = b + load32(LAMNP() + i * 4); i = i + 1; }
+    return b;
+}
+
+fn is_ident_kw(off, ln) -> bool {
+    // Мягкие встроенные имена не захватываем.
+    if (is_lit(off, ln, "print", 5)) { return true; }
+    if (is_lit(off, ln, "len", 3)) { return true; }
+    if (is_lit(off, ln, "push", 4)) { return true; }
+    if (is_lit(off, ln, "str", 3)) { return true; }
+    if (is_lit(off, ln, "int", 3)) { return true; }
+    if (is_lit(off, ln, "true", 4) || is_lit(off, ln, "false", 5)) { return true; }
+    return false;
+}
+
+fn is_cap_param(pbase, np, off, ln) -> bool {
+    let i = 0;
+    while (i < np) {
+        if (name_eq(off, ln, load32(LPOFF() + (pbase + i) * 4), load32(LPLEN() + (pbase + i) * 4))) { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+// `let <this>` где-то в теле (до или после) — считаем локальным, не захватом.
+fn is_cap_local(bs, cur, off, ln) -> bool {
+    let i = bs;
+    while (i < cur) {
+        if (load32(KIND() + i * 4) == 10) {
+            if (name_eq(off, ln, load32(TVAL() + (i + 1) * 4), load32(TLEN() + (i + 1) * 4))) { return true; }
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn is_cap_dup(first, off, ln) -> bool {
+    let i = first;
+    let n = ncap();
+    while (i < n) {
+        if (name_eq(off, ln, load32(CAPO() + i * 4), load32(CAPL() + i * 4))) { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn add_cap(off, ln) -> int {
+    let i = ncap();
+    store32(CAPO() + i * 4, off); store32(CAPL() + i * 4, ln);
+    set_ncap(i + 1);
+    return i;
+}
+
+// Пропуск тела лямбды: блочное (`{...}`) или выражение до `,`/`;`/`}`/`)`.
+fn lambda_body_end(bs, is_blk, total) -> int {
+    if (is_blk == 1) {
+        let d = 0; let i = bs;
+        while (i < total) {
+            let tk = load32(KIND() + i * 4);
+            if (tk == 22) { d = d + 1; }
+            else { if (tk == 23) { d = d - 1; if (d == 0) { return i + 1; } } }
+            i = i + 1;
+        }
+        return i;
+    }
+    // выражение: до `,` `;` `}` `)` на верхнем уровне вложенности
+    let d = 0; let i = bs;
+    while (i < total) {
+        let tk = load32(KIND() + i * 4);
+        if (tk == 20 || tk == 80 || tk == 22) { d = d + 1; }
+        else {
+            if (tk == 21 || tk == 81 || tk == 23) {
+                if (d == 0) { return i; }
+                d = d - 1;
+            } else {
+                if (d == 0 && (tk == 24 || tk == 25)) { return i; }
+            }
+        }
+        i = i + 1;
+    }
+    return i;
+}
+
+fn scan_lambdas() -> int {
+    let total = get(0, 1);
+    let i = 0; let nl = 0; let depth = 0;
+    let npnl = 0;                 // сквозной счётчик параметров лямбд
+    while (i < total) {
+        let tk = load32(KIND() + i * 4);
+        if (tk == 22) { depth = depth + 1; i = i + 1; }
+        else {
+            if (tk == 23) { depth = depth - 1; i = i + 1; }
+            else {
+                if (tk == 11 && depth > 0 && method_class(i) < 0) {
+                    store32(LAMTOK() + nl * 4, i);
+                    let np = 0; let j = i + 2; let prev = 20;
+                    while (j < total && load32(KIND() + j * 4) != 21) {
+                        let kk = load32(KIND() + j * 4);
+                        if ((kk == 2 || (kk >= 10 && kk <= 19)) && (prev == 20 || prev == 24)) {
+                            store32(LPOFF() + npnl * 4, load32(TVAL() + j * 4));
+                            store32(LPLEN() + npnl * 4, load32(TLEN() + j * 4));
+                            np = np + 1; npnl = npnl + 1;
+                        }
+                        prev = kk; j = j + 1;
+                    }
+                    store32(LAMNP() + nl * 4, np);
+                    j = j + 1;                     // через ')'
+                    if (load32(KIND() + j * 4) == 28) {
+                        j = j + 1;
+                        while (j < total && load32(KIND() + j * 4) != 27 && load32(KIND() + j * 4) != 22) { j = j + 1; }
+                    }
+                    let is_blk = 0;
+                    if (load32(KIND() + j * 4) == 99) { j = j + 1; } else { is_blk = 1; }
+                    store32(LAMBLK() + nl * 4, is_blk);
+                    let bs = j;
+                    let be = lambda_body_end(bs, is_blk, total);
+                    store32(LAMBODY() + nl * 4, bs);
+                    store32(LAMBEND() + nl * 4, be);
+                    let first = ncap();
+                    store32(LAMS0() + nl * 4, first);
+                    scan_lambda_captures(bs, be, is_blk, np, nl, LPOFF(), LPLEN());
+                    store32(LAMNC() + nl * 4, ncap() - first);
+                    nl = nl + 1;
+                    i = be;
+                } else { i = i + 1; }
+            }
+        }
+    }
+    store32(NPNL(), npnl);
+    set_nlam(nl);
+    return nl;
+}
+
+fn lam_tok(li) -> int { return load32(LAMTOK() + li * 4); }
+fn lam_np(li) -> int { return load32(LAMNP() + li * 4); }
+fn lam_body_start(li) -> int { return load32(LAMBODY() + li * 4); }
+fn lam_body_end(li) -> int { return load32(LAMBEND() + li * 4); }
+fn lam_is_block(li) -> int { return load32(LAMBLK() + li * 4); }
+fn lam_fn(li) -> int { return load32(LAMFN() + li * 4); }
+
+// Лямбда по токену `fn` (-1 если нет).
+fn lambda_at(token) -> int {
+    let i = 0; let n = nlam();
+    while (i < n) {
+        if (load32(LAMTOK() + i * 4) == token) { return i; }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn cap_start(li) -> int { return load32(LAMS0() + li * 4); }
+fn cap_count(li) -> int { return load32(LAMNC() + li * 4); }
+fn cap_name_off(li, c) -> int { return load32(CAPO() + (cap_start(li) + c) * 4); }
+fn cap_name_len(li, c) -> int { return load32(CAPL() + (cap_start(li) + c) * 4); }
+
+// Модульный индекс функции лямбды: 1(import)+nf()+7(хелперы)+li.
+fn lam_fidx(li) -> int { return nf() + 8 + li; }
+// Тип лямбды: (env, params...) -> i32 = арность np+1.
+// В type-секции тип арности a имеет индекс a+1, значит индекс = np+2.
+fn lam_tp(li) -> int { return lam_np(li) + 2; }
+
+// Регистрирует индекс функции каждой лямбды (вызывается после scan_signatures,
+// когда nf() уже известно).
+fn register_lambdas() -> int {
+    let i = 0; let n = nlam();
+    while (i < n) {
+        store32(LAMFN() + i * 4, lam_fidx(i));
+        i = i + 1;
+    }
+    return n;
+}
+
+// Компилирует тело лямбды li в CODEB-слот lam_fidx(li).
+fn compile_lambda(li) -> int {
+    set(0, 0, lam_body_start(li));
+    binit(FNB());
+    set(0, 3, 0);
+    // Локаль 0 — env-указатель.
+    add_local(-2, 1, 0); set_local_tp(0, T_INT());
+    // Параметры.
+    let pbase = param_base(li);
+    let np = lam_np(li);
+    let pi = 0;
+    while (pi < np) {
+        let slot = get(0, 3);
+        add_local(load32(LPOFF() + (pbase + pi) * 4), load32(LPLEN() + (pbase + pi) * 4), slot);
+        set_local_tp(slot, T_INT());
+        pi = pi + 1;
+    }
+    // Захваты: читаем env[c] → свежие локали.
+    let nc = cap_count(li);
+    let ci = 0;
+    while (ci < nc) {
+        let slot = get(0, 3);
+        add_local(cap_name_off(li, ci), cap_name_len(li, ci), slot);
+        set_local_tp(slot, T_INT());
+        ev(32); ev_leb(0); ev(65); ev_sleb(ci * 4); ev(106); ev(40); ev(2); ev(0);
+        ev(33); ev_leb(slot);
+        ci = ci + 1;
+    }
+    // Тело.
+    if (lam_is_block(li) == 1) {
+        expect(22);
+        stmts();
+        expect(23);
+    } else {
+        level_or();
+        ev(15);   // return
+    }
+    let lb = load8(FNB() + 4 + load32(FNB()) - 1);
+    if (lb != 15) { ev(65); ev_sleb(0); }
+    ev(11);
+    // финальное тело: nlocals = все слоты минус (env + np)
+    binit(BODYC());
+    let nparams = np + 1;
+    let nlocals = get(0, 3) - nparams;
+    if (nlocals < 0) { nlocals = 0; }
+    if (nlocals > 0) { bleb(BODYC(), 1); bleb(BODYC(), nlocals); bput(BODYC(), 127); } else { bleb(BODYC(), 0); }
+    bcopy(BODYC(), FNB(), 0, blen(FNB()));
+    // Слот code-секции = индекс функции минус 1 (импорт print не имеет тела).
+    let slot = lam_fidx(li) - 1;
+    store32(CODEOF() + slot * 4, load32(CODEB()));
+    store32(CODELN() + slot * 4, blen(BODYC()));
+    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+    return 0;
+}
