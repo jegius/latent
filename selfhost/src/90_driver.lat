@@ -12,6 +12,14 @@ fn compile_program() -> int {
     let n = scan_signatures();
     scan_lambdas();
     register_lambdas();
+    // Тайп-чек: при ошибке пишем её текст в OUTB и возвращаем -длину
+    // (отрицательный результат отличает ошибку от успешного WASM).
+    tc_program();
+    if (get(0, 4) != 0) {
+        binit(OUTB());
+        bcopy(OUTB(), ERRB(), 0, blen(ERRB()));
+        return 0 - blen(OUTB());
+    }
     let i = 0;
     while (i < n) { compile_fn(i); i = i + 1; }
     let li = 0;

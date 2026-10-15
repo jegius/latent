@@ -6,8 +6,9 @@
 //
 // Фиксированная точка: stage2 === stage3.
 //
-// ABI компилятора: хост пишет исходник как [len u32 LE][utf8] по адресу 32768,
-// вызывает main(); готовый WASM лежит как [len u32 LE][bytes] по адресу 65536.
+// ABI компилятора: хост пишет исходник как [len u32 LE][utf8] по адресу
+// INPUT_ADDR (вынесен в 128K-область выше рабочих буферов), вызывает main();
+// готовый WASM лежит как [len u32 LE][bytes] по адресу 65536.
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -17,7 +18,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
 const CLI = process.env.LATENTC || join(root, "target/debug/latentc");
 const SRC = join(here, "shc.lat");
-const INPUT_ADDR = 32768;
+const INPUT_ADDR = 3145728;
 const OUTPUT_ADDR = 65536;
 
 // Компилирует исходник уже собранным компилятором (wasm) и возвращает байты.
@@ -26,12 +27,21 @@ function selfCompile(wasmBytes, source) {
   const mod = new WebAssembly.Module(wasmBytes);
   inst = new WebAssembly.Instance(mod, { env: { print: () => {} } });
   const enc = new TextEncoder().encode(source);
+  // Вход лежит выше рабочих областей: наращиваем память до записи.
+  const need = Math.ceil((INPUT_ADDR + 4 + enc.length) / 65536);
+  const have = inst.exports.memory.buffer.byteLength / 65536;
+  if (need > have) { inst.exports.memory.grow(need - have); }
   new DataView(inst.exports.memory.buffer).setUint32(INPUT_ADDR, enc.length, true);
   new Uint8Array(inst.exports.memory.buffer).set(enc, INPUT_ADDR + 4);
-  inst.exports.main();
+  const ret = inst.exports.main();
   const dv = new DataView(inst.exports.memory.buffer);
   const len = dv.getUint32(OUTPUT_ADDR, true);
-  return new Uint8Array(dv.buffer).slice(OUTPUT_ADDR + 4, OUTPUT_ADDR + 4 + len);
+  const bytes = new Uint8Array(dv.buffer).slice(OUTPUT_ADDR + 4, OUTPUT_ADDR + 4 + len);
+  // Отрицательный результат — ошибка компиляции: байты это текст сообщения.
+  if (ret < 0) {
+    throw new Error(`compile error: ${new TextDecoder().decode(bytes)}`);
+  }
+  return bytes;
 }
 
 function bytesEqual(a, b) {

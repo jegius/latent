@@ -85,6 +85,16 @@ fn NCAP() -> int { return 4296704; }     // 4K   всего записей за�
 fn LAMBLK() -> int { return 4300800; }   // 4K   тело лямбды — блок (1) или выражение (0)
 fn NPNL() -> int { return 4304896; }     // 4K   всего параметров лямбд
 fn NBASE() -> int { return 4308992; }    // 4K   индекс первой функции лямбды
+// --- таблицы тайп-чекера ---
+fn TV_OFF() -> int { return 4313088; }   // 32K  переменная: оффсет имени
+fn TV_LEN() -> int { return 4345856; }   // 32K  переменная: длина имени
+fn TV_TY() -> int { return 4378624; }    // 32K  переменная: тег типа
+fn TV_AUX() -> int { return 4411392; }   // 32K  переменная: вспом. (тип результата fn)
+fn TV_NP() -> int { return 4444160; }    // 32K  переменная: число параметров (fn)
+fn TV_NEST() -> int { return 4476928; }  // 32K  переменная: глубина области видимости
+fn FRETTY() -> int { return 4509696; }   // 32K  тип результата функции
+fn TCCUR() -> int { return 4542464; }    // 16   текущий индекс функции в тайп-чеке
+fn ERRB() -> int { return 4547072; }     // 4K   буфер сообщения об ошибке
 
 // Слоты состояния: 0=PC 1=NT 2=NF 3=NL 4=status 5=produces 6=NS(strings) 7=TS
 fn get(st, k) -> int { return load32(ST() + st * 4 + k * 4); }
@@ -1647,6 +1657,510 @@ fn level_mul() -> int {
     return 0;
 }
 
+// ===== часть: 45_typecheck.lat =====
+// ============================ ТАЙП-ЧЕКЕР ============================
+// Отдельный проход после лексера/регистрации: строит таблицу переменных с
+// типами и проверяет аннотации, возвраты, арность вызовов, условия. При
+// ошибке выставляет status=1 и пишет сообщение в ERRB; кодоген тогда
+// пропускается, а хост получает текст ошибки вместо WASM.
+
+// Тег типа (совместим с oracle: числа = NUM, int/float взаимозаменяемы).
+fn TY_UNK() -> int { return 0; }
+fn TY_NUM() -> int { return 1; }
+fn TY_BOOL() -> int { return 2; }
+fn TY_STR() -> int { return 3; }
+fn TY_UNIT() -> int { return 4; }
+fn TY_ARRAY() -> int { return 5; }
+fn TY_FN() -> int { return 6; }
+fn TY_NAMED() -> int { return 7; }
+
+// Копирует строку-сообщение в ERRB как [len][bytes], читая символы через
+// индексацию (s[i]) — так oracle-инференс не связывает параметр с числом.
+fn tcerr_msg(s: string) -> int {
+    let n = len(s);
+    store32(ERRB(), n);
+    let i = 0;
+    while (i < n) { store8(ERRB() + 4 + i, s[i]); i = i + 1; }
+    return 0;
+}
+fn tcerr(msg: string) -> int {
+    if (get(0, 4) == 0) { tcerr_msg(msg); set(0, 4, 1); }
+    return 0;
+}
+fn tck() -> int { return load32(KIND() + get(0, 9) * 4); }
+fn tck_at(d) -> int { return load32(KIND() + (get(0, 9) + d) * 4); }
+fn tcx() -> int { return set(0, 9, get(0, 9) + 1); }
+fn tc_is_tok(k) -> bool { return k == 2 || (k >= 10 && k <= 19); }
+
+// --- таблица переменных типов ---
+fn tv_add(off, ln, ty, aux, np) -> int {
+    let i = get(0, 10);
+    store32(TV_OFF() + i * 4, off); store32(TV_LEN() + i * 4, ln);
+    store32(TV_TY() + i * 4, ty); store32(TV_AUX() + i * 4, aux);
+    store32(TV_NP() + i * 4, np); store32(TV_NEST() + i * 4, get(0, 11));
+    set(0, 10, i + 1);
+    return i;
+}
+fn tv_find(off, ln) -> int {
+    let i = get(0, 10) - 1;
+    while (i >= 0) {
+        if (name_eq(off, ln, load32(TV_OFF() + i * 4), load32(TV_LEN() + i * 4))) { return i; }
+        i = i - 1;
+    }
+    return -1;
+}
+fn tc_enter() -> int { return set(0, 11, get(0, 11) + 1); }
+fn tc_exit() -> int {
+    let d = get(0, 11);
+    while (get(0, 10) > 0 && load32(TV_NEST() + (get(0, 10) - 1) * 4) >= d) { set(0, 10, get(0, 10) - 1); }
+    set(0, 11, d - 1);
+    return 0;
+}
+
+// --- аннотация типа -> тег ---
+fn tc_ann() -> int {
+    let k = tck();
+    if (tc_is_tok(k)) {
+        let off = load32(TVAL() + get(0, 9) * 4); let ln = load32(TLEN() + get(0, 9) * 4);
+        tcx();
+        if (is_lit(off, ln, "int", 3) || is_lit(off, ln, "float", 5)) { return TY_NUM(); }
+        if (is_lit(off, ln, "bool", 4)) { return TY_BOOL(); }
+        if (is_lit(off, ln, "string", 6)) { return TY_STR(); }
+        if (is_lit(off, ln, "void", 4) || is_lit(off, ln, "unit", 4)) { return TY_UNIT(); }
+        return TY_NAMED();
+    }
+    return TY_UNK();
+}
+
+// --- вычисление типа выражения по токенам ---
+// Упрощённый, но достаточный для приёмки/отклонения: возвращает тег.
+fn tc_expr() -> int {
+    // Присваивание в переменную: IDENT = expr (не в поле/индекс).
+    if (tc_is_tok(tck()) && tck_at(1) == 27) {
+        let noff = load32(TVAL() + get(0, 9) * 4); let nlen = load32(TLEN() + get(0, 9) * 4);
+        tcx(); tcx();                    // IDENT '='
+        let vt = tc_expr();
+        let vi = tv_find(noff, nlen);
+        if (vi >= 0) {
+            let want = load32(TV_TY() + vi * 4);
+            if (want != TY_UNK() && vt != TY_UNK() && want != vt) { tcerr("error: type mismatch"); }
+        }
+        return vt;
+    }
+    let t = tc_binary();
+    // тернарный `?` не поддерживается языком
+    return t;
+}
+fn tc_primary() -> int {
+    let k = tck();
+    if (k == 1) { tcx(); return TY_NUM(); }
+    if (k == 3) { tcx(); return TY_STR(); }
+    if (k == 90 || k == 91) { tcx(); return TY_BOOL(); }
+    if (k == 20) { tcx(); let t = tc_expr(); if (tck() == 21) { tcx(); } return t; }
+    if (k == 80) {               // литерал массива
+        tcx();
+        while (tck() != 81 && tck() != 0) { tc_expr(); if (tck() == 24) { tcx(); } }
+        if (tck() == 81) { tcx(); }
+        return TY_ARRAY();
+    }
+    if (k == 31) { tcx(); tc_unary_operand(); return TY_NUM(); }   // -x
+    if (k == 53) { tcx(); tc_unary_operand(); return TY_BOOL(); }  // !x
+    if (k == 94) { tcx(); return TY_NAMED(); }   // this
+    if (k == 93) {                                // new Class
+        tcx(); tcx();                             // new IDENT
+        if (tck() == 20) { tc_arglist(); }
+        return TY_NAMED();
+    }
+    if (k == 95) { return tc_match(); }
+    if (k == 11) { return tc_lambda(); }
+    if (tc_is_tok(k)) {
+        let off = load32(TVAL() + get(0, 9) * 4); let ln = load32(TLEN() + get(0, 9) * 4);
+        // вызов функции?
+        if (tck_at(1) == 20) { tcx(); return tc_call(off, ln); }
+        // 0-арный enum-вариант
+        if (variant_tag(off, ln) >= 0) { tcx(); return TY_NAMED(); }
+        tcx();
+        let vi = tv_find(off, ln);
+        if (vi >= 0) { return load32(TV_TY() + vi * 4); }
+        let fi = find_func(off, ln);
+        if (fi >= 0) { return TY_FN(); }
+        // Внутри лямбды свободное имя может быть захватом внешней переменной —
+        // не считаем это ошибкой (захваты вычисляются отдельным проходом).
+        if (get(0, 12) == 0) { tcerr("error: undefined variable"); }
+        return TY_UNK();
+    }
+    return TY_UNK();
+}
+fn tc_unary_operand() -> int { return tc_primary(); }
+
+fn tc_arglist() -> int {
+    // текущий токен — '('
+    tcx();
+    while (tck() != 21 && tck() != 0) { tc_expr(); if (tck() == 24) { tcx(); } }
+    if (tck() == 21) { tcx(); }
+    return 0;
+}
+
+// Тип вызова: арность + возвращаемый тип.
+fn tc_call(off, ln) -> int {
+    // встроенные — вариативные, проверяем только аргументы
+    if (is_builtin_tyname(off, ln)) { tc_arglist(); return tc_builtin_ret(off, ln); }
+    if (variant_tag(off, ln) >= 0) { tc_arglist(); return TY_NAMED(); }
+    let fi = find_func(off, ln);
+    if (fi < 0) {
+        // Локаль/параметр, вызываемый как функция (замыкание или колбэк):
+        // принимаем без строгой проверки типа результата.
+        let vi = tv_find(off, ln);
+        if (vi >= 0) { tc_arglist(); return TY_UNK(); }
+        tcerr("error: undefined function");
+        tc_arglist();
+        return TY_UNK();
+    }
+    let want = load32(FNNP() + fi * 4);
+    // считаем аргументы
+    let cnt = 0;
+    tcx();                       // '('
+    while (tck() != 21 && tck() != 0) {
+        tc_expr();
+        cnt = cnt + 1;
+        if (tck() == 24) { tcx(); }
+    }
+    if (tck() == 21) { tcx(); }
+    if (cnt != want) { tcerr("error: arity mismatch"); }
+    return load32(FRETTY() + fi * 4);
+}
+
+fn is_builtin_tyname(off, ln) -> bool {
+    if (is_lit(off, ln, "print", 5)) { return true; }
+    if (is_lit(off, ln, "len", 3)) { return true; }
+    if (is_lit(off, ln, "push", 4)) { return true; }
+    if (is_lit(off, ln, "str", 3)) { return true; }
+    if (is_lit(off, ln, "int", 3)) { return true; }
+    if (is_lit(off, ln, "float", 5)) { return true; }
+    if (is_lit(off, ln, "sqrt", 4)) { return true; }
+    if (is_lit(off, ln, "assert", 6)) { return true; }
+    if (is_lit(off, ln, "assert_eq", 9)) { return true; }
+    if (is_lit(off, ln, "alloc", 5)) { return true; }
+    if (is_lit(off, ln, "load8", 5)) { return true; }
+    if (is_lit(off, ln, "load32", 6)) { return true; }
+    if (is_lit(off, ln, "store8", 6)) { return true; }
+    if (is_lit(off, ln, "store32", 7)) { return true; }
+    if (is_lit(off, ln, "memcopy", 7)) { return true; }
+    return false;
+}
+fn tc_builtin_ret(off, ln) -> int {
+    if (is_lit(off, ln, "len", 3)) { return TY_NUM(); }
+    if (is_lit(off, ln, "str", 3)) { return TY_STR(); }
+    if (is_lit(off, ln, "int", 3)) { return TY_NUM(); }
+    if (is_lit(off, ln, "float", 5)) { return TY_NUM(); }
+    if (is_lit(off, ln, "sqrt", 4)) { return TY_NUM(); }
+    if (is_lit(off, ln, "alloc", 5)) { return TY_NUM(); }
+    if (is_lit(off, ln, "load8", 5)) { return TY_NUM(); }
+    if (is_lit(off, ln, "load32", 6)) { return TY_NUM(); }
+    return TY_UNIT();
+}
+
+// Операторы: результат по oracle (числа/сравнения/логика/биты).
+fn tc_binary() -> int { return tc_bin(0); }
+
+// Уровни по возрастанию приоритета: or,and,eq,cmp,bit,shift,add,mul,postfix.
+fn tc_bin(level) -> int {
+    if (level >= 8) { return tc_postfix(); }
+    let base = tc_bin(level + 1);
+    while (is_op_at(level, tck())) {
+        let op = tck(); tcx();
+        tc_bin(level + 1);
+        base = op_result(op);
+    }
+    return base;
+}
+fn is_op_at(level, k) -> bool {
+    if (level == 0) { return k == 47; }                          // ||
+    if (level == 1) { return k == 46; }                          // &&
+    if (level == 2) { return k == 40 || k == 41; }               // == !=
+    if (level == 3) { return k == 42 || k == 43 || k == 44 || k == 45; }
+    if (level == 4) { return k == 48 || k == 49 || k == 50; }
+    if (level == 5) { return k == 51 || k == 52; }
+    if (level == 6) { return k == 30 || k == 31; }               // + -
+    if (level == 7) { return k == 32 || k == 33 || k == 34; }    // * / %
+    return false;
+}
+fn op_result(op) -> int {
+    if (op == 40 || op == 41) { return TY_BOOL(); }
+    if (op == 42 || op == 43 || op == 44 || op == 45) { return TY_BOOL(); }
+    if (op == 46 || op == 47) { return TY_BOOL(); }
+    if (op == 48 || op == 49 || op == 50) { return TY_NUM(); }
+    if (op == 51 || op == 52) { return TY_NUM(); }
+    return TY_NUM();
+}
+fn tc_postfix() -> int {
+    let t = tc_primary();
+    while (true) {
+        let k = tck();
+        if (k == 80) {                       // индексация
+            tcx(); tc_expr();
+            if (tck() == 81) { tcx(); }
+            t = TY_NUM();
+        } else {
+            if (k == 29) {                   // .field / .method()
+                tcx();
+                if (tc_is_tok(tck())) { tcx(); }
+                if (tck() == 20) { tcx(); while (tck() != 21 && tck() != 0) { tc_expr(); if (tck() == 24) { tcx(); } } if (tck() == 21) { tcx(); } t = TY_NUM(); }
+                else { t = TY_NUM(); }
+            } else { return t; }
+        }
+    }
+    return t;
+}
+
+fn tc_lambda() -> int {
+    tcx();                        // fn
+    set(0, 12, get(0, 12) + 1);   // внутри лямбды свободные имена — захваты
+    tc_enter();                   // область параметров лямбды
+    if (tck() == 20) {
+        tcx();
+        while (tck() != 21 && tck() != 0) {
+            if (tc_is_tok(tck())) {
+                let po = load32(TVAL() + get(0, 9) * 4); let pl = load32(TLEN() + get(0, 9) * 4);
+                tcx();
+                let pt = TY_UNK();
+                if (tck() == 26) { tcx(); pt = tc_ann(); }
+                tv_add(po, pl, pt, TY_UNK(), 0);
+            }
+            if (tck() == 24) { tcx(); }
+        }
+        if (tck() == 21) { tcx(); }
+    }
+    if (tck() == 28) { tcx(); tc_ann(); }
+    if (tck() == 99) { tcx(); tc_expr(); }
+    else {
+        if (tck() == 22) { tcx(); tc_block(); if (tck() == 23) { tcx(); } }
+    }
+    tc_exit();
+    set(0, 12, get(0, 12) - 1);
+    return TY_FN();
+}
+fn skip_braces() -> int {
+    if (tck() != 22) { return 0; }
+    let d = 0;
+    while (tck() != 0) {
+        let k = tck();
+        if (k == 22) { d = d + 1; }
+        else { if (k == 23) { d = d - 1; } }
+        tcx();
+        if (d == 0) { return 0; }
+    }
+    return 0;
+}
+
+fn tc_match() -> int {
+    tcx();                        // match
+    tc_expr();                    // scrutinee
+    if (tck() == 22) { tcx(); }
+    let rt = TY_UNK();
+    while (tck() != 23 && tck() != 0) {
+        let before = get(0, 9);
+        if (tck() == 24) { tcx(); }
+        if (tck() == 97) { tcx(); }
+        if (tck() == 98) { tcx(); }        // default
+        // паттерн: литерал / идентификатор / конструктор / _
+        if (tc_is_tok(tck())) {
+            tcx();
+            if (tck() == 20) {
+                tcx();
+                while (tck() != 21 && tck() != 0) {
+                    // Связываем имя под-паттерна конструктора как переменную.
+                    if (tc_is_tok(tck())) {
+                        let so = load32(TVAL() + get(0, 9) * 4); let sl = load32(TLEN() + get(0, 9) * 4);
+                        tcx(); tv_add(so, sl, TY_UNK(), TY_UNK(), 0);
+                    } else { tcx(); }
+                    if (tck() == 24) { tcx(); }
+                }
+                if (tck() == 21) { tcx(); }
+            }
+        } else { if (tck() == 1 || tck() == 3 || tck() == 90 || tck() == 91) { tcx(); } }
+        if (tck() == 26) { tcx(); }
+        rt = tc_expr();
+        if (get(0, 9) == before) { tcx(); }   // защита от зацикливания
+    }
+    if (tck() == 23) { tcx(); }
+    return rt;
+}
+
+// --- инструкции ---
+fn tc_stmt() -> int {
+    let k = tck();
+    if (k == 10) { return tc_let(); }
+    if (k == 15) { return tc_return(); }
+    if (k == 12) { return tc_if(); }
+    if (k == 14) { return tc_while(); }
+    if (k == 16) { return tc_for(); }
+    if (k == 25) { tcx(); return 0; }
+    // выражение-инструкция (в т.ч. присваивание)
+    tc_expr();
+    if (tck() == 25) { tcx(); }
+    return 0;
+}
+fn tc_let() -> int {
+    tcx();                        // let
+    let noff = load32(TVAL() + get(0, 9) * 4); let nlen = load32(TLEN() + get(0, 9) * 4);
+    tcx();                        // IDENT
+    let ann = TY_UNK();
+    if (tck() == 26) { tcx(); ann = tc_ann(); }
+    let vt = TY_UNK();
+    if (tck() == 27) { tcx(); vt = tc_expr(); }
+    if (tck() == 25) { tcx(); }
+    if (ann != TY_UNK() && vt != TY_UNK() && ann != vt) { tcerr("error: type mismatch"); }
+    if (ann == TY_UNK()) { ann = vt; }
+    tv_add(noff, nlen, ann, TY_UNK(), 0);
+    return 0;
+}
+fn tc_return() -> int {
+    tcx();                        // return
+    let rt = TY_UNK();
+    if (tck() != 25 && tck() != 23 && tck() != 0) { rt = tc_expr(); }
+    if (tck() == 25) { tcx(); }
+    let want = load32(FRETTY() + load32(TCCUR()) * 4);
+    if (rt != TY_UNK() && want != TY_UNK() && want != TY_UNIT() && rt != want) { tcerr("error: return type mismatch"); }
+    return 0;
+}
+fn tc_if() -> int {
+    tcx(); if (tck() == 20) { tcx(); let c = tc_expr(); if (c != TY_BOOL() && c != TY_UNK()) { tcerr("error: condition must be bool"); } if (tck() == 21) { tcx(); } }
+    tc_enter(); if (tck() == 22) { tcx(); tc_block(); if (tck() == 23) { tcx(); } } tc_exit();
+    if (tck() == 13) { tcx(); if (tck() == 12) { tc_if(); } else { tc_enter(); if (tck() == 22) { tcx(); tc_block(); if (tck() == 23) { tcx(); } } tc_exit(); } }
+    return 0;
+}
+fn tc_while() -> int {
+    tcx(); if (tck() == 20) { tcx(); let c = tc_expr(); if (c != TY_BOOL() && c != TY_UNK()) { tcerr("error: condition must be bool"); } if (tck() == 21) { tcx(); } }
+    tc_enter(); if (tck() == 22) { tcx(); tc_block(); if (tck() == 23) { tcx(); } } tc_exit();
+    return 0;
+}
+fn tc_for() -> int {
+    tcx(); if (tck() == 20) { tcx(); }     // for (
+    tc_enter();
+    // for (let x in arr) — for-in.
+    if (tck() == 10 && is_for_in_tc()) { return tc_for_in(); }
+    if (tck() == 10) { tc_let(); } else { if (tck() != 25) { tc_expr(); if (tck() == 25) { tcx(); } } else { tcx(); } }
+    if (tck() != 25) { tc_expr(); }
+    if (tck() == 25) { tcx(); }
+    if (tck() != 21) { tc_expr(); }
+    if (tck() == 21) { tcx(); }
+    if (tck() == 22) { tcx(); tc_block(); if (tck() == 23) { tcx(); } }
+    tc_exit();
+    return 0;
+}
+// `let IDENT [: T] in` — признак for-in (текущий токен — `let`).
+fn is_for_in_tc() -> bool {
+    if (tck() != 10 || !tc_is_tok(tck_at(1))) { return false; }
+    let j = 2;
+    if (tck_at(j) == 26) { j = j + 1; while (tck_at(j) != 17 && tck_at(j) != 27 && tck_at(j) != 0 && j < 40) { j = j + 1; } }
+    return tck_at(j) == 17;
+}
+fn tc_for_in() -> int {
+    tcx();                        // let
+    let vo = load32(TVAL() + get(0, 9) * 4); let vl = load32(TLEN() + get(0, 9) * 4);
+    tcx();                        // IDENT
+    if (tck() == 26) { tcx(); tc_ann(); }
+    if (tck() == 17) { tcx(); }    // in
+    let it = tc_expr();            // iterable
+    tv_add(vo, vl, TY_NUM(), TY_UNK(), 0);
+    if (tck() == 21) { tcx(); }
+    if (tck() == 22) { tcx(); tc_block(); if (tck() == 23) { tcx(); } }
+    tc_exit();
+    return 0;
+}
+
+fn tc_block() -> int {
+    while (tck() != 23 && tck() != 0) { let before = get(0, 9); tc_stmt(); if (get(0, 9) == before) { tcx(); } }
+    return 0;
+}
+
+// --- регистрация сигнатур ---
+fn tc_register() -> int {
+    let i = 0; let n = get(0, 2);
+    while (i < n) {
+        let tok = load32(FNTOK() + i * 4);
+        // возврат: после '->'
+        let r = TY_UNIT();
+        let j = tok + 2;
+        while (load32(KIND() + j * 4) != 21 && load32(KIND() + j * 4) != 0) { j = j + 1; }
+        if (load32(KIND() + (j + 1) * 4) == 28) {
+            let k2 = load32(KIND() + (j + 2) * 4);
+            r = tag_of_ann_token(k2, load32(TVAL() + (j + 2) * 4), load32(TLEN() + (j + 2) * 4));
+        }
+        store32(FRETTY() + i * 4, r);
+        i = i + 1;
+    }
+    return 0;
+}
+fn tag_of_ann_token(k, off, ln) -> int {
+    if (k == 2 || (k >= 10 && k <= 19)) {
+        if (is_lit(off, ln, "int", 3) || is_lit(off, ln, "float", 5)) { return TY_NUM(); }
+        if (is_lit(off, ln, "bool", 4)) { return TY_BOOL(); }
+        if (is_lit(off, ln, "string", 6)) { return TY_STR(); }
+        if (is_lit(off, ln, "void", 4) || is_lit(off, ln, "unit", 4)) { return TY_UNIT(); }
+        return TY_NAMED();
+    }
+    return TY_UNIT();
+}
+
+fn tc_program() -> int {
+    set(0, 9, 0); set(0, 10, 0); set(0, 11, 0);
+    let total = get(0, 1);
+    tc_register();
+    // Предобъявление функций: их имена видны глобально (find_func уже есть),
+    // но возвращаемые типы нужны в tc_call — они в FRETTY из tc_register.
+    while (get(0, 9) < total && load32(KIND() + get(0, 9) * 4) != 0) {
+        let before = get(0, 9);
+        let k = tck();
+        if (k == 92) { skip_class_tc(); }
+        else {
+            if (k == 96) { skip_enum_tc(); }
+            else { if (k == 11) { tc_fn(); } else { tc_stmt(); } }
+        }
+        if (get(0, 9) == before) { tcx(); }   // защита от зацикливания
+    }
+    return 0;
+}
+fn skip_class_tc() -> int {
+    // class IDENT { ... } — пропускаем целиком (методы проверяются отдельно
+    // через зарегистрированные сигнатуры).
+    tcx(); if (tc_is_tok(tck())) { tcx(); }
+    if (tck() == 22) { tcx(); let d = 1; while (d > 0 && tck() != 0) { if (tck() == 22) { d = d + 1; } else { if (tck() == 23) { d = d - 1; } } tcx(); } }
+    return 0;
+}
+fn skip_enum_tc() -> int {
+    tcx(); if (tc_is_tok(tck())) { tcx(); }
+    if (tck() == 22) { tcx(); let d = 1; while (d > 0 && tck() != 0) { if (tck() == 22) { d = d + 1; } else { if (tck() == 23) { d = d - 1; } } tcx(); } }
+    return 0;
+}
+fn tc_fn() -> int {
+    tcx();                        // fn
+    let ni = find_func(load32(TVAL() + get(0, 9) * 4), load32(TLEN() + get(0, 9) * 4));
+    tcx();                        // NAME
+    tc_enter();
+    if (tck() == 20) {
+        tcx();
+        while (tck() != 21 && tck() != 0) {
+            if (tc_is_tok(tck())) {
+                let po = load32(TVAL() + get(0, 9) * 4); let pl = load32(TLEN() + get(0, 9) * 4);
+                tcx();
+                let pt = TY_UNK();
+                if (tck() == 26) { tcx(); pt = tc_ann(); }
+                tv_add(po, pl, pt, TY_UNK(), 0);
+            }
+            if (tck() == 24) { tcx(); }
+        }
+        if (tck() == 21) { tcx(); }
+    }
+    if (tck() == 28) { tcx(); tc_ann(); }
+    store32(TCCUR(), 0);
+    if (ni >= 0) { store32(TCCUR(), ni); }
+    if (tck() == 22) { tcx(); tc_block(); if (tck() == 23) { tcx(); } }
+    tc_exit();
+    return 0;
+}
+
 // ===== часть: 50_stmt.lat =====
 // --- инструкции ---
 fn stmts() -> int {
@@ -1724,10 +2238,10 @@ fn st_let() -> int {
     adv();
     let noff = tval(); let nlen = tlen();
     expect_ident();
-    if (tkind() == 26) { adv(); skip_type(); }
+    let ann = read_ann_after_colon();
     set(0, 5, 0);
-    let vt = T_INT();
-    if (tkind() == 27) { adv(); level_or(); vt = tpop(); } else { ev(65); ev_sleb(0); }
+    let vt = ann;
+    if (tkind() == 27) { adv(); level_or(); vt = tpop(); if (ann != T_INT()) { vt = ann; } } else { ev(65); ev_sleb(0); }
     expect(25);
     let idx = get(0, 3);
     add_local(noff, nlen, idx);
@@ -1884,6 +2398,23 @@ fn skip_type() -> int {
     while (tkind() != 24 && tkind() != 21 && tkind() != 22 && tkind() != 0) { adv(); }
     return 0;
 }
+// Читает аннотацию типа и возвращает тег для LOTP (T_INT/T_FLT/T_STR),
+// потребляя токены до разделителя. `: string` → T_STR и т.п.
+fn read_type_tag() -> int {
+    let t = T_INT();
+    if (is_ident_kind(tkind())) {
+        let off = tval(); let ln = tlen();
+        if (is_lit(off, ln, "string", 6)) { t = T_STR(); }
+        else { if (is_lit(off, ln, "float", 5)) { t = T_FLT(); } }
+    }
+    skip_type();
+    return t;
+}
+// Аннотация с ведущим `:` (текущий токен — 26).
+fn read_ann_after_colon() -> int {
+    if (tkind() == 26) { adv(); return read_type_tag(); }
+    return T_INT();
+}
 
 fn compile_fn(fi) -> int {
     set(0, 0, load32(FNTOK() + fi * 4));
@@ -1902,9 +2433,9 @@ fn compile_fn(fi) -> int {
         let poff = tval(); let plen = tlen();
         expect_ident();
         let slot = get(0, 3);
-        add_local(poff, plen, slot); set_local_tp(slot, T_INT());
+        let pt = read_ann_after_colon();
+        add_local(poff, plen, slot); set_local_tp(slot, pt);
         idx = idx + 1;
-        if (tkind() == 26) { adv(); skip_type(); }
         if (tkind() == 24) { adv(); }
     }
     expect(21);
@@ -2278,6 +2809,14 @@ fn compile_program() -> int {
     let n = scan_signatures();
     scan_lambdas();
     register_lambdas();
+    // Тайп-чек: при ошибке пишем её текст в OUTB и возвращаем -длину
+    // (отрицательный результат отличает ошибку от успешного WASM).
+    tc_program();
+    if (get(0, 4) != 0) {
+        binit(OUTB());
+        bcopy(OUTB(), ERRB(), 0, blen(ERRB()));
+        return 0 - blen(OUTB());
+    }
     let i = 0;
     while (i < n) { compile_fn(i); i = i + 1; }
     let li = 0;

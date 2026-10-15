@@ -51,6 +51,23 @@ fn skip_type() -> int {
     while (tkind() != 24 && tkind() != 21 && tkind() != 22 && tkind() != 0) { adv(); }
     return 0;
 }
+// Читает аннотацию типа и возвращает тег для LOTP (T_INT/T_FLT/T_STR),
+// потребляя токены до разделителя. `: string` → T_STR и т.п.
+fn read_type_tag() -> int {
+    let t = T_INT();
+    if (is_ident_kind(tkind())) {
+        let off = tval(); let ln = tlen();
+        if (is_lit(off, ln, "string", 6)) { t = T_STR(); }
+        else { if (is_lit(off, ln, "float", 5)) { t = T_FLT(); } }
+    }
+    skip_type();
+    return t;
+}
+// Аннотация с ведущим `:` (текущий токен — 26).
+fn read_ann_after_colon() -> int {
+    if (tkind() == 26) { adv(); return read_type_tag(); }
+    return T_INT();
+}
 
 fn compile_fn(fi) -> int {
     set(0, 0, load32(FNTOK() + fi * 4));
@@ -69,9 +86,9 @@ fn compile_fn(fi) -> int {
         let poff = tval(); let plen = tlen();
         expect_ident();
         let slot = get(0, 3);
-        add_local(poff, plen, slot); set_local_tp(slot, T_INT());
+        let pt = read_ann_after_colon();
+        add_local(poff, plen, slot); set_local_tp(slot, pt);
         idx = idx + 1;
-        if (tkind() == 26) { adv(); skip_type(); }
         if (tkind() == 24) { adv(); }
     }
     expect(21);

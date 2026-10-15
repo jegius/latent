@@ -74,10 +74,10 @@ fn st_let() -> int {
     adv();
     let noff = tval(); let nlen = tlen();
     expect_ident();
-    if (tkind() == 26) { adv(); skip_type(); }
+    let ann = read_ann_after_colon();
     set(0, 5, 0);
-    let vt = T_INT();
-    if (tkind() == 27) { adv(); level_or(); vt = tpop(); } else { ev(65); ev_sleb(0); }
+    let vt = ann;
+    if (tkind() == 27) { adv(); level_or(); vt = tpop(); if (ann != T_INT()) { vt = ann; } } else { ev(65); ev_sleb(0); }
     expect(25);
     let idx = get(0, 3);
     add_local(noff, nlen, idx);
