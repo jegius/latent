@@ -202,6 +202,75 @@ fn helper_bodies() -> int {
     store32(CODEOF() + (nf() + 6) * 4, load32(CODEB()));
     store32(CODELN() + (nf() + 6) * 4, blen(BODYC()));
     bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+
+    // f64_to_str(n)->ptr: "<int>.<6 цифр>" (фиксированные 6 знаков), как oracle.
+    // param 0 n(f64); i32-локали 1 neg,2 p,3 ipart,4 s,5 i,6 digit; f64-локаль 7 frac.
+    binit(BODYC());
+    bleb(BODYC(), 2); bleb(BODYC(), 6); bput(BODYC(), 127); bleb(BODYC(), 1); bput(BODYC(), 124);
+    // neg = n < 0.0
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 68); f64zero();
+    bput(BODYC(), 99); bput(BODYC(), 33); bleb(BODYC(), 1);
+    // if neg { n = -n }
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 4); bput(BODYC(), 64);
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 154); bput(BODYC(), 33); bleb(BODYC(), 0);
+    bput(BODYC(), 11);
+    // ipart = trunc(n) as i32
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 170); bput(BODYC(), 33); bleb(BODYC(), 3);
+    // p = alloc(23)
+    bput(BODYC(), 65); bleb(BODYC(), 23); bput(BODYC(), 16); bleb(BODYC(), ALLOC_FI()); bput(BODYC(), 33); bleb(BODYC(), 2);
+    // s = i32_to_str(ipart)
+    bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 16); bleb(BODYC(), I32S_FI()); bput(BODYC(), 33); bleb(BODYC(), 4);
+    // mem_copy(p+4, s+4, load(s))
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0);
+    bput(BODYC(), 16); bleb(BODYC(), MEM_FI()); bput(BODYC(), 26);
+    // p[4+neg+load(s)] = '.'
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0); bput(BODYC(), 106);
+    bput(BODYC(), 65); bleb(BODYC(), 46); bput(BODYC(), 58); bput(BODYC(), 0); bput(BODYC(), 0);
+    // frac = n - convert(ipart)
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 183); bput(BODYC(), 161); bput(BODYC(), 33); bleb(BODYC(), 7);
+    // i = 0
+    bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 5);
+    bput(BODYC(), 2); bput(BODYC(), 64); bput(BODYC(), 3); bput(BODYC(), 64);
+    // if i >= 6 break
+    bput(BODYC(), 32); bleb(BODYC(), 5); bput(BODYC(), 65); bleb(BODYC(), 6); bput(BODYC(), 78); bput(BODYC(), 13); bleb(BODYC(), 1);
+    // frac *= 10.0
+    bput(BODYC(), 32); bleb(BODYC(), 7); bput(BODYC(), 68); f64ten(); bput(BODYC(), 162); bput(BODYC(), 33); bleb(BODYC(), 7);
+    // digit = trunc(frac)
+    bput(BODYC(), 32); bleb(BODYC(), 7); bput(BODYC(), 170); bput(BODYC(), 33); bleb(BODYC(), 6);
+    // frac -= convert(digit)
+    bput(BODYC(), 32); bleb(BODYC(), 7); bput(BODYC(), 32); bleb(BODYC(), 6); bput(BODYC(), 183); bput(BODYC(), 161); bput(BODYC(), 33); bleb(BODYC(), 7);
+    // p[4+neg+load(s)+1+i] = '0'+digit
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0); bput(BODYC(), 106);
+    bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 5); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 6); bput(BODYC(), 65); bleb(BODYC(), 48); bput(BODYC(), 106);
+    bput(BODYC(), 58); bput(BODYC(), 0); bput(BODYC(), 0);
+    // i++
+    bput(BODYC(), 32); bleb(BODYC(), 5); bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 106); bput(BODYC(), 33); bleb(BODYC(), 5);
+    bput(BODYC(), 12); bleb(BODYC(), 0); bput(BODYC(), 11); bput(BODYC(), 11);
+    // len = neg + load(s) + 7; store at p
+    bput(BODYC(), 32); bleb(BODYC(), 2);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0); bput(BODYC(), 106); bput(BODYC(), 65); bleb(BODYC(), 7); bput(BODYC(), 106);
+    bput(BODYC(), 54); bput(BODYC(), 2); bput(BODYC(), 0);
+    bput(BODYC(), 32); bleb(BODYC(), 2);
+    bput(BODYC(), 11);
+    store32(CODEOF() + (nf() + 7) * 4, load32(CODEB()));
+    store32(CODELN() + (nf() + 7) * 4, blen(BODYC()));
+    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+    return 0;
+}
+// Восемь байт f64-константы 0.0.
+fn f64zero() -> int { let i = 0; while (i < 8) { bput(BODYC(), 0); i = i + 1; } return 0; }
+// Восемь байт f64-константы 10.0.
+fn f64ten() -> int {
+    bput(BODYC(), 0); bput(BODYC(), 0); bput(BODYC(), 0); bput(BODYC(), 0);
+    bput(BODYC(), 0); bput(BODYC(), 0); bput(BODYC(), 36); bput(BODYC(), 64);
     return 0;
 }
 
@@ -215,7 +284,7 @@ fn build_module() -> int {
     // arity 0..8 -> f64 (idx10..18) для float-возвращающих функций.
     // Лямбда арности np+1 берёт тип-индекс np+2 (см. lam_tp) => np до 7.
     binit(SCRB());
-    bleb(SCRB(), 19);
+    bleb(SCRB(), 20);
     bput(SCRB(), 96); bleb(SCRB(), 1); bput(SCRB(), 127); bleb(SCRB(), 0);
     let a = 0;
     while (a < 9) {
@@ -231,6 +300,8 @@ fn build_module() -> int {
         bleb(SCRB(), 1); bput(SCRB(), 124);   // -> f64
         a = a + 1;
     }
+    // idx19: (f64)->i32 — f64_to_str.
+    bput(SCRB(), 96); bleb(SCRB(), 1); bput(SCRB(), 124); bleb(SCRB(), 1); bput(SCRB(), 127);
     emit_sec(1, SCRB());
 
     // import
@@ -244,7 +315,7 @@ fn build_module() -> int {
     // func section: n user + 7 хелперов + лямбды
     let nl = nlam();
     binit(SCRB());
-    bleb(SCRB(), n + 7 + nl);
+    bleb(SCRB(), n + 8 + nl);
     let i = 0;
     while (i < n) {
         // float-возвращающая функция берёт тип-индекс из блока ->f64 (10+arity).
@@ -262,6 +333,7 @@ fn build_module() -> int {
     bleb(SCRB(), 3);   // str_char_at
     bleb(SCRB(), 2);   // i32_to_str: (i32)->i32 = type2
     bleb(SCRB(), 2);   // str_to_i32: (i32)->i32 = type2
+    bleb(SCRB(), 19);  // f64_to_str: (f64)->i32 = type19
     i = 0;
     while (i < nl) { bleb(SCRB(), lam_tp(i)); i = i + 1; }
     emit_sec(3, SCRB());
@@ -273,7 +345,7 @@ fn build_module() -> int {
         bleb(SCRB(), 1);            // 1 таблица
         bput(SCRB(), 112);          // funcref
         bput(SCRB(), 0);            // limits: min only
-        bleb(SCRB(), 1 + n + 7 + nl);
+        bleb(SCRB(), 1 + n + 8 + nl);
         emit_sec(4, SCRB());
     }
 
@@ -303,18 +375,18 @@ fn build_module() -> int {
         bleb(SCRB(), 1);            // 1 сегмент
         bput(SCRB(), 0);            // active, table 0
         bput(SCRB(), 65); bleb(SCRB(), 0); bput(SCRB(), 11);   // offset = 0
-        let tot = 1 + n + 7 + nl;
+        let tot = 1 + n + 8 + nl;
         bleb(SCRB(), tot);
         let q = 0;
         while (q < tot) { bleb(SCRB(), q); q = q + 1; }
         emit_sec(9, SCRB());
     }
 
-    // code section: n + 7 + nl bodies
+    // code section: n + 8 + nl bodies
     binit(SCRB());
-    bleb(SCRB(), n + 7 + nl);
+    bleb(SCRB(), n + 8 + nl);
     i = 0;
-    while (i < n + 7 + nl) {
+    while (i < n + 8 + nl) {
         bleb(SCRB(), load32(CODELN() + i * 4));
         let q = 0;
         while (q < load32(CODELN() + i * 4)) {

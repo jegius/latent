@@ -179,6 +179,7 @@ fn is_builtin_tyname(off, ln) -> bool {
     if (is_lit(off, ln, "int", 3)) { return true; }
     if (is_lit(off, ln, "float", 5)) { return true; }
     if (is_lit(off, ln, "sqrt", 4)) { return true; }
+    if (is_lit(off, ln, "int", 3)) { return true; }
     if (is_lit(off, ln, "assert", 6)) { return true; }
     if (is_lit(off, ln, "assert_eq", 9)) { return true; }
     if (is_lit(off, ln, "alloc", 5)) { return true; }

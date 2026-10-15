@@ -204,7 +204,7 @@ fn cap_name_off(li, c) -> int { return load32(CAPO() + (cap_start(li) + c) * 4);
 fn cap_name_len(li, c) -> int { return load32(CAPL() + (cap_start(li) + c) * 4); }
 
 // Модульный индекс функции лямбды: 1(import)+nf()+7(хелперы)+li.
-fn lam_fidx(li) -> int { return nf() + 8 + li; }
+fn lam_fidx(li) -> int { return nf() + 9 + li; }
 // Тип лямбды: (env, params...) -> i32 = арность np+1.
 // В type-секции тип арности a имеет индекс a+1, значит индекс = np+2.
 fn lam_tp(li) -> int { return lam_np(li) + 2; }
