@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const INPUT_ADDR = 32768;
+export const INPUT_ADDR = 3145728;
 export const OUTPUT_ADDR = 65536;
 
 // Слоты состояния компилятора ST (shc.lat:22): 0=PC 1=NT 2=NF 3=NL 4=status
@@ -46,8 +46,11 @@ export function buildStage1(outPath = join(SELFHOST, "stage1.wasm")) {
 /** Запускает компилятор (WASM-байты) на исходнике, возвращает { wasm, ret }. */
 export function compileWith(compilerBytes, source) {
   const inst = instantiate(compilerBytes);
-  const mem = inst.exports.memory.buffer;
   const enc = new TextEncoder().encode(source);
+  // Входной исходник лежит выше рабочих областей, поэтому память нужно
+  // нарастить до записи (компилятор растит её лишь при вызове main()).
+  growFor(inst.exports.memory, INPUT_ADDR + 4 + enc.length);
+  const mem = inst.exports.memory.buffer;
   new DataView(mem).setUint32(INPUT_ADDR, enc.length, true);
   new Uint8Array(mem).set(enc, INPUT_ADDR + 4);
   const ret = inst.exports.main();
@@ -59,6 +62,13 @@ export function compileWith(compilerBytes, source) {
 
 function instantiate(bytes) {
   return new WebAssembly.Instance(new WebAssembly.Module(bytes), { env: { print: () => {} } });
+}
+
+/** Наращивает линейную память так, чтобы вместить endAddr (в байтах). */
+function growFor(memory, endAddr) {
+  const need = Math.ceil(endAddr / 65536);
+  const have = memory.buffer.byteLength / 65536;
+  if (need > have) { memory.grow(need - have); }
 }
 
 /** Валидирует и запускает main() программы, собранной в WASM. */
