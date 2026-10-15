@@ -530,7 +530,7 @@ fn level_unary() -> int { return level_postfix(); }
 // Число элементов литерала массива: текущий токен — '['. Сканируем до
 // парной ']', считая запятые на глубине 1. `[]` -> 0, `[x]` -> 1.
 fn count_elems() -> int {
-    let j = get(0, 0) + 1;
+    let j = get(0, 0);              // текущий токен — первый элемент (или ']')
     let depth = 1; let c = 0; let any = 0;
     while (depth > 0) {
         let k = load32(KIND() + j * 4);
