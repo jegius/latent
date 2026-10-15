@@ -139,7 +139,8 @@ fn emit_str_conv() -> int {
     level_or();
     let xt = load32(TSTK() + base * 4);
     expect(21);
-    if (xt != T_STR()) { ev(16); ev_leb(I32S_FI()); }
+    if (xt == T_FLT()) { ev(I32_TRUNC_F64_OP()); ev(16); ev_leb(I32S_FI()); }
+    else { if (xt != T_STR()) { ev(16); ev_leb(I32S_FI()); } }
     set(0, 5, 1); set(0, 7, base); tp(T_STR());
     return 0;
 }
@@ -152,6 +153,7 @@ fn emit_int_conv() -> int {
     let xt = load32(TSTK() + base * 4);
     expect(21);
     if (xt == T_STR()) { ev(16); ev_leb(S2I_FI()); }
+    else { if (xt == T_FLT()) { ev(I32_TRUNC_F64_OP()); } }
     set(0, 5, 1); set(0, 7, base); tp(T_INT());
     return 0;
 }
@@ -205,9 +207,34 @@ fn emit_call_named(fidx, is_print) -> int {
     return 0;
 }
 
+// Литерал float `I.F`: собираем как f64-арифметику без кодирования битов
+// IEEE754 — целая часть + дробь/10^k. Так не нужна 64-битная арифметика.
+fn emit_float_lit(off, ln) -> int {
+    let ip = 0; let i = 0;
+    while (i < ln && load8(INPUT() + 4 + off + i) != 46) { ip = ip * 10 + (load8(INPUT() + 4 + off + i) - 48); i = i + 1; }
+    i = i + 1;                          // через '.'
+    let fp = 0; let k = 0;
+    while (i < ln) { fp = fp * 10 + (load8(INPUT() + 4 + off + i) - 48); k = k + 1; i = i + 1; }
+    if (k == 0) { fp = 0; }
+    ev(65); ev_sleb(ip); ev(183);        // i32.const I; f64.convert_i32_s
+    if (k > 0) {
+        ev(65); ev_sleb(fp); ev(183);    // i32.const F; f64.convert_i32_s
+        ev(65); ev_sleb(pow10(k)); ev(183);  // i32.const 10^k; f64.convert_i32_s
+        ev(163);                         // f64.div
+        ev(160);                         // f64.add
+    }
+    return 0;
+}
+fn pow10(k) -> int {
+    let v = 1; let i = 0;
+    while (i < k) { v = v * 10; i = i + 1; }
+    return v;
+}
+
 fn level_primary() -> int {
     let k = tkind();
     if (k == 1) { ev(65); ev_sleb(tval()); adv(); set(0, 5, 1); tp(T_INT()); return 0; }
+    if (k == 4) { emit_float_lit(tval(), tlen()); adv(); set(0, 5, 1); tp(T_FLT()); return 0; }
     if (k == 90) { ev(65); ev_sleb(1); adv(); set(0, 5, 1); tp(T_INT()); return 0; }
     if (k == 91) { ev(65); ev_sleb(0); adv(); set(0, 5, 1); tp(T_INT()); return 0; }
     if (k == 3) {
@@ -705,8 +732,14 @@ fn level_cmp() -> int {
     level_bit();
     while (tkind() == 42 || tkind() == 43 || tkind() == 44 || tkind() == 45) {
         let k = tkind(); adv();
+        let lt = load32(TSTK() + base * 4);
         level_bit();
-        if (k == 42) { ev(72); } else { if (k == 43) { ev(74); } else { if (k == 44) { ev(76); } else { ev(78); } } }
+        let rt = load32(TSTK() + (base + 1) * 4);
+        if (lt == T_FLT() || rt == T_FLT()) {
+            if (k == 42) { ev(F64_LT_OP()); } else { if (k == 43) { ev(F64_GT_OP()); } else { if (k == 44) { ev(F64_LE_OP()); } else { ev(F64_GE_OP()); } } }
+        } else {
+            if (k == 42) { ev(72); } else { if (k == 43) { ev(74); } else { if (k == 44) { ev(76); } else { ev(78); } } }
+        }
         set(0, 7, base); tp(T_INT());
     }
     return 0;
@@ -751,8 +784,15 @@ fn level_add() -> int {
             ev(16); ev_leb(SCAT_FI());
             set(0, 7, base); tp(T_STR());
         } else {
-            if (k == 30) { ev(106); } else { ev(107); }
-            set(0, 7, base); tp(T_INT());
+            if (lt == T_FLT() || rt == T_FLT()) {
+                // Только f64-операнды; '-' у float в oracle не проходит, но
+                // эмитим корректный f64.sub для полноты.
+                if (k == 30) { ev(F64_ADD_OP()); } else { ev(F64_SUB_OP()); }
+                set(0, 7, base); tp(T_FLT());
+            } else {
+                if (k == 30) { ev(106); } else { ev(107); }
+                set(0, 7, base); tp(T_INT());
+            }
         }
     }
     return 0;
@@ -762,9 +802,17 @@ fn level_mul() -> int {
     level_unary();
     while (tkind() == 32 || tkind() == 33 || tkind() == 34) {
         let k = tkind(); adv();
+        let lt = load32(TSTK() + base * 4);
         level_unary();
-        if (k == 32) { ev(108); } else { if (k == 33) { ev(109); } else { ev(111); } }
-        set(0, 7, base); tp(T_INT());
+        let rt = load32(TSTK() + (base + 1) * 4);
+        if (lt == T_FLT() || rt == T_FLT()) {
+            // float-арифметика: операнды уже f64 на стеке.
+            if (k == 32) { ev(F64_MUL_OP()); } else { if (k == 33) { ev(F64_DIV_OP()); } else { err(); } }
+            set(0, 7, base); tp(T_FLT());
+        } else {
+            if (k == 32) { ev(108); } else { if (k == 33) { ev(109); } else { ev(111); } }
+            set(0, 7, base); tp(T_INT());
+        }
     }
     return 0;
 }

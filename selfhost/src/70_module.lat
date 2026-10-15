@@ -211,16 +211,24 @@ fn build_module() -> int {
     bput(OUTB(), 1); bput(OUTB(), 0); bput(OUTB(), 0); bput(OUTB(), 0);
     let n = nf();
 
-    // type section: (i32)->void (idx0); arity 0..8 -> i32 (idx1..9).
+    // type section: (i32)->void (idx0); arity 0..8 -> i32 (idx1..9);
+    // arity 0..8 -> f64 (idx10..18) для float-возвращающих функций.
     // Лямбда арности np+1 берёт тип-индекс np+2 (см. lam_tp) => np до 7.
     binit(SCRB());
-    bleb(SCRB(), 10);
+    bleb(SCRB(), 19);
     bput(SCRB(), 96); bleb(SCRB(), 1); bput(SCRB(), 127); bleb(SCRB(), 0);
     let a = 0;
     while (a < 9) {
         bput(SCRB(), 96); bleb(SCRB(), a);
         let q = 0; while (q < a) { bput(SCRB(), 127); q = q + 1; }
         bleb(SCRB(), 1); bput(SCRB(), 127);
+        a = a + 1;
+    }
+    a = 0;
+    while (a < 9) {
+        bput(SCRB(), 96); bleb(SCRB(), a);
+        let q = 0; while (q < a) { bput(SCRB(), 127); q = q + 1; }
+        bleb(SCRB(), 1); bput(SCRB(), 124);   // -> f64
         a = a + 1;
     }
     emit_sec(1, SCRB());
@@ -238,7 +246,15 @@ fn build_module() -> int {
     binit(SCRB());
     bleb(SCRB(), n + 7 + nl);
     let i = 0;
-    while (i < n) { bleb(SCRB(), load32(FNNP() + i * 4) + 1); i = i + 1; }
+    while (i < n) {
+        // float-возвращающая функция берёт тип-индекс из блока ->f64 (10+arity).
+        if (load32(FNRET() + i * 4) == T_FLT()) {
+            bleb(SCRB(), 10 + load32(FNNP() + i * 4));
+        } else {
+            bleb(SCRB(), load32(FNNP() + i * 4) + 1);
+        }
+        i = i + 1;
+    }
     bleb(SCRB(), 2);   // alloc: (i32)->i32 = type2
     bleb(SCRB(), 4);   // memcopy: (i32,i32,i32)->i32 = type4
     bleb(SCRB(), 3);   // str_concat: (i32,i32)->i32 = type3

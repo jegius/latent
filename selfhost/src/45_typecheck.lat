@@ -94,6 +94,7 @@ fn tc_expr() -> int {
 fn tc_primary() -> int {
     let k = tck();
     if (k == 1) { tcx(); return TY_NUM(); }
+    if (k == 4) { tcx(); return TY_NUM(); }   // литерал float
     if (k == 3) { tcx(); return TY_STR(); }
     if (k == 90 || k == 91) { tcx(); return TY_BOOL(); }
     if (k == 20) { tcx(); let t = tc_expr(); if (tck() == 21) { tcx(); } return t; }

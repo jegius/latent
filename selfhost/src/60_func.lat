@@ -41,9 +41,9 @@ fn fn_ret_tp(total, ftok) -> int {
     if (j + 1 >= total) { return T_INT(); }
     if (load32(KIND() + (j + 1) * 4) != 28) { return T_INT(); }   // нет '->'
     let rt = j + 2;
-    if (load32(KIND() + rt * 4) == 2
-        && is_lit(load32(TVAL() + rt * 4), load32(TLEN() + rt * 4), "string", 6)) {
-        return T_STR();
+    if (load32(KIND() + rt * 4) == 2) {
+        if (is_lit(load32(TVAL() + rt * 4), load32(TLEN() + rt * 4), "string", 6)) { return T_STR(); }
+        if (is_lit(load32(TVAL() + rt * 4), load32(TLEN() + rt * 4), "float", 5)) { return T_FLT(); }
     }
     return T_INT();
 }

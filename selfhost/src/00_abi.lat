@@ -91,6 +91,20 @@ fn TV_NEST() -> int { return 4476928; }  // 32K  переменная: глуб�
 fn FRETTY() -> int { return 4509696; }   // 32K  тип результата функции
 fn TCCUR() -> int { return 4542464; }    // 16   текущий индекс функции в тайп-чеке
 fn ERRB() -> int { return 4547072; }     // 4K   буфер сообщения об ошибке
+// --- float: WASM-опкоды вынесены как функции для читаемости эмиттера ---
+fn F64_ADD_OP() -> int { return 160; }
+fn F64_SUB_OP() -> int { return 161; }
+fn F64_MUL_OP() -> int { return 162; }
+fn F64_DIV_OP() -> int { return 163; }
+fn F64_EQ_OP() -> int { return 97; }
+fn F64_NE_OP() -> int { return 98; }
+fn F64_LT_OP() -> int { return 99; }
+fn F64_GT_OP() -> int { return 100; }
+fn F64_LE_OP() -> int { return 101; }
+fn F64_GE_OP() -> int { return 102; }
+fn F64_CONST_OP() -> int { return 68; }
+fn F64_CONV_I32_OP() -> int { return 183; }   // f64.convert_i32_s
+fn I32_TRUNC_F64_OP() -> int { return 170; }  // i32.trunc_f64_s
 
 // Слоты состояния: 0=PC 1=NT 2=NF 3=NL 4=status 5=produces 6=NS(strings) 7=TS
 fn get(st, k) -> int { return load32(ST() + st * 4 + k * 4); }

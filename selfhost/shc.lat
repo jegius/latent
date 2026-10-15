@@ -95,6 +95,20 @@ fn TV_NEST() -> int { return 4476928; }  // 32K  переменная: глуб�
 fn FRETTY() -> int { return 4509696; }   // 32K  тип результата функции
 fn TCCUR() -> int { return 4542464; }    // 16   текущий индекс функции в тайп-чеке
 fn ERRB() -> int { return 4547072; }     // 4K   буфер сообщения об ошибке
+// --- float: WASM-опкоды вынесены как функции для читаемости эмиттера ---
+fn F64_ADD_OP() -> int { return 160; }
+fn F64_SUB_OP() -> int { return 161; }
+fn F64_MUL_OP() -> int { return 162; }
+fn F64_DIV_OP() -> int { return 163; }
+fn F64_EQ_OP() -> int { return 97; }
+fn F64_NE_OP() -> int { return 98; }
+fn F64_LT_OP() -> int { return 99; }
+fn F64_GT_OP() -> int { return 100; }
+fn F64_LE_OP() -> int { return 101; }
+fn F64_GE_OP() -> int { return 102; }
+fn F64_CONST_OP() -> int { return 68; }
+fn F64_CONV_I32_OP() -> int { return 183; }   // f64.convert_i32_s
+fn I32_TRUNC_F64_OP() -> int { return 170; }  // i32.trunc_f64_s
 
 // Слоты состояния: 0=PC 1=NT 2=NF 3=NL 4=status 5=produces 6=NS(strings) 7=TS
 fn get(st, k) -> int { return load32(ST() + st * 4 + k * 4); }
@@ -240,9 +254,18 @@ fn tokenize() -> int {
         if (is_space(c)) { i = i + 1; }
         else {
             if (is_digit(c)) {
+                let s = i;
                 let v = 0;
                 while (i < L && is_digit(sc(src, i))) { v = v * 10 + (sc(src, i) - 48); i = i + 1; }
-                store32(KIND() + n * 4, 1); store32(TVAL() + n * 4, v); store32(TLEN() + n * 4, 0); n = n + 1;
+                // Дробное число `NNN.NNN` → токен-литерал float (4):
+                // храним оффсет/длину исходной записи, значение соберёт эмиттер.
+                if (i + 1 < L && sc(src, i) == 46 && is_digit(sc(src, i + 1))) {
+                    i = i + 1;
+                    while (i < L && is_digit(sc(src, i))) { i = i + 1; }
+                    store32(KIND() + n * 4, 4); store32(TVAL() + n * 4, s); store32(TLEN() + n * 4, i - s); n = n + 1;
+                } else {
+                    store32(KIND() + n * 4, 1); store32(TVAL() + n * 4, v); store32(TLEN() + n * 4, 0); n = n + 1;
+                }
             } else {
                 if (is_alpha(c)) {
                     let s = i;
@@ -1027,7 +1050,8 @@ fn emit_str_conv() -> int {
     level_or();
     let xt = load32(TSTK() + base * 4);
     expect(21);
-    if (xt != T_STR()) { ev(16); ev_leb(I32S_FI()); }
+    if (xt == T_FLT()) { ev(I32_TRUNC_F64_OP()); ev(16); ev_leb(I32S_FI()); }
+    else { if (xt != T_STR()) { ev(16); ev_leb(I32S_FI()); } }
     set(0, 5, 1); set(0, 7, base); tp(T_STR());
     return 0;
 }
@@ -1040,6 +1064,7 @@ fn emit_int_conv() -> int {
     let xt = load32(TSTK() + base * 4);
     expect(21);
     if (xt == T_STR()) { ev(16); ev_leb(S2I_FI()); }
+    else { if (xt == T_FLT()) { ev(I32_TRUNC_F64_OP()); } }
     set(0, 5, 1); set(0, 7, base); tp(T_INT());
     return 0;
 }
@@ -1093,9 +1118,34 @@ fn emit_call_named(fidx, is_print) -> int {
     return 0;
 }
 
+// Литерал float `I.F`: собираем как f64-арифметику без кодирования битов
+// IEEE754 — целая часть + дробь/10^k. Так не нужна 64-битная арифметика.
+fn emit_float_lit(off, ln) -> int {
+    let ip = 0; let i = 0;
+    while (i < ln && load8(INPUT() + 4 + off + i) != 46) { ip = ip * 10 + (load8(INPUT() + 4 + off + i) - 48); i = i + 1; }
+    i = i + 1;                          // через '.'
+    let fp = 0; let k = 0;
+    while (i < ln) { fp = fp * 10 + (load8(INPUT() + 4 + off + i) - 48); k = k + 1; i = i + 1; }
+    if (k == 0) { fp = 0; }
+    ev(65); ev_sleb(ip); ev(183);        // i32.const I; f64.convert_i32_s
+    if (k > 0) {
+        ev(65); ev_sleb(fp); ev(183);    // i32.const F; f64.convert_i32_s
+        ev(65); ev_sleb(pow10(k)); ev(183);  // i32.const 10^k; f64.convert_i32_s
+        ev(163);                         // f64.div
+        ev(160);                         // f64.add
+    }
+    return 0;
+}
+fn pow10(k) -> int {
+    let v = 1; let i = 0;
+    while (i < k) { v = v * 10; i = i + 1; }
+    return v;
+}
+
 fn level_primary() -> int {
     let k = tkind();
     if (k == 1) { ev(65); ev_sleb(tval()); adv(); set(0, 5, 1); tp(T_INT()); return 0; }
+    if (k == 4) { emit_float_lit(tval(), tlen()); adv(); set(0, 5, 1); tp(T_FLT()); return 0; }
     if (k == 90) { ev(65); ev_sleb(1); adv(); set(0, 5, 1); tp(T_INT()); return 0; }
     if (k == 91) { ev(65); ev_sleb(0); adv(); set(0, 5, 1); tp(T_INT()); return 0; }
     if (k == 3) {
@@ -1593,8 +1643,14 @@ fn level_cmp() -> int {
     level_bit();
     while (tkind() == 42 || tkind() == 43 || tkind() == 44 || tkind() == 45) {
         let k = tkind(); adv();
+        let lt = load32(TSTK() + base * 4);
         level_bit();
-        if (k == 42) { ev(72); } else { if (k == 43) { ev(74); } else { if (k == 44) { ev(76); } else { ev(78); } } }
+        let rt = load32(TSTK() + (base + 1) * 4);
+        if (lt == T_FLT() || rt == T_FLT()) {
+            if (k == 42) { ev(F64_LT_OP()); } else { if (k == 43) { ev(F64_GT_OP()); } else { if (k == 44) { ev(F64_LE_OP()); } else { ev(F64_GE_OP()); } } }
+        } else {
+            if (k == 42) { ev(72); } else { if (k == 43) { ev(74); } else { if (k == 44) { ev(76); } else { ev(78); } } }
+        }
         set(0, 7, base); tp(T_INT());
     }
     return 0;
@@ -1639,8 +1695,15 @@ fn level_add() -> int {
             ev(16); ev_leb(SCAT_FI());
             set(0, 7, base); tp(T_STR());
         } else {
-            if (k == 30) { ev(106); } else { ev(107); }
-            set(0, 7, base); tp(T_INT());
+            if (lt == T_FLT() || rt == T_FLT()) {
+                // Только f64-операнды; '-' у float в oracle не проходит, но
+                // эмитим корректный f64.sub для полноты.
+                if (k == 30) { ev(F64_ADD_OP()); } else { ev(F64_SUB_OP()); }
+                set(0, 7, base); tp(T_FLT());
+            } else {
+                if (k == 30) { ev(106); } else { ev(107); }
+                set(0, 7, base); tp(T_INT());
+            }
         }
     }
     return 0;
@@ -1650,9 +1713,17 @@ fn level_mul() -> int {
     level_unary();
     while (tkind() == 32 || tkind() == 33 || tkind() == 34) {
         let k = tkind(); adv();
+        let lt = load32(TSTK() + base * 4);
         level_unary();
-        if (k == 32) { ev(108); } else { if (k == 33) { ev(109); } else { ev(111); } }
-        set(0, 7, base); tp(T_INT());
+        let rt = load32(TSTK() + (base + 1) * 4);
+        if (lt == T_FLT() || rt == T_FLT()) {
+            // float-арифметика: операнды уже f64 на стеке.
+            if (k == 32) { ev(F64_MUL_OP()); } else { if (k == 33) { ev(F64_DIV_OP()); } else { err(); } }
+            set(0, 7, base); tp(T_FLT());
+        } else {
+            if (k == 32) { ev(108); } else { if (k == 33) { ev(109); } else { ev(111); } }
+            set(0, 7, base); tp(T_INT());
+        }
     }
     return 0;
 }
@@ -1754,6 +1825,7 @@ fn tc_expr() -> int {
 fn tc_primary() -> int {
     let k = tck();
     if (k == 1) { tcx(); return TY_NUM(); }
+    if (k == 4) { tcx(); return TY_NUM(); }   // литерал float
     if (k == 3) { tcx(); return TY_STR(); }
     if (k == 90 || k == 91) { tcx(); return TY_BOOL(); }
     if (k == 20) { tcx(); let t = tc_expr(); if (tck() == 21) { tcx(); } return t; }
@@ -2388,9 +2460,9 @@ fn fn_ret_tp(total, ftok) -> int {
     if (j + 1 >= total) { return T_INT(); }
     if (load32(KIND() + (j + 1) * 4) != 28) { return T_INT(); }   // нет '->'
     let rt = j + 2;
-    if (load32(KIND() + rt * 4) == 2
-        && is_lit(load32(TVAL() + rt * 4), load32(TLEN() + rt * 4), "string", 6)) {
-        return T_STR();
+    if (load32(KIND() + rt * 4) == 2) {
+        if (is_lit(load32(TVAL() + rt * 4), load32(TLEN() + rt * 4), "string", 6)) { return T_STR(); }
+        if (is_lit(load32(TVAL() + rt * 4), load32(TLEN() + rt * 4), "float", 5)) { return T_FLT(); }
     }
     return T_INT();
 }
@@ -2673,16 +2745,24 @@ fn build_module() -> int {
     bput(OUTB(), 1); bput(OUTB(), 0); bput(OUTB(), 0); bput(OUTB(), 0);
     let n = nf();
 
-    // type section: (i32)->void (idx0); arity 0..8 -> i32 (idx1..9).
+    // type section: (i32)->void (idx0); arity 0..8 -> i32 (idx1..9);
+    // arity 0..8 -> f64 (idx10..18) для float-возвращающих функций.
     // Лямбда арности np+1 берёт тип-индекс np+2 (см. lam_tp) => np до 7.
     binit(SCRB());
-    bleb(SCRB(), 10);
+    bleb(SCRB(), 19);
     bput(SCRB(), 96); bleb(SCRB(), 1); bput(SCRB(), 127); bleb(SCRB(), 0);
     let a = 0;
     while (a < 9) {
         bput(SCRB(), 96); bleb(SCRB(), a);
         let q = 0; while (q < a) { bput(SCRB(), 127); q = q + 1; }
         bleb(SCRB(), 1); bput(SCRB(), 127);
+        a = a + 1;
+    }
+    a = 0;
+    while (a < 9) {
+        bput(SCRB(), 96); bleb(SCRB(), a);
+        let q = 0; while (q < a) { bput(SCRB(), 127); q = q + 1; }
+        bleb(SCRB(), 1); bput(SCRB(), 124);   // -> f64
         a = a + 1;
     }
     emit_sec(1, SCRB());
@@ -2700,7 +2780,15 @@ fn build_module() -> int {
     binit(SCRB());
     bleb(SCRB(), n + 7 + nl);
     let i = 0;
-    while (i < n) { bleb(SCRB(), load32(FNNP() + i * 4) + 1); i = i + 1; }
+    while (i < n) {
+        // float-возвращающая функция берёт тип-индекс из блока ->f64 (10+arity).
+        if (load32(FNRET() + i * 4) == T_FLT()) {
+            bleb(SCRB(), 10 + load32(FNNP() + i * 4));
+        } else {
+            bleb(SCRB(), load32(FNNP() + i * 4) + 1);
+        }
+        i = i + 1;
+    }
     bleb(SCRB(), 2);   // alloc: (i32)->i32 = type2
     bleb(SCRB(), 4);   // memcopy: (i32,i32,i32)->i32 = type4
     bleb(SCRB(), 3);   // str_concat: (i32,i32)->i32 = type3
