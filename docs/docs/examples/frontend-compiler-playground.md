@@ -8,7 +8,7 @@ description: "Как встроить компилятор Latent (latent_alloc/
 # Свой playground: компилятор Latent как WASM
 
 Компилятор Latent сам собран в WebAssembly: `web-ide/compiler.wasm`
-(465 435 байт) экспортирует C-ABI `latent_alloc` / `latent_compile` /
+(630 340 байт) экспортирует C-ABI `latent_alloc` / `latent_compile` /
 `latent_free` / `latent_version` и не требует импортов. На нём можно собрать
 собственный playground: текстовое поле → компиляция в браузере → запуск
 результата → скачивание `.wasm`.

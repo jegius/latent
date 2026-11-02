@@ -59,18 +59,19 @@ cp target/wasm32-unknown-unknown/release/latent.wasm web-ide/latent.wasm
 :::note
 **Поставляемый `web-ide/compiler.wasm` актуален**: он собран из текущих `src/`
 и содержит memory-builtins (`alloc`, `load8`, `store8`, `load32`, `store32`,
-`memcopy`), `spawn`/`yield`/`async`/`await`/`select`, `test`-блоки и актуальные
-фиксы. Проверено: `alloc(8)` + `store8`/`store32`/`load8`/`load32`/`memcopy`
-компилируются в валидный WASM.
+`memcopy`), `spawn`/`yield`/`async`/`await`/`select`, `test`-блоки, модульный ABI
+(`latent_compile_files`, `latent_bundle_files`) и актуальные фиксы. Проверено:
+`alloc(8)` + `store8`/`store32`/`load8`/`load32`/`memcopy` компилируются в
+валидный WASM.
 
-- Артефакт: `web-ide/compiler.wasm` = `web-ide/latent.wasm` (465 435 байт,
-  версия `latent 0.1.0`), пересобран вместе с декомпозицией `src/`.
+- Артефакт: `web-ide/compiler.wasm` = `web-ide/latent.wasm` (630 340 байт,
+  версия `latent 0.1.0`), пересобран из текущего `src/` (включая модули).
 - `docs/scripts/validate-examples.mjs` валидирует блоки **этим** файлом: при
   пересборке `compiler.wasm` перезапустите проверку — часть маркеров
   «не компилируется» может устареть.
-- В IDEA-плагине лежит **отдельная, более старая** копия
-  (`editors/idea/src/main/resources/runner/compiler.wasm`), в ней memory-builtins
-  ещё нет — см. [IntelliJ IDEA](./idea.md#ограничения).
+- Встроенная копия в IDEA-плагине
+  (`editors/idea/src/main/resources/runner/compiler.wasm`) синхронизирована с
+  этим же артефактом (`node scripts/check-embedded-wasm.mjs`).
 :::
 
 ## 3. Self-hosted компилятор
@@ -182,11 +183,10 @@ node scripts/validate-examples.mjs   # все ```latent блоки
 cargo test
 # покрытие Rust (llvm-cov, обход GNU-ld): 91.00% строк / 93.53% функций
 pwsh scripts/coverage-rust.ps1
-# golden-набор: 47 программ совпали байт-в-байт, 0 расхождений
-# (1 пропуск — selfhost/shc.lat изменён selfhost-агентом)
+# golden-набор: 48 программ совпали байт-в-байт, 0 расхождений, 0 пропусков
 node scripts/check-golden.mjs
 
-# selfhost: 166 тестов, покрытие 94.56% функций / 96.68% строк + фиксированная точка (Rust-путь)
+# selfhost: 173 теста, покрытие 100% функций / 97.94% строк + фиксированная точка (Rust-путь)
 node selfhost/build.mjs
 node selfhost/bootstrap.mjs                 # FIXED POINT
 node --test "selfhost/test/*.test.mjs"
@@ -197,19 +197,19 @@ node selfhost/bootstrap-wasm.mjs            # FIXED POINT (stage2' === stage3')
 node selfhost/wasm-compiler.mjs version
 node --test selfhost/test/bootstrap-wasm.test.mjs
 
-# web-ide: 368 тестов, 99.53% строк / 96.98% ветвей / 98.39% функций
+# web-ide: 414 тестов, 97.51% строк / 91.47% ветвей / 98.52% функций
 cd web-ide && pnpm test
 cd web-ide && pnpm coverage
 cd web-ide && pnpm run check:structure
 
-# docs: 75 страниц RU + 75 EN; llms.txt/llms-en.txt генерируются сборкой
+# docs: 79 страниц RU + 79 EN; llms.txt/llms-en.txt генерируются сборкой
 cd docs && pnpm install && pnpm run build
-node docs/scripts/validate-examples.mjs     # 194 блока: 165 валидны, 29 помечены
+node docs/scripts/validate-examples.mjs     # 213 блоков: 173 валидны, 34 помечены, 6 module-part
 
 # mcp: 300 тестов
 node --test "mcp/docs-mcp/test/*.test.mjs"
 
-# lsp: 133 теста
+# lsp: 146 тестов
 node --test "tooling/latent-lsp/test/*.test.mjs"
 
 # vscode: 70 тестов (покрытие строк 98.77%), собран latent-1.0.0.vsix

@@ -107,8 +107,13 @@ Letter     ::= [A-Za-z]      // только ASCII
 
 Полный список ключевых слов (`src/lexer/keywords.rs`): `let fn if else while
 for in return class new this async await spawn channel select case default yield
-match enum true false null ai model agent embedding tensor semantic test assert
-assert_eq forall snapshot ai_contract enforce_contract`.
+match enum import export from as true false null ai model agent embedding tensor
+semantic test assert assert_eq forall snapshot ai_contract enforce_contract`.
+
+`import` и `export` — **жёсткие** ключевые слова (как `let`/`fn`); `from` и
+`as` — контекстные: лексер выдаёт отдельный тип токена, но в позиции имени они
+принимаются как идентификаторы (`soft_keyword_lexeme()` в `src/lexer/token.rs`).
+Поэтому `let as = 1;` синтаксически допустимо, а `let import = 1;` — нет.
 
 Часть слов — **мягкие**: лексер помечает их отдельным типом токена, но в
 позиции имени они принимаются как идентификаторы (`soft_keyword_lexeme()` в
@@ -116,7 +121,7 @@ assert_eq forall snapshot ai_contract enforce_contract`.
 
 `test`, `assert`, `assert_eq`, `forall`, `snapshot`, `ai_contract`,
 `enforce_contract`, `model`, `agent`, `embedding`, `tensor`, `semantic`,
-`case`.
+`case`, `from`, `as`.
 
 Это значит, что легальны, например, `let test = 5;`, `fn model() {}`,
 `obj.agent`:

@@ -236,20 +236,22 @@ env     → [captured0 i32][captured1 i32]...  (4*n байт)
 ## C-ABI компилятора (движок №2 в браузере)
 
 Собранный `cargo build --release --target wasm32-unknown-unknown` компилятор
-(`web-ide/compiler.wasm`) экспортирует четыре функции (`src/lib.rs`):
+(`web-ide/compiler.wasm`) экспортирует шесть функций (`src/lib.rs`):
 
 | Экспорт | Сигнатура | Назначение |
 |---|---|---|
 | `latent_alloc` | `(i32 size) -> i32` | выделить буфер из Rust-`Vec` (утечка до `latent_free`) |
-| `latent_compile` | `(i32 src_ptr, i32 src_len) -> i32` | скомпилировать исходник из линейной памяти |
+| `latent_compile` | `(i32 src_ptr, i32 src_len) -> i32` | скомпилировать **один** исходник из линейной памяти |
+| `latent_compile_files` | `(i32 manifest_ptr, i32 manifest_len) -> i32` | скомпилировать проект из манифеста `LPF1` |
+| `latent_bundle_files` | `(i32 manifest_ptr, i32 manifest_len) -> i32` | собрать плоский Latent-исходник проекта (`bundle`) |
 | `latent_free` | `(i32 ptr, i32 size)` | освободить буфер (`Vec::from_raw_parts(ptr, 0, size)`) |
 | `latent_version` | `() -> i32` | вернуть буфер с версией |
 
-Формат буфера ответа `latent_compile`:
+Формат буфера ответа `latent_compile` (и обеих модульных функций):
 
 ```text
 [status u32 LE][len u32 LE][payload: len байт]
-status = 1 → payload это .wasm-байты
+status = 1 → payload это .wasm-байты (у latent_bundle_files — UTF-8 исходник)
 status = 0 → payload это UTF-8 сообщение об ошибке
 ```
 
@@ -269,6 +271,24 @@ status = 0 → payload это UTF-8 сообщение об ошибке
 
 Модуль компилятора инстанцируется без импортов (`WebAssembly.instantiate(bytes,
 {})`); это чистый `wasm32-unknown-unknown`-модуль.
+
+### Модульный ABI: манифест `LPF1`
+
+`latent_compile_files` и `latent_bundle_files` принимают не исходник, а манифест
+проекта (little-endian):
+
+```text
+magic "LPF1" (4 bytes)
+u32 file_count
+file_count × { u32 path_len, path utf8, u32 src_len, src utf8 }
+u32 entry_index
+```
+
+Пути относительные (`main.lat`, `lib/math.lat`), entry задаётся индексом в
+списке. Ответ — тот же `[status][len][payload]`. Однофайловый `latent_compile`
+импорты не поддерживает и на них возвращает ошибку с подсказкой про
+`compile_files`; детали и ограничения — в
+[модулях](../guide/modules.md) и [CLI](./cli.md#многофайловый-abi-latent_compile_files).
 
 ## Ограничения и дефекты
 

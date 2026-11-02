@@ -4,13 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Latent — физика частиц на canvas</title>
-  <meta name="description" content="До 30 000 частиц, три вращающихся аттрактора и фиксированная точка в Latent→WASM. Живой FPS, график шага симуляции и честное сравнение с JS." />
+  <meta name="description" content="До 30 000 частиц, три вращающихся аттрактора и фиксированная точка в Latent→WASM. Живой FPS, график времени шага и честное сравнение стабильности с JS-двойником." />
+  <meta name="theme-color" content="#04070d" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23070b12'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%235eead4'%3E%CE%BB%3C/text%3E%3C/svg%3E" />
   <script>
     // Keep relative URLs stable whether the host serves /demos/physics or
     // /demos/physics/ (Docusaurus serve drops the trailing slash).
     (() => {
-      const m = location.pathname.match(/^(.*\/demos)(?:\/(bench|image|physics))?\/?$/);
+      const m = location.pathname.match(/^(.*\/demos)(?:\/(bench|image|physics|concurrency|ai|selfhost|sandbox|modules))?\/?$/);
       if (!m) return;
       const base = document.createElement('base');
       base.href = `${m[1]}/${m[2] ? `${m[2]}/` : ''}`;
@@ -20,66 +21,97 @@
   <link rel="stylesheet" href="/latent/demos/assets/demo.css"
         onerror="this.onerror=null;this.href='../assets/demo.css'" />
   <style>
+    .stage-wrap { perspective: 1100px; }
     .sim-stage {
       position: relative;
-      border-radius: 16px;
+      border-radius: 18px;
       overflow: hidden;
-      border: 1px solid var(--line);
-      background: #01030a;
+      border: 1px solid rgba(146, 178, 219, 0.18);
+      background: #02040a;
       aspect-ratio: 8 / 5;
+      transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+      transition: transform .18s var(--ease);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 40px 100px -50px rgba(0, 0, 0, 1);
+      isolation: isolate;
+      --rx: 0deg;
+      --ry: 0deg;
     }
-    .sim-stage canvas {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
+    .sim-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    .sim-bg { position: absolute; inset: -4%; z-index: 0; opacity: .85; }
+    .sim-bg canvas { width: 100%; height: 100%; transform: translate3d(calc(var(--bgx, 0) * 1px), calc(var(--bgy, 0) * 1px), 0) scale(1.04); transition: transform .3s var(--ease); }
+    #sim { z-index: 2; mix-blend-mode: screen; }
     .sim-stage::after {
       content: "";
       position: absolute;
       inset: 0;
+      z-index: 3;
       pointer-events: none;
-      background: radial-gradient(ellipse at center, transparent 55%, rgba(1, 3, 10, 0.55) 100%);
+      background:
+        radial-gradient(ellipse at center, transparent 50%, rgba(1, 3, 10, 0.62) 100%),
+        repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.014) 0 1px, transparent 1px 3px);
     }
-    .graph-card {
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: rgba(2, 6, 16, 0.6);
-      padding: 8px 10px;
+    .sim-hud { position: absolute; inset: 0; z-index: 4; pointer-events: none; font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; color: rgba(198, 219, 240, 0.5); text-transform: uppercase; }
+    .hud { position: absolute; display: flex; align-items: center; gap: 7px; background: rgba(3, 7, 14, 0.35); border: 1px solid rgba(146, 178, 219, 0.14); border-radius: 7px; padding: 5px 8px; backdrop-filter: blur(4px); }
+    .hud b { color: rgba(237, 244, 252, 0.82); font-weight: 500; }
+    .hud.tl { left: 12px; top: 12px; }
+    .hud.tr { right: 12px; top: 12px; color: var(--teal); border-color: rgba(94, 234, 212, 0.24); }
+    .hud.bl { left: 12px; bottom: 12px; }
+    .hud.br { right: 12px; bottom: 12px; }
+    .hud-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 8px 2px rgba(94, 234, 212, 0.8); animation: live-pulse 2.2s ease-out infinite; }
+    .sim-caption { display: flex; justify-content: space-between; gap: 10px; color: var(--dim); font-family: var(--mono); font-size: 10px; letter-spacing: .06em; margin-top: 9px; flex-wrap: wrap; }
+    .graph-card { border: 1px solid var(--line); border-radius: 14px; background: rgba(3, 6, 12, 0.55); padding: 10px 12px 8px; }
+    .live-charts { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, .85fr); gap: 10px; margin-top: 12px; }
+    .live-charts .chart { border: 0; background: transparent; padding: 0; }
+    .live-charts .chart canvas { height: 92px; }
+    .swatches { display: flex; gap: 12px; align-items: center; font-size: 10.5px; color: var(--dim); flex-wrap: wrap; }
+    .swatches span { display: inline-flex; align-items: center; gap: 5px; }
+    .swatches i { width: 18px; height: 3px; border-radius: 99px; display: inline-block; }
+    .stability { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, .6fr); gap: 16px; align-items: start; }
+    .ab-table { min-width: 0; width: 100%; font-size: 12px; }
+    .ab-table th, .ab-table td { padding: 8px 10px; }
+    .ab-verdict { font-size: 12px; color: var(--muted); line-height: 1.6; }
+    .ab-verdict b { color: var(--text); }
+    @media (max-width: 960px) {
+      .live-charts, .stability { grid-template-columns: minmax(0, 1fr); }
+      .sim-stage { transform: none; }
+      #phys-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
     }
-    .graph-card canvas { width: 100%; height: 54px; display: block; }
-    .stat-line { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
-    .stat-line b { font-family: var(--mono); color: var(--text); font-weight: 600; }
-    .swatches { display: flex; gap: 10px; align-items: center; font-size: 11px; color: var(--dim); }
-    .swatches i { width: 22px; height: 4px; border-radius: 99px; display: inline-block; margin-right: 4px; vertical-align: middle; }
-    @media (max-width: 620px) { .sim-stage { aspect-ratio: 4 / 3; } }
+    @media (max-width: 620px) {
+      .sim-stage { aspect-ratio: 8 / 5; }
+      #phys-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    }
   </style>
 </head>
 <body>
+  <a class="skip-link" href="#main">Перейти к содержимому</a>
+
   <header class="topbar">
     <div class="wrap topbar-inner">
-      <a class="brand" href="../"><span class="brand-mark">λ</span> Latent demos</a>
-      <nav class="topnav">
+      <a class="brand" href="../"><span class="brand-mark">λ</span><span>Latent demos<small>физика</small></span></a>
+      <button class="btn btn-icon btn-ghost nav-toggle" type="button" data-nav-toggle
+              aria-label="Меню" aria-expanded="false" aria-controls="topnav">☰</button>
+      <nav class="topnav" id="topnav" aria-label="Основная навигация">
         <a href="../">Обзор</a>
         <a href="../bench/">Бенчмарк</a>
         <a href="../image/">Изображения</a>
-        <a class="active" href="./">Физика</a>
+        <a class="active" href="./" aria-current="page">Физика</a>
+        <a href="../#killer">Killer-демо</a>
         <a class="keep" href="../../examples/frontend-showcase">Документация</a>
         <span class="tag">CANVAS</span>
       </nav>
     </div>
   </header>
 
-  <main>
-    <section class="wrap hero">
+  <main id="main">
+    <section class="wrap hero" style="padding-bottom:14px">
+      <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
       <p class="eyebrow">fixed-point i32 · 3 аттрактора · до 30 000 частиц</p>
-      <h1>Гравитация без<br /><span class="grad">сборщика мусора.</span></h1>
+      <h1 class="compact">Гравитация без <span class="grad">сборщика мусора.</span></h1>
       <p class="lead">
         Симуляция целиком живёт в одном линейном буфере: позиции, скорости, аттракторы.
         Ни одной аллокации на кадр и ни одного объекта на частицу. Переключатель
-        <strong>Latent→WASM / JS</strong> запускает два одинаковых интегратора — цифры и
-        траектории можно сравнить.
+        <strong>Latent→WASM / JS</strong> запускает два одинаковых интегратора — траектории
+        можно сравнить бит в бит, а разброс времени шага увидеть на графике.
       </p>
       <div class="hero-actions">
         <span class="badge ok" id="sim-status"><span class="spinner"></span> загрузка particles.wasm…</span>
@@ -88,85 +120,121 @@
       </div>
       <div class="hero-meta">
         <span><b>30 000</b> частиц максимум</span>
+        <span class="dot" aria-hidden="true"></span>
         <span><b>0</b> объектов на частицу</span>
+        <span class="dot" aria-hidden="true"></span>
         <span><b>1</b> шаг = 1 вызов main</span>
-        <span><b>0</b> GC-пауз в WASM</span>
+        <span class="dot" aria-hidden="true"></span>
+        <span><b class="teal">0</b> GC-пауз в WASM</span>
       </div>
     </section>
 
-    <section class="wrap section embed-keep">
+    <!-- ================= STAGE + CONTROLS ================= -->
+    <section class="wrap section embed-keep" style="padding-top:16px">
       <div class="grid grid-hero">
-        <div class="panel" style="padding: 14px">
-          <div class="sim-stage">
-            <canvas id="sim" width="960" height="600"></canvas>
+        <div class="panel" style="padding:14px">
+          <div class="stage-wrap">
+            <div class="sim-stage" id="sim-stage">
+              <div class="sim-bg" aria-hidden="true"><canvas id="backdrop" width="960" height="600" aria-hidden="true"></canvas></div>
+              <canvas id="sim" width="960" height="600" aria-label="Симуляция гравитации частиц"></canvas>
+              <div class="sim-hud" aria-hidden="true">
+                <div class="hud tl"><span class="hud-dot"></span>LATENT SIM</div>
+                <div class="hud tr" id="hud-mode">WASM</div>
+                <div class="hud bl"><b id="hud-count">12 000</b> частиц</div>
+                <div class="hud br"><b id="hud-step">—</b> / шаг · <b id="hud-fps">—</b> fps</div>
+              </div>
+            </div>
           </div>
-          <div class="legend" style="display:flex;justify-content:space-between;margin-top:9px;color:var(--dim);font-family:var(--mono);font-size:10.5px">
+          <div class="sim-caption">
             <span id="sim-caption">latent particles.wasm</span>
-            <span>960 × 600</span>
+            <span>960 × 600 · additive · screen</span>
+          </div>
+
+          <div class="graph-card live-charts">
+            <div class="chart short">
+              <div class="chart-head">
+                <span>время шага</span>
+                <b id="graph-label">—</b>
+                <span class="spacer"></span>
+                <span class="chart-legend"><span><i class="teal"></i>step</span><span><i style="background:rgba(251,191,36,.6)"></i>p95</span></span>
+              </div>
+              <canvas id="graph" aria-label="График времени шага симуляции"></canvas>
+            </div>
+            <div class="chart short">
+              <div class="chart-head">
+                <span>fps</span>
+                <b id="fps-label">—</b>
+                <span class="spacer"></span>
+                <span class="chart-legend"><span><i class="violet"></i>fps</span></span>
+              </div>
+              <canvas id="fps-graph" aria-label="График FPS"></canvas>
+            </div>
           </div>
         </div>
 
         <aside class="panel">
-          <div class="segmented" id="mode-seg" style="width:100%;margin-bottom:14px">
-            <button type="button" class="active" data-mode="wasm" style="flex:1">Latent → WASM</button>
-            <button type="button" data-mode="js" style="flex:1">JavaScript</button>
+          <div class="segmented full" id="mode-seg" role="group" aria-label="Рантайм" style="margin-bottom:14px">
+            <button type="button" class="active" data-mode="wasm">Latent → WASM</button>
+            <button type="button" data-mode="js">JavaScript</button>
           </div>
 
           <div class="stack">
             <div class="field">
               <div class="field-row"><span>Частиц</span><output id="count-out">12 000</output></div>
-              <input type="range" id="count" min="2000" max="30000" value="12000" step="1000" />
+              <input type="range" id="count" min="2000" max="30000" value="12000" step="1000" aria-label="Количество частиц" />
             </div>
             <div class="field">
               <div class="field-row"><span>Гравитация</span><output id="gravity-out">20</output></div>
-              <input type="range" id="gravity" min="0" max="60" value="20" step="1" />
+              <input type="range" id="gravity" min="0" max="60" value="20" step="1" aria-label="Гравитация" />
             </div>
             <div class="field">
               <div class="field-row"><span>Длина трейлов</span><output id="trail-out">86%</output></div>
-              <input type="range" id="trail" min="60" max="97" value="86" step="1" />
+              <input type="range" id="trail" min="60" max="97" value="86" step="1" aria-label="Длина трейлов" />
             </div>
 
-            <div class="row">
+            <div class="btn-row">
               <button class="btn btn-primary" id="reset" type="button">Сбросить</button>
               <button class="btn" id="pause" type="button">Пауза</button>
             </div>
-            <div class="row">
-              <button class="btn btn-sm" id="check" type="button">Проверить parity (120 шагов)</button>
-              <button class="btn btn-sm" id="bench" type="button">Замер 120 шагов</button>
+            <div class="btn-row">
+              <button class="btn btn-sm" id="check" type="button">Parity · 120 шагов</button>
+              <button class="btn btn-sm" id="bench" type="button">Замер · 120 шагов</button>
             </div>
-
-            <div class="graph-card">
-              <div class="stat-line" style="margin-bottom:4px"><span class="dim">шаг симуляции</span><b id="graph-label">—</b></div>
-              <canvas id="graph" width="300" height="54"></canvas>
-            </div>
+            <button class="btn btn-violet btn-sm" id="stab" type="button">Стабильность: JS vs WASM</button>
 
             <div class="stack-sm small" id="bench-out">
               <div class="dim">Замер сравнивает только интегратор: рендер и rAF — снаружи.</div>
             </div>
 
             <div class="swatches">
-              <span><i style="background:#5eead4"></i>медленно</span>
-              <span><i style="background:#7dd3fc"></i>средне</span>
-              <span><i style="background:#fda4af"></i>быстро</span>
+              <span><i style="background:#38bdf8"></i>медленно</span>
+              <span><i style="background:#5eead4"></i>средне</span>
+              <span><i style="background:#a78bfa"></i>быстро</span>
+              <span><i style="background:#fb7185"></i>очень быстро</span>
             </div>
           </div>
         </aside>
       </div>
     </section>
 
-    <section class="wrap section embed-keep">
-      <div class="metrics">
+    <!-- ================= METRICS ================= -->
+    <section class="wrap section embed-keep" style="padding-top:4px">
+      <div class="metrics" id="phys-metrics" style="grid-template-columns:repeat(5,minmax(0,1fr))">
         <div class="metric accent">
-          <div class="k">sim step</div>
+          <div class="k">шаг p50</div>
           <div class="v" id="m-step">—</div>
+        </div>
+        <div class="metric">
+          <div class="k">p95</div>
+          <div class="v" id="m-p95">—</div>
+        </div>
+        <div class="metric pink">
+          <div class="k">p99</div>
+          <div class="v" id="m-p99">—</div>
         </div>
         <div class="metric blue">
           <div class="k">FPS</div>
           <div class="v" id="m-fps">—</div>
-        </div>
-        <div class="metric">
-          <div class="k">p95 step</div>
-          <div class="v" id="m-p95">—</div>
         </div>
         <div class="metric">
           <div class="k">частиц</div>
@@ -175,11 +243,62 @@
       </div>
     </section>
 
+    <!-- ================= STABILITY ================= -->
+    <section class="wrap section" id="stability">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow" style="margin-bottom:8px">gc-free · один буфер · два интегратора</p>
+            <h2 style="font-size:22px">Стабильность шага: JS против WASM</h2>
+            <p class="sub" style="margin-bottom:0">
+              180 точек по 8 шагов на каждом рантайме. Не среднее, а разброс: в WASM нет
+              сборщика мусора, поэтому p99 не должен улетать от медианы.
+            </p>
+          </div>
+          <div class="row">
+            <span class="badge" id="stab-parity">parity: —</span>
+            <button class="btn btn-primary" id="stab-run" type="button">Измерить</button>
+          </div>
+        </div>
+
+        <div class="stability">
+          <div class="chart tall">
+            <div class="chart-head">
+              <span>step · ms</span>
+              <b id="stab-meta">нет данных</b>
+              <span class="spacer"></span>
+              <span class="chart-legend">
+                <span><i class="pink"></i>JS</span><span><i class="teal"></i>WASM</span>
+              </span>
+            </div>
+            <canvas id="stab-chart" aria-label="Сравнение времени шага JS и WASM"></canvas>
+          </div>
+          <div class="stack-sm">
+            <div class="table-wrap">
+              <table class="ab-table">
+                <thead>
+                  <tr><th>рантайм</th><th class="num">p50</th><th class="num">p95</th><th class="num">p99</th><th class="num">max</th></tr>
+                </thead>
+                <tbody id="stab-body">
+                  <tr><td colspan="5" class="dim" style="text-align:center;padding:16px">Запустите измерение.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="ab-verdict" id="stab-verdict">
+              Сравнение покажет p99 / p50 для обоих рантаймов и число спайков. Это честнее,
+              чем один средний FPS.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= WHY ================= -->
     <section class="wrap section">
       <div class="grid grid-hero">
         <div class="panel">
           <h2 style="font-size:20px">Почему здесь Latent, а не JS</h2>
-          <div class="stack-sm" style="margin-top: 12px">
+          <div class="stack-sm" style="margin-top:12px">
             <p class="muted small" style="margin:0">
               <b style="color:var(--text)">Один буфер вместо 30 000 объектов.</b> Частица — это
               четыре i32 по фиксированным смещениям. Нет массива объектов, нет ссылок, нет
@@ -193,7 +312,7 @@
             <p class="muted small" style="margin:0">
               <b style="color:var(--text)">Фиксированная точка.</b> Позиции — 1/16 px, скорости —
               1/256 px/шаг. Все операции целочисленные, поэтому JS-двойник и WASM дают
-              побитово одинаковые траектории (проверено на 600 шагах).
+              побитово одинаковые траектории (проверено на 120 шагах).
             </p>
             <p class="muted small" style="margin:0">
               <b style="color:var(--text)">Столкновения.</b> Частицы отражаются от трёх ядер
@@ -210,6 +329,7 @@
             <div class="spread"><span class="dim">сила</span><span>softened 1/r², i32</span></div>
             <div class="spread"><span class="dim">аттракторы</span><span>3, 16.16 rotation</span></div>
             <div class="spread"><span class="dim">аллокации</span><span style="color:var(--ok)">одна на старте</span></div>
+            <div class="spread"><span class="dim">экран</span><span>additive + screen</span></div>
           </div>
           <hr class="hr" />
           <p class="small dim" style="margin:0">
@@ -219,16 +339,31 @@
           </p>
         </div>
       </div>
+      <p class="note warn" style="margin-top:16px">
+        <b>Честно.</b> На 12 000 частицах оба интегратора быстрые, и JS-двойник тоже
+        укладывается в кадр. Разница — в хвосте распределения: WASM не делает пауз на GC,
+        а рендер здесь намеренно вынесен из замера, чтобы сравнивать именно интегратор.
+      </p>
     </section>
 
+    <!-- ================= SOURCE ================= -->
     <section class="wrap section">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">исходник · fixed-point</p>
+          <h2>particles.lat</h2>
+          <p class="sub">Интегратор, аттракторы и стенки — без единого float и объекта.</p>
+        </div>
+        <span class="badge info no-dot" id="source-badge">—</span>
+      </div>
       <div class="code">
         <div class="code-head">
-          <span class="dots"><i></i><i></i><i></i></span>
+          <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
           <span>physics/particles.lat</span>
-          <span style="margin-left:auto" id="source-meta">—</span>
+          <span class="spacer"></span>
+          <span id="source-meta">—</span>
         </div>
-        <pre><code id="source">// загрузка исходника…</code></pre>
+        <pre><code id="source" class="lines">// загрузка исходника…</code></pre>
       </div>
     </section>
   </main>
@@ -246,9 +381,17 @@
   <script type="module">
     import {PhysicsJS, PHYSICS_MAX} from '../assets/physics.js';
     import {
-      instantiateLatent, formatMs, median, p95, nextFrame,
+      instantiateLatent, formatMs, median, percentile, nextFrame,
     } from '../assets/wasm.js';
     import {highlightLatent} from '../assets/highlight.js';
+    import {
+      initHeader, initReveal, initSpotlight, bindRange, codeLines, countLines,
+      drawLines, reduceMotion, isCoarsePointer,
+    } from '../assets/ui.js';
+
+    initHeader();
+    initReveal();
+    initSpotlight();
 
     if (new URLSearchParams(location.search).has('embed')) {
       document.body.classList.add('embed');
@@ -263,6 +406,7 @@
     const ctx = canvas.getContext('2d');
     const image = ctx.createImageData(W, H);
     const data = image.data;
+    const stage = $('sim-stage');
 
     const state = {
       mode: 'wasm',
@@ -277,25 +421,84 @@
     let base = 0;
     let jsSim = null;
 
-    // ---- palette (slow → fast) ----
+    /* ---------- speed palette: deep blue → teal → violet → pink → white ---------- */
     const palette = new Uint8Array(256 * 3);
+    function mix(a, b, t) {
+      return a + (b - a) * t;
+    }
     for (let i = 0; i < 256; i++) {
       const t = i / 255;
-      let r, g, b;
-      if (t < 0.5) {
-        const u = t * 2;
-        r = 94 + (125 - 94) * u;
-        g = 234 + (211 - 234) * u;
-        b = 212 + (252 - 212) * u;
+      let r, g, b, u;
+      if (t < 0.28) {
+        u = t / 0.28;
+        r = mix(40, 56, u); g = mix(120, 189, u); b = mix(246, 248, u);
+      } else if (t < 0.52) {
+        u = (t - 0.28) / 0.24;
+        r = mix(56, 94, u); g = mix(189, 234, u); b = mix(248, 212, u);
+      } else if (t < 0.76) {
+        u = (t - 0.52) / 0.24;
+        r = mix(94, 167, u); g = mix(234, 139, u); b = mix(212, 250, u);
+      } else if (t < 0.92) {
+        u = (t - 0.76) / 0.16;
+        r = mix(167, 251, u); g = mix(139, 113, u); b = mix(250, 133, u);
       } else {
-        const u = (t - 0.5) * 2;
-        r = 125 + (253 - 125) * u;
-        g = 211 + (164 - 211) * u;
-        b = 252 + (175 - 252) * u;
+        u = (t - 0.92) / 0.08;
+        r = mix(251, 255, u); g = mix(113, 232, u); b = mix(133, 244, u);
       }
       palette[i * 3] = r;
       palette[i * 3 + 1] = g;
       palette[i * 3 + 2] = b;
+    }
+
+    /* ---------- static backdrop: nebula + starfield, painted once ---------- */
+    function paintBackdrop() {
+      const bg = $('backdrop');
+      const g = bg.getContext('2d');
+      const w = bg.width;
+      const h = bg.height;
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, w, h);
+      g.fillStyle = '#02040a';
+      g.fillRect(0, 0, w, h);
+
+      const blobs = [
+        [w * 0.32, h * 0.36, 340, 'rgba(56, 189, 248, 0.16)'],
+        [w * 0.66, h * 0.62, 380, 'rgba(167, 139, 250, 0.15)'],
+        [w * 0.5, h * 0.48, 260, 'rgba(94, 234, 212, 0.1)'],
+        [w * 0.78, h * 0.2, 240, 'rgba(251, 113, 133, 0.08)'],
+      ];
+      for (const [x, y, r, color] of blobs) {
+        const grad = g.createRadialGradient(x, y, 0, x, y, r);
+        grad.addColorStop(0, color);
+        grad.addColorStop(1, 'rgba(2, 4, 10, 0)');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, w, h);
+      }
+
+      // deterministic starfield
+      let seed = 9901;
+      for (let i = 0; i < 420; i++) {
+        seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff;
+        const x = seed % w;
+        seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff;
+        const y = seed % h;
+        seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff;
+        const a = 0.08 + ((seed >>> 8) % 100) / 100 * 0.5;
+        const r = 0.4 + ((seed >>> 16) % 100) / 100 * 1.2;
+        g.fillStyle = `rgba(${200 + (seed % 55)}, ${220 + (seed % 35)}, 255, ${a.toFixed(2)})`;
+        g.beginPath();
+        g.arc(x, y, r, 0, Math.PI * 2);
+        g.fill();
+      }
+
+      // faint orbital guides around the centre
+      g.strokeStyle = 'rgba(94, 234, 212, 0.055)';
+      g.lineWidth = 1;
+      for (let i = 1; i <= 3; i++) {
+        g.beginPath();
+        g.ellipse(w / 2, h / 2, 90 * i + 40, 62 * i + 26, -0.32, 0, Math.PI * 2);
+        g.stroke();
+      }
     }
 
     async function loadWasm() {
@@ -348,8 +551,11 @@
       }
       ctx.fillStyle = '#01030a';
       ctx.fillRect(0, 0, W, H);
-      history.length = 0;
+      stepHistory.length = 0;
+      fpsHistory.length = 0;
       frameStepTimes.length = 0;
+      drawStepChart();
+      drawFpsChart();
     }
 
     function setMode(next) {
@@ -358,6 +564,7 @@
         b.classList.toggle('active', b.dataset.mode === next);
       });
       $('mode-badge').textContent = next === 'wasm' ? 'WASM' : 'JS';
+      $('hud-mode').textContent = next === 'wasm' ? 'WASM' : 'JS';
       $('sim-caption').textContent = next === 'wasm' ? 'latent particles.wasm' : 'javascript twin';
       reset();
     }
@@ -378,7 +585,10 @@
       ];
     }
 
-    // ---- rendering: additive particles + trails ----
+    /* ---------- rendering: additive particles + trails + cores ---------- */
+    const CORE_COLORS = ['94, 234, 212', '251, 113, 133', '167, 139, 250'];
+    let simTime = 0;
+
     function render() {
       const arr = currentArrays();
       if (!arr) return;
@@ -405,85 +615,131 @@
         data[o] = data[o] + cr;
         data[o + 1] = data[o + 1] + cg;
         data[o + 2] = data[o + 2] + cb;
-        // 4-neighbour halo
-        data[o - 4] = data[o - 4] + (cr >> 1);
-        data[o - 3] = data[o - 3] + (cg >> 1);
-        data[o - 2] = data[o - 2] + (cb >> 1);
-        data[o + 4] = data[o + 4] + (cr >> 1);
-        data[o + 5] = data[o + 5] + (cg >> 1);
-        data[o + 6] = data[o + 6] + (cb >> 1);
-        data[o - W * 4] = data[o - W * 4] + (cr >> 2);
-        data[o - W * 4 + 1] = data[o - W * 4 + 1] + (cg >> 2);
-        data[o - W * 4 + 2] = data[o - W * 4 + 2] + (cb >> 2);
-        data[o + W * 4] = data[o + W * 4] + (cr >> 2);
-        data[o + W * 4 + 1] = data[o + W * 4 + 1] + (cg >> 2);
-        data[o + W * 4 + 2] = data[o + W * 4 + 2] + (cb >> 2);
+        // 8-neighbour halo: bright core, soft glow
+        const half = ci > 190 ? 0.7 : 0.5;
+        const quarter = 0.25;
+        data[o - 4] = data[o - 4] + (cr * half);
+        data[o - 3] = data[o - 3] + (cg * half);
+        data[o - 2] = data[o - 2] + (cb * half);
+        data[o + 4] = data[o + 4] + (cr * half);
+        data[o + 5] = data[o + 5] + (cg * half);
+        data[o + 6] = data[o + 6] + (cb * half);
+        data[o - W * 4] = data[o - W * 4] + (cr * half);
+        data[o - W * 4 + 1] = data[o - W * 4 + 1] + (cg * half);
+        data[o - W * 4 + 2] = data[o - W * 4 + 2] + (cb * half);
+        data[o + W * 4] = data[o + W * 4] + (cr * half);
+        data[o + W * 4 + 1] = data[o + W * 4 + 1] + (cg * half);
+        data[o + W * 4 + 2] = data[o + W * 4 + 2] + (cb * half);
+        data[o - W * 4 - 4] = data[o - W * 4 - 4] + (cr * quarter);
+        data[o - W * 4 - 3] = data[o - W * 4 - 3] + (cg * quarter);
+        data[o - W * 4 - 2] = data[o - W * 4 - 2] + (cb * quarter);
+        data[o - W * 4 + 4] = data[o - W * 4 + 4] + (cr * quarter);
+        data[o - W * 4 + 5] = data[o - W * 4 + 5] + (cg * quarter);
+        data[o - W * 4 + 6] = data[o - W * 4 + 6] + (cb * quarter);
+        data[o + W * 4 - 4] = data[o + W * 4 - 4] + (cr * quarter);
+        data[o + W * 4 - 3] = data[o + W * 4 - 3] + (cg * quarter);
+        data[o + W * 4 - 2] = data[o + W * 4 - 2] + (cb * quarter);
+        data[o + W * 4 + 4] = data[o + W * 4 + 4] + (cr * quarter);
+        data[o + W * 4 + 5] = data[o + W * 4 + 5] + (cg * quarter);
+        data[o + W * 4 + 6] = data[o + W * 4 + 6] + (cb * quarter);
       }
 
       ctx.putImageData(image, 0, 0);
 
-      // attractor cores
+      // attractor cores: glow + pulsing ring
       ctx.globalCompositeOperation = 'lighter';
       const cores = attractors();
-      const colors = ['94, 234, 212', '253, 164, 175', '196, 181, 253'];
+      const t = simTime;
       for (let i = 0; i < cores.length; i++) {
         const [ax, ay] = cores[i];
         const x = ax / 16;
         const y = ay / 16;
-        const g = ctx.createRadialGradient(x, y, 0, x, y, 34);
-        g.addColorStop(0, `rgba(${colors[i]}, 0.9)`);
-        g.addColorStop(0.25, `rgba(${colors[i]}, 0.32)`);
-        g.addColorStop(1, `rgba(${colors[i]}, 0)`);
-        ctx.fillStyle = g;
+        const grad = ctx.createRadialGradient(x, y, 0, x, y, 36);
+        grad.addColorStop(0, `rgba(${CORE_COLORS[i]}, 0.92)`);
+        grad.addColorStop(0.22, `rgba(${CORE_COLORS[i]}, 0.34)`);
+        grad.addColorStop(1, `rgba(${CORE_COLORS[i]}, 0)`);
+        ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.arc(x, y, 34, 0, Math.PI * 2);
+        ctx.arc(x, y, 36, 0, Math.PI * 2);
         ctx.fill();
+
+        const ring = 20 + Math.sin(t * 2.1 + i * 2.4) * 5;
+        ctx.strokeStyle = `rgba(${CORE_COLORS[i]}, 0.22)`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(x, y, ring, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.strokeStyle = `rgba(${CORE_COLORS[i]}, 0.1)`;
+        ctx.beginPath();
+        ctx.arc(x, y, ring + 13, 0.4 + t * 0.4 + i, 2.2 + t * 0.4 + i);
+        ctx.stroke();
       }
       ctx.globalCompositeOperation = 'source-over';
     }
 
-    // ---- graph ----
-    const history = [];
-    const graph = $('graph');
-    const gctx = graph.getContext('2d');
+    /* ---------- live charts ---------- */
+    const stepHistory = [];
+    const fpsHistory = [];
+    const frameStepTimes = [];
 
-    function drawGraph(stepMs) {
-      history.push(stepMs);
-      if (history.length > 90) history.shift();
-      const w = graph.width;
-      const h = graph.height;
-      gctx.clearRect(0, 0, w, h);
-      gctx.strokeStyle = 'rgba(148, 180, 220, 0.12)';
-      gctx.lineWidth = 1;
-      for (let y = 0; y < h; y += 18) {
-        gctx.beginPath();
-        gctx.moveTo(0, y + 0.5);
-        gctx.lineTo(w, y + 0.5);
-        gctx.stroke();
+    function drawStepChart() {
+      const values = stepHistory.slice(-120);
+      if (!values.length) {
+        drawLines($('graph'), [], {min: 0, max: 1});
+        return;
       }
-      const max = 1.5;
-      gctx.beginPath();
-      for (let i = 0; i < history.length; i++) {
-        const x = (i / Math.max(1, history.length - 1)) * w;
-        const y = h - Math.min(1, history[i] / max) * (h - 4) - 2;
-        if (i === 0) gctx.moveTo(x, y);
-        else gctx.lineTo(x, y);
-      }
-      gctx.strokeStyle = '#5eead4';
-      gctx.lineWidth = 1.6;
-      gctx.stroke();
-      const last = history[history.length - 1] || 0;
-      gctx.fillStyle = '#fda4af';
-      gctx.beginPath();
-      gctx.arc(w - 2, h - Math.min(1, last / max) * (h - 4) - 2, 2.2, 0, Math.PI * 2);
-      gctx.fill();
+      const p95 = percentile(values, 0.95);
+      const p50 = percentile(values, 0.5);
+      const max = Math.max(p95 * 1.35, p50 * 2.2, 0.18);
+      drawLines($('graph'), [{values, color: '#5eead4', fill: true, width: 1.6}], {
+        min: 0, max,
+        thresholds: [{value: p95, color: 'rgba(251, 191, 36, 0.5)'}],
+      });
     }
 
-    // ---- metrics / loop ----
-    const frameStepTimes = [];
+    function drawFpsChart() {
+      const values = fpsHistory.slice(-120);
+      if (!values.length) {
+        drawLines($('fps-graph'), [], {min: 0, max: 65});
+        return;
+      }
+      drawLines($('fps-graph'), [{values, color: '#a78bfa', fill: true, width: 1.5}], {
+        min: 0, max: 65,
+        thresholds: [{value: 50, color: 'rgba(251, 191, 36, 0.4)', dash: [2, 4]}],
+      });
+    }
+
+    /* ---------- parallax tilt ---------- */
+    if (!reduceMotion() && !isCoarsePointer()) {
+      let queued = 0;
+      let nx = 0;
+      let ny = 0;
+      stage.addEventListener('pointermove', (event) => {
+        const rect = stage.getBoundingClientRect();
+        nx = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
+        ny = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
+        if (queued) return;
+        queued = requestAnimationFrame(() => {
+          queued = 0;
+          stage.style.setProperty('--ry', `${(nx * 1.6).toFixed(2)}deg`);
+          stage.style.setProperty('--rx', `${(-ny * 1.1).toFixed(2)}deg`);
+          stage.style.setProperty('--bgx', `${(-nx * 7).toFixed(1)}`);
+          stage.style.setProperty('--bgy', `${(-ny * 5).toFixed(1)}`);
+        });
+      });
+      stage.addEventListener('pointerleave', () => {
+        stage.style.setProperty('--rx', '0deg');
+        stage.style.setProperty('--ry', '0deg');
+        stage.style.setProperty('--bgx', '0');
+        stage.style.setProperty('--bgy', '0');
+      });
+    }
+
+    /* ---------- loop ---------- */
     let lastTick = performance.now();
     let fpsSmooth = 60;
     let lastMetrics = 0;
+    let lastHud = 0;
 
     function loop(now) {
       requestAnimationFrame(loop);
@@ -496,42 +752,81 @@
       if (state.mode === 'wasm') stepWasm();
       else stepJS();
       const stepMs = performance.now() - t0;
+      simTime += 0.016;
       frameStepTimes.push(stepMs);
       if (frameStepTimes.length > 180) frameStepTimes.shift();
+      stepHistory.push(stepMs);
+      if (stepHistory.length > 160) stepHistory.shift();
+      fpsHistory.push(fpsSmooth);
+      if (fpsHistory.length > 160) fpsHistory.shift();
 
       render();
-      drawGraph(stepMs);
 
       if (now - lastMetrics > 300) {
         lastMetrics = now;
         const recent = frameStepTimes.slice(-60);
-        const med = median(recent);
-        $('m-step').textContent = formatMs(med);
-        $('m-p95').textContent = formatMs(p95(recent));
+        const p50 = median(recent);
+        const p95 = percentile(recent, 0.95);
+        const p99 = percentile(recent, 0.99);
+        $('m-step').textContent = formatMs(p50);
+        $('m-p95').textContent = formatMs(p95);
+        $('m-p99').textContent = formatMs(p99);
         $('m-fps').textContent = fpsSmooth.toFixed(0);
         $('m-count').textContent = state.count.toLocaleString('ru-RU');
-        $('graph-label').textContent = `${formatMs(med)} · p95 ${formatMs(p95(recent))}`;
+        $('graph-label').textContent = `${formatMs(p50)} · p95 ${formatMs(p95)}`;
+        $('fps-label').textContent = `${fpsSmooth.toFixed(0)} fps`;
+        drawStepChart();
+        drawFpsChart();
+      }
+      if (now - lastHud > 220) {
+        lastHud = now;
+        $('hud-count').textContent = state.count.toLocaleString('ru-RU');
+        $('hud-step').textContent = formatMs(median(frameStepTimes.slice(-30)));
+        $('hud-fps').textContent = fpsSmooth.toFixed(0);
       }
     }
 
-    // ---- controls ----
+    /* ---------- controls ---------- */
     document.querySelectorAll('#mode-seg button').forEach((b) => {
       b.addEventListener('click', () => setMode(b.dataset.mode));
     });
+    function clearParityOut() {
+      $('parity-badge').className = 'badge';
+      $('parity-badge').textContent = 'parity: —';
+      $('bench-out').innerHTML = '<div class="dim">Замер сравнивает только интегратор: рендер и rAF — снаружи.</div>';
+    }
+
+    function clearStability() {
+      $('stab-parity').className = 'badge';
+      $('stab-parity').textContent = 'parity: —';
+      $('stab-meta').textContent = 'нет данных';
+      $('stab-body').innerHTML = '<tr><td colspan="5" class="dim" style="text-align:center;padding:16px">Запустите измерение.</td></tr>';
+      $('stab-verdict').innerHTML = 'Сравнение покажет p99 / p50 для обоих рантаймов и число спайков. Это честнее, чем один средний FPS.';
+      drawLines($('stab-chart'), [], {min: 0, max: 0.24});
+    }
+
     $('count').addEventListener('input', (e) => {
       state.count = Number(e.target.value);
       $('count-out').textContent = state.count.toLocaleString('ru-RU');
+      clearParityOut();
+      clearStability();
       reset();
     });
     $('gravity').addEventListener('input', (e) => {
       state.gravity = Number(e.target.value);
       $('gravity-out').textContent = String(state.gravity);
+      clearParityOut();
+      clearStability();
     });
     $('trail').addEventListener('input', (e) => {
       state.fade = Number(e.target.value) / 100;
       $('trail-out').textContent = `${e.target.value}%`;
     });
-    $('reset').addEventListener('click', reset);
+    $('reset').addEventListener('click', () => {
+      clearParityOut();
+      clearStability();
+      reset();
+    });
     $('pause').addEventListener('click', () => {
       state.paused = !state.paused;
       $('pause').textContent = state.paused ? 'Продолжить' : 'Пауза';
@@ -619,7 +914,7 @@
             <span class="badge ${ratio >= 1 ? 'ok' : 'warn'}">${ratio >= 1 ? `Latent ×${ratio.toFixed(2)}` : `JS ×${(1 / ratio).toFixed(2)}`}</span>
             <span class="badge ${ok ? 'ok' : 'bad'}">${ok ? 'checksum ✓' : 'checksum ✗'}</span>
           </div>
-          <div class="dim">p95: JS ${formatMs(p95(jsTimes))} · WASM ${formatMs(p95(wasmTimes))}</div>
+          <div class="dim mono">p95: JS ${formatMs(percentile(jsTimes, 0.95))} · WASM ${formatMs(percentile(wasmTimes, 0.95))} · p99: JS ${formatMs(percentile(jsTimes, 0.99))} · WASM ${formatMs(percentile(wasmTimes, 0.99))}</div>
         `;
         reset();
       } catch (err) {
@@ -629,18 +924,139 @@
       }
     });
 
-    // ---- source ----
+    /* ---------- stability: per-step samples for both runtimes ---------- */
+    function statsOf(samples) {
+      const p50 = median(samples);
+      return {
+        p50,
+        p95: percentile(samples, 0.95),
+        p99: percentile(samples, 0.99),
+        max: Math.max(...samples),
+        spikes: samples.filter((v) => v > p50 * 2.5).length,
+      };
+    }
+
+    async function runStability() {
+      const btn = $('stab-run');
+      const btn2 = $('stab');
+      btn.disabled = true;
+      btn2.disabled = true;
+      const wasPaused = state.paused;
+      state.paused = true;
+      $('stab-meta').textContent = 'измеряем…';
+      $('stab-body').innerHTML = '<tr><td colspan="5" class="dim" style="text-align:center;padding:16px"><span class="spinner"></span> 180 точек × 8 шагов × 2…</td></tr>';
+      await nextFrame();
+      try {
+        jsSim = jsSim || new PhysicsJS();
+        jsSim.init(state.count, W, H);
+        initWasm();
+        for (let i = 0; i < 20; i++) { stepWasm(); jsSim.step(state.count, state.gravity, W, H); }
+
+        const jsSamples = [];
+        const wasmSamples = [];
+        const BATCH = 8;
+        for (let i = 0; i < 180; i++) {
+          let t = performance.now();
+          if (i % 2 === 0) {
+            for (let k = 0; k < BATCH; k++) stepJS();
+            jsSamples.push((performance.now() - t) / BATCH);
+            t = performance.now();
+            for (let k = 0; k < BATCH; k++) stepWasm();
+            wasmSamples.push((performance.now() - t) / BATCH);
+          } else {
+            for (let k = 0; k < BATCH; k++) stepWasm();
+            wasmSamples.push((performance.now() - t) / BATCH);
+            t = performance.now();
+            for (let k = 0; k < BATCH; k++) stepJS();
+            jsSamples.push((performance.now() - t) / BATCH);
+          }
+          if (i % 30 === 29) await nextFrame();
+        }
+
+        const js = statsOf(jsSamples);
+        const wasmS = statsOf(wasmSamples);
+        const ok = checksumOf(views, state.count) === checksumOf(jsSim, state.count);
+        $('stab-parity').className = 'badge ' + (ok ? 'ok' : 'bad');
+        $('stab-parity').textContent = ok ? 'parity ✓ 180 × 8 шагов' : 'parity ✗';
+
+        drawLines($('stab-chart'), [
+          {values: jsSamples, color: '#fb7185', width: 1.4, dots: false},
+          {values: wasmSamples, color: '#5eead4', width: 1.5, dots: false},
+        ], {
+          min: 0,
+          max: Math.max(js.max, wasmS.max) * 1.15,
+          thresholds: [
+            {value: wasmS.p99, color: 'rgba(94, 234, 212, 0.35)'},
+            {value: js.p99, color: 'rgba(251, 113, 133, 0.35)'},
+          ],
+        });
+
+        $('stab-body').innerHTML = [
+          ['JS', 'pink', js],
+          ['WASM', 'teal', wasmS],
+        ].map(([label, cls, s]) => `
+          <tr>
+            <td><span class="chart-legend"><span><i class="${cls}"></i>${label}</span></span></td>
+            <td class="num">${formatMs(s.p50)}</td>
+            <td class="num">${formatMs(s.p95)}</td>
+            <td class="num">${formatMs(s.p99)}</td>
+            <td class="num">${formatMs(s.max)}</td>
+          </tr>`).join('');
+
+        const jitterJs = js.p50 > 0 ? js.p99 / js.p50 : 0;
+        const jitterWasm = wasmS.p50 > 0 ? wasmS.p99 / wasmS.p50 : 0;
+        const tailJs = Math.max(0, js.p99 - js.p50);
+        const tailWasm = Math.max(0, wasmS.p99 - wasmS.p50);
+        const p99Lower = js.p99 > 0 ? Math.max(0, (1 - wasmS.p99 / js.p99) * 100) : 0;
+        $('stab-meta').textContent = `${state.count.toLocaleString('ru-RU')} частиц · 180 точек × 8 шагов`;
+        $('stab-verdict').innerHTML = `p99: JS <b>${formatMs(js.p99)}</b> · WASM <b>${formatMs(wasmS.p99)}</b> — <b>${p99Lower.toFixed(0)}%</b> ниже.<br>
+          Хвост p99 − p50: JS <b>${formatMs(tailJs)}</b> · WASM <b>${formatMs(tailWasm)}</b> (p99 / p50: ${jitterJs.toFixed(2)}× и ${jitterWasm.toFixed(2)}×).<br>
+          Спайков (&gt; 2.5× p50): JS <b>${js.spikes}</b>, WASM <b>${wasmS.spikes}</b>.
+          Оба интегратора прошли одинаковые 1 440 шагов — checksum ${ok ? 'совпал' : 'разошёлся'}.`;
+        reset();
+      } catch (err) {
+        console.error(err);
+        $('stab-meta').textContent = 'ошибка';
+        $('stab-body').innerHTML = `<tr><td colspan="5" class="badge bad">${err.message}</td></tr>`;
+      } finally {
+        state.paused = wasPaused;
+        btn.disabled = false;
+        btn2.disabled = false;
+      }
+    }
+
+    $('stab-run').addEventListener('click', runStability);
+    $('stab').addEventListener('click', runStability);
+
+    bindRange($('count'), $('count-out'), (v) => Number(v).toLocaleString('ru-RU'));
+    bindRange($('gravity'), $('gravity-out'));
+    bindRange($('trail'), $('trail-out'), (v) => `${v}%`);
+
+    /* ---------- source ---------- */
     fetch('./particles.lat')
       .then((r) => (r.ok ? r.text() : '// не удалось загрузить particles.lat'))
       .then((text) => {
-        $('source').innerHTML = highlightLatent(text);
-        $('source-meta').textContent = `${text.split('\n').length} строк`;
+        $('source').innerHTML = codeLines(text, highlightLatent);
+        $('source-meta').textContent = `${countLines(text)} строк`;
+        $('source-badge').textContent = `${countLines(text)} строк · fixed-point i32`;
+      })
+      .catch((err) => {
+        $('source').textContent = `// ошибка: ${err.message}`;
       });
 
+    /* ---------- boot ---------- */
+    paintBackdrop();
+    setSplitPlaceholder();
     await loadWasm();
     if (!wasm) setMode('js');
     else reset();
     requestAnimationFrame(loop);
+
+    function setSplitPlaceholder() {
+      // Initialise empty charts so the panels never look broken.
+      drawStepChart();
+      drawFpsChart();
+    }
   </script>
 </body>
 </html>

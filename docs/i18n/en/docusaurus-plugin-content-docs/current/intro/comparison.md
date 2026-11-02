@@ -17,7 +17,7 @@ where it loses.
 | Criterion | Latent | Rust | TypeScript | Go |
 |---|---|---|---|---|
 | Maturity | experimental, 0.1 | production | production | production |
-| Ecosystem/packages | no modules | cargo/crates.io | npm | go modules |
+| Ecosystem/packages | no packages (file modules v1 exist) | cargo/crates.io | npm | go modules |
 | Typing | HM inference + annotations, dynamic leniency | strict, trait-based | structural, erased at compile time | nominal, interfaces |
 | Execution | WASM (own code generator) or a JS interpreter | native code / WASM via LLVM | JS runtime | native code |
 | Memory | WASM linear memory, bump allocator, no GC | ownership/borrow checker | engine GC | GC |

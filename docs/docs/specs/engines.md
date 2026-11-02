@@ -65,7 +65,7 @@ sidebar_position: 3
   `null`, IDE продолжает работать на движке №1 (graceful degradation).
 - Движок №2 **не исполняет** скомпилированный WASM: он только компилирует и
   отдаёт байты для показа/скачивания.
-- Поставляемый артефакт актуален: `web-ide/compiler.wasm` (465 435 байт,
+- Поставляемый артефакт актуален: `web-ide/compiler.wasm` (630 340 байт,
   `latent 0.1.0`) собран из текущих `src/` и включает memory-builtins
   (`alloc`/`load8`/`store8`/`load32`/`store32`/`memcopy`), `spawn`/`yield`/
   `async`/`await`/`select`, `test`-блоки и актуальные фиксы. Пересборка —
@@ -205,7 +205,7 @@ AI-особенность: обычный Run программы с `ai_infer`/`
 
 ## Ограничения и подводные камни
 
-- `web-ide/compiler.wasm` собран из текущих `src/` (465 435 байт): memory-builtins
+- `web-ide/compiler.wasm` собран из текущих `src/` (630 340 байт): memory-builtins
   и host-конструкции в нём есть. Единственная известная «старая» копия — в
   ресурсах IDEA-плагина (`editors/idea/src/main/resources/runner/compiler.wasm`),
   она memory-builtins не содержит (см. [IDEA](../tooling/idea.md)).

@@ -14,7 +14,10 @@
 // Smoke-run args are chosen so every demo does real work once; the pages pass
 // their own arguments at runtime. Nothing here is bundled into the browser.
 
-import {existsSync, readFileSync, readdirSync, statSync, writeFileSync} from 'node:fs';
+import {
+  cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync,
+  writeFileSync,
+} from 'node:fs';
 import {dirname, join, relative, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -30,14 +33,96 @@ if (!existsSync(compilerPath)) {
   process.exit(1);
 }
 
+// ---------------------------------------------------------------------------
+// Vendor assets for the killer demos (generated, not hand-edited).
+//
+//  * vendor/compiler/** — engine #1 (ESM JS interpreter) copied verbatim so the
+//    concurrency/AI/modules demos execute real Latent code offline with
+//    relative imports and no bundler.
+//  * selfhost/seed.wasm — trusted self-hosted compiler used by the selfhost
+//    demo; selfhost/shc.lat is its 164 KiB source (compiled in the browser).
+//  * selfhost/seed.json — provenance (version, sha256) checked at runtime.
+// ---------------------------------------------------------------------------
+
+function copyEngine1() {
+  const from = join(ROOT, 'web-ide', 'compiler');
+  const to = join(HERE, 'vendor', 'compiler');
+  if (!existsSync(from)) return null;
+  rmSync(to, {recursive: true, force: true});
+  mkdirSync(to, {recursive: true});
+  let files = 0;
+  for (const entry of readdirSync(from)) {
+    if (!entry.endsWith('.js')) continue;
+    cpSync(join(from, entry), join(to, entry));
+    files += 1;
+  }
+  return {from, to, files};
+}
+
+function copySelfhostAssets() {
+  const pairs = [
+    ['seed.wasm', join(ROOT, 'selfhost', 'seed.wasm')],
+    ['seed.json', join(ROOT, 'selfhost', 'seed.json')],
+    ['shc.lat', join(ROOT, 'selfhost', 'shc.lat')],
+  ];
+  const copied = [];
+  for (const [name, src] of pairs) {
+    if (!existsSync(src)) {
+      console.warn(`[build-demos] selfhost asset missing: ${src}`);
+      continue;
+    }
+    const dst = join(HERE, 'selfhost', name);
+    mkdirSync(dirname(dst), {recursive: true});
+    cpSync(src, dst);
+    copied.push({name, bytes: statSync(dst).size});
+  }
+  return copied;
+}
+
+const engine1 = copyEngine1();
+if (engine1) {
+  console.log(
+    `[build-demos] engine #1 vendor: ${engine1.files} module(s) → ` +
+    `${relative(ROOT, engine1.to).replaceAll('\\', '/')}`,
+  );
+} else {
+  console.warn('[build-demos] web-ide/compiler not found — vendored engine #1 skipped');
+}
+const selfhostAssets = copySelfhostAssets();
+for (const asset of selfhostAssets) {
+  console.log(
+    `[build-demos] selfhost asset: ${asset.name} (${(asset.bytes / 1024).toFixed(1)} KiB)`,
+  );
+}
+
+// Keep demos/compiler.wasm in sync with the compiler build-demos just used:
+// sandbox and modules load it directly from the demos root, so a stale copy
+// would silently hide the modular C ABI (latent_compile_files).
+try {
+  cpSync(compilerPath, join(HERE, 'compiler.wasm'));
+  console.log(
+    `[build-demos] compiler copy: compiler.wasm ← ${relative(ROOT, compilerPath).replaceAll('\\', '/')}`,
+  );
+} catch (error) {
+  console.warn(`[build-demos] could not refresh compiler.wasm: ${error.message}`);
+}
+
+// Sources under these paths are compiled in the browser (by seed.wasm), not by
+// build-demos: shc.lat is the 164 KiB self-hosted compiler source, and a
+// precompiled copy would be both huge and misleading (the demo shows the chain).
+const SKIP_COMPILE = new Set(['selfhost/shc.lat']);
+
 function walkLatent(dir) {
   const out = [];
   for (const entry of readdirSync(dir)) {
-    if (entry.startsWith('.') || entry === 'assets') continue;
+    if (entry.startsWith('.') || entry === 'assets' || entry === 'vendor') continue;
     const full = join(dir, entry);
     const st = statSync(full);
     if (st.isDirectory()) out.push(...walkLatent(full));
-    else if (entry.endsWith('.lat')) out.push(full);
+    else if (entry.endsWith('.lat')) {
+      const rel = relative(HERE, full).replaceAll('\\', '/');
+      if (!SKIP_COMPILE.has(rel)) out.push(full);
+    }
   }
   return out;
 }

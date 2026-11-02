@@ -235,20 +235,22 @@ any WASM module); the element section and `call_indirect` use the current indice
 ## Compiler C-ABI (engine #2 in the browser)
 
 The compiler built with `cargo build --release --target wasm32-unknown-unknown`
-(`web-ide/compiler.wasm`) exports four functions (`src/lib.rs`):
+(`web-ide/compiler.wasm`) exports six functions (`src/lib.rs`):
 
 | Export | Signature | Purpose |
 |---|---|---|
 | `latent_alloc` | `(i32 size) -> i32` | allocate a buffer from a Rust `Vec` (leaked until `latent_free`) |
-| `latent_compile` | `(i32 src_ptr, i32 src_len) -> i32` | compile the source from linear memory |
+| `latent_compile` | `(i32 src_ptr, i32 src_len) -> i32` | compile **one** source from linear memory |
+| `latent_compile_files` | `(i32 manifest_ptr, i32 manifest_len) -> i32` | compile a project from an `LPF1` manifest |
+| `latent_bundle_files` | `(i32 manifest_ptr, i32 manifest_len) -> i32` | build the flat Latent source of a project (`bundle`) |
 | `latent_free` | `(i32 ptr, i32 size)` | free the buffer (`Vec::from_raw_parts(ptr, 0, size)`) |
 | `latent_version` | `() -> i32` | return a buffer with the version |
 
-The response buffer format of `latent_compile`:
+The response buffer format of `latent_compile` (and of both module functions):
 
 ```text
 [status u32 LE][len u32 LE][payload: len bytes]
-status = 1 → the payload is the .wasm bytes
+status = 1 → the payload is the .wasm bytes (for latent_bundle_files — a UTF-8 source)
 status = 0 → the payload is a UTF-8 error message
 ```
 
@@ -268,6 +270,25 @@ The order of use (see `web-ide/compiler/wasm-loader.js`):
 
 The compiler module is instantiated without imports
 (`WebAssembly.instantiate(bytes, {})`); it is a pure `wasm32-unknown-unknown` module.
+
+### Module ABI: the `LPF1` manifest
+
+`latent_compile_files` and `latent_bundle_files` take a project manifest instead of
+a source (little-endian):
+
+```text
+magic "LPF1" (4 bytes)
+u32 file_count
+file_count × { u32 path_len, path utf8, u32 src_len, src utf8 }
+u32 entry_index
+```
+
+Paths are relative (`main.lat`, `lib/math.lat`), and the entry is given by its
+index in the list. The response is the same `[status][len][payload]`. The
+single-file `latent_compile` does not support imports and returns an error with a
+hint about `compile_files`; the details and limitations are in
+[modules](../guide/modules.md) and
+[CLI](./cli.md#multi-file-abi-latent_compile_files).
 
 ## Limitations and defects
 

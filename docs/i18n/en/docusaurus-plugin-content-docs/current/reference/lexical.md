@@ -108,8 +108,13 @@ Cyrillic names are **not** identifiers.
 
 The full list of keywords (`src/lexer/keywords.rs`): `let fn if else while
 for in return class new this async await spawn channel select case default yield
-match enum true false null ai model agent embedding tensor semantic test assert
-assert_eq forall snapshot ai_contract enforce_contract`.
+match enum import export from as true false null ai model agent embedding tensor
+semantic test assert assert_eq forall snapshot ai_contract enforce_contract`.
+
+`import` and `export` are **hard** keywords (like `let`/`fn`); `from` and `as` are
+contextual: the lexer emits a separate token type, but in name position they are
+accepted as identifiers (`soft_keyword_lexeme()` in `src/lexer/token.rs`). So
+`let as = 1;` is syntactically legal, while `let import = 1;` is not.
 
 Some words are **soft**: the lexer marks them with a separate token type, but in name
 position they are accepted as identifiers (`soft_keyword_lexeme()` in
@@ -117,7 +122,7 @@ position they are accepted as identifiers (`soft_keyword_lexeme()` in
 
 `test`, `assert`, `assert_eq`, `forall`, `snapshot`, `ai_contract`,
 `enforce_contract`, `model`, `agent`, `embedding`, `tensor`, `semantic`,
-`case`.
+`case`, `from`, `as`.
 
 This means that, for example, `let test = 5;`, `fn model() {}`, `obj.agent` are
 legal:

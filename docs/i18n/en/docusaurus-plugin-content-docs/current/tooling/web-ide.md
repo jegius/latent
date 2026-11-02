@@ -49,6 +49,52 @@ from `web-ide/` and published as a static directory of the documentation site:
 | auto-run | debounced auto-run while editing |
 | AI Gateway | provider/URL/model/key settings (`AI → AI Gateway Settings`) |
 
+## Modules and multi-file projects
+
+The file tree is a full project: **the active file is the entry**, and other
+`.lat` files are connected with `import`. Top-level `fn`, `class`, and `enum` are
+supported:
+
+```text
+// math.lat
+export fn square(x: int) -> int { return x * x; }
+export enum Shape { Circle(int), Rect(int, int) }
+
+// main.lat
+import { square, Shape } from "./math.lat";
+import { square as sq } from "./math.lat";
+
+fn main() -> int {
+    let s = Circle(2);
+    return match s { case Circle(r): { return square(r) + sq(r); } default: 0 };
+}
+```
+
+- `import { name, name as alias } from "./path.lat";` and
+  `import "./path.lat";`; the path must be relative and end with `.lat`, and it
+  cannot escape the workspace root.
+- Import cycles are allowed (two-phase linking); each file is loaded once by its
+  canonical path. Errors (missing file, symbol not exported, duplicate name,
+  import/export not at top level, absolute path) are reported with a path and
+  line: `main.lat:3: ...`.
+- **Run / Run with AI / Check** work with the project: Check validates the
+  imports/linking as well as the active file's syntax; Run executes all modules,
+  including host features. **Format** formats the active file.
+- **Engine #1** links modules natively (JS resolver `compiler/modules.js`, linker
+  `compiler/modules-*.js`), caches parsed modules by content hash, and supports
+  `enum` with multi-field variants.
+- **Engine #2** receives all workspace `.lat` files as a single `LPF1` manifest
+  through the `latent_compile_files` C-ABI; the result is cached by the file-set
+  hash. The shipped `compiler.wasm` exports this ABI, so **Engine #2** compiles
+  the whole project (checked via `supportsModules`). If an older build without
+  the ABI is loaded, the button reports "engine #2 has no modules yet" and offers
+  a run in engine #1; the single-file `latent_compile` path keeps working as
+  before.
+- **CLI and selfhost**: the same project builds with `latentc compile/check`, and
+  for the self-hosted compiler the host runs `latentc bundle` to get a flat
+  source. The full syntax, linking semantics and v1 limits are in
+  [file modules](../guide/modules.md).
+
 ## Keyboard shortcuts
 
 | Combination | Action |
@@ -98,7 +144,8 @@ WASM. Switching is automatic, and #2 errors never become the final Run error.
 - If `compiler.wasm` is unavailable, the IDE stays on engine #1 (graceful
   degradation) and the status bar shows `engine #1 (host runtime)`.
 - The shipped `compiler.wasm` is up to date: it is built from the current `src/`
-  (465,435 bytes) and memory builtins are present in it — see
+  (641,917 bytes), and the memory builtins plus the module ABI
+  (`latent_compile_files`, `latent_bundle_files`) are present in it — see
   [bootstrap](./bootstrap.md).
 - **AI examples in a normal Run** enable the mock automatically (no network or
   key required). The real gateway and self-repair remain available through
@@ -218,7 +265,7 @@ hash-based caching, and a smaller initial payload.
 
 | File | Size | gzip |
 |---|---:|---:|
-| `compiler-*.wasm` | 465.44 kB | 134.85 kB |
+| `compiler-*.wasm` | 630.34 kB | — |
 | `core-*.js` | 40.32 kB | 11.58 kB |
 | `index-*.js` (entry) | 37.96 kB | 11.19 kB |
 | `examples-*.js` | 32.19 kB | 9.03 kB |
@@ -288,8 +335,8 @@ and from DevTools → Network on a cold load.
   IDE; its WASM tab only shows the compilation result of the subset.
 - Engine #2 does not support host features (channels, AI, tensors, contracts) —
   this is not a playground error: Run automatically executes them in engine #1.
-- Engine #1 does not support `enum`, bitwise operators, `str/int/float/sqrt`,
-  block comments — in the IDE this shows up as an error or as unavailable.
+- Engine #1 does not support bitwise operators, `str/int/float/sqrt`, or block
+  comments — in the IDE this shows up as an error or as unavailable.
 - Formatting is not an AST printer: indentation and whitespace only.
 - The AI key is stored in `localStorage` in plain text; requests go directly from
   the browser (the gateway needs CORS).

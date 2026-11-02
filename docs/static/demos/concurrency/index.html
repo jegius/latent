@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Горутины и каналы — Latent killer demo</title>
+  <meta name="description" content="Настоящий Latent-код с spawn, channel, select и yield исполняется в браузере на движке №1: живая визуализация горутин, каналов и планировщика, 1000 горутин, worker pool, дедлок." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23070b12'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%235eead4'%3E%CE%BB%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="../assets/killer.css" />
+  <style>
+    .k-canvas-wrap { height: clamp(380px, 42vw, 520px); }
+    #stage-canvas { width: 100%; height: 100%; }
+    .k-stage-error {
+      position: absolute; top: 12px; left: 12px; right: 12px; z-index: 3;
+      padding: 9px 12px; border-radius: 10px; border: 1px solid rgba(251, 113, 133, 0.4);
+      background: rgba(70, 12, 26, 0.82); color: #ffd7de;
+      font-family: var(--k-mono); font-size: 11.5px; backdrop-filter: blur(8px);
+    }
+    .k-stage-error b { color: var(--k-red); }
+    .k-scroll-list { max-height: 360px; overflow: auto; padding-right: 4px; }
+    .k-console-title { display: flex; justify-content: space-between; align-items: center; margin: 14px 0 7px; }
+  </style>
+</head>
+<body>
+  <header class="k-top">
+    <div class="k-wrap k-top-inner">
+      <a class="k-brand" href="../"><span class="k-mark">λ</span> Latent · killer demos</a>
+      <nav class="k-nav" aria-label="Демо">
+        <a class="is-active" href="./">Конкурентность</a>
+        <a href="../ai/">AI-native</a>
+        <a href="../selfhost/">Self-host</a>
+        <a href="../sandbox/">Песочница</a>
+        <a href="../modules/">Модули</a>
+        <a href="../../examples/frontend-showcase">Документация</a>
+        <span class="k-pill k-pill--live"><span class="k-dot"></span>engine #1</span>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="k-wrap k-hero">
+      <p class="k-eyebrow">spawn · channel · select · yield — синтаксис языка</p>
+      <h1 class="k-title">Горутины и каналы.<br /><span class="k-grad">Конкурентность — не библиотека.</span></h1>
+      <p class="k-lead">
+        Эта страница <strong>действительно исполняет Latent-код</strong> в вашем браузере:
+        JS-интерпретатор (движок №1) запускает программы с <code>spawn</code>,
+        <code>channel</code>, <code>ch.send</code>, <code>select</code> и <code>yield</code>.
+        Движок записывает трассу исполнения — спавны, сообщения, ожидания и переключения
+        планировщика — а страница воспроизводит её как анимацию. Числа в панели метрик
+        взяты из настоящего прогона, а не нарисованы.
+      </p>
+      <div class="k-actions">
+        <button class="k-btn k-btn--primary" id="run" type="button">Запустить сценарий</button>
+        <button class="k-btn" id="play" type="button">▶ Воспроизвести</button>
+        <button class="k-btn k-btn--ghost" id="restart" type="button">↺ Сначала</button>
+        <button class="k-btn k-btn--ghost" id="step" type="button">Шаг →</button>
+        <div class="k-seg" role="group" aria-label="Скорость воспроизведения">
+          <button type="button" data-speed="0.5">0.5×</button>
+          <button type="button" data-speed="1" class="is-active">1×</button>
+          <button type="button" data-speed="2">2×</button>
+          <button type="button" data-speed="4">4×</button>
+        </div>
+      </div>
+      <div class="k-meta">
+        <span><b>7</b> сценариев · настоящий Latent</span>
+        <span><b>1000</b> горутин в одном прогоне</span>
+        <span><b>0</b> зависимостей и сборки</span>
+        <span><b>offline</b> движок #1 в vendor/</span>
+      </div>
+    </section>
+
+    <section class="k-wrap k-section">
+      <div class="k-grid k-grid--main">
+        <div class="k-stack">
+          <div class="k-panel k-panel--tight">
+            <div class="k-stage" id="stage">
+              <div class="k-stage-error k-hide" id="error-banner" role="alert">
+                <b>Дедлок обнаружен рантаймом.</b> <span id="error-text"></span>
+              </div>
+              <div class="k-canvas-wrap"><canvas class="k-canvas" id="stage-canvas" aria-label="Визуализация горутин, каналов и потока сообщений"></canvas></div>
+              <div class="k-stage-bar">
+                <span class="k-live" id="stage-live">исполнение Latent-кода…</span>
+                <span class="k-right" id="stage-clock">0%</span>
+              </div>
+            </div>
+            <div style="padding:0 14px 12px">
+              <div class="k-progress"><i id="stage-progress"></i></div>
+            </div>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head">
+              <div>
+                <h2 class="k-panel-title">Трасса исполнения</h2>
+                <p class="k-sub">Тики событий: spawn, send, recv, wait, print. Клик — перемотка.</p>
+              </div>
+              <div class="k-legend">
+                <span class="k-legend-item k-legend-item--violet"><i class="k-legend-swatch"></i>spawn</span>
+                <span class="k-legend-item k-legend-item--cyan"><i class="k-legend-swatch"></i>send</span>
+                <span class="k-legend-item k-legend-item--green"><i class="k-legend-swatch"></i>recv</span>
+                <span class="k-legend-item k-legend-item--amber"><i class="k-legend-swatch"></i>wait</span>
+                <span class="k-legend-item k-legend-item--pink"><i class="k-legend-swatch"></i>print</span>
+              </div>
+            </div>
+            <div class="k-timeline-wrap"><canvas class="k-timeline" id="timeline" aria-label="Таймлайн событий: клик для перемотки"></canvas></div>
+            <div class="k-console-title">
+              <h2 class="k-panel-title">stdout · вывод программы</h2>
+              <span class="k-small k-dim" id="run-status">загрузка движка…</span>
+            </div>
+            <div class="k-console" id="console" role="log" aria-live="polite"></div>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head">
+              <div>
+                <h2 class="k-panel-title">Один и тот же сценарий: Latent и JavaScript</h2>
+                <p class="k-sub">Слева — настоящий исходник, который исполняется. Справа — привычный JS-эквивалент.</p>
+              </div>
+              <div class="k-row">
+                <span class="k-badge" id="latent-lines">—</span>
+                <span class="k-badge k-badge--muted" id="js-lines">—</span>
+                <span class="k-badge k-badge--violet" id="code-ratio">—</span>
+              </div>
+            </div>
+            <div class="k-compare">
+              <div class="k-stack-sm">
+                <div class="k-row" style="justify-content:space-between">
+                  <span class="k-mono k-small k-dim" id="latent-file">fanin.lat</span>
+                  <span class="k-badge k-badge--green">исполняется</span>
+                </div>
+                <div id="code-latent"></div>
+              </div>
+              <div class="k-stack-sm">
+                <div class="k-row" style="justify-content:space-between">
+                  <span class="k-mono k-small k-dim" id="js-file">fanin.js</span>
+                  <span class="k-badge k-badge--muted">сравнение</span>
+                </div>
+                <div id="code-js"></div>
+              </div>
+            </div>
+            <p class="k-hint" id="code-note" style="margin-top:10px"></p>
+          </div>
+        </div>
+
+        <aside class="k-stack">
+          <div class="k-panel">
+            <div class="k-panel-head" style="margin-bottom:10px">
+              <div>
+                <h2 class="k-panel-title">Сценарии</h2>
+                <p class="k-sub">Каждый — реальная Latent-программа</p>
+              </div>
+              <span class="k-badge">7</span>
+            </div>
+            <div class="k-scenarios k-scroll-list" id="scenarios"></div>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head" style="margin-bottom:10px">
+              <h2 class="k-panel-title">Живые метрики</h2>
+              <span class="k-pill k-pill--live"><span class="k-dot"></span>trace</span>
+            </div>
+            <div class="k-metrics">
+              <div class="k-metric k-metric--accent">
+                <div class="k-metric-k">горутин создано</div>
+                <div class="k-metric-v" id="m-goroutines">—</div>
+              </div>
+              <div class="k-metric k-metric--green">
+                <div class="k-metric-k">живых сейчас</div>
+                <div class="k-metric-v" id="m-alive">—</div>
+              </div>
+              <div class="k-metric">
+                <div class="k-metric-k">сообщений</div>
+                <div class="k-metric-v" id="m-messages">—</div>
+              </div>
+              <div class="k-metric k-metric--violet">
+                <div class="k-metric-k">отправлено</div>
+                <div class="k-metric-v" id="m-sends">—</div>
+              </div>
+              <div class="k-metric k-metric--amber">
+                <div class="k-metric-k">select / шаги</div>
+                <div class="k-metric-v" id="m-selects">—</div>
+              </div>
+              <div class="k-metric">
+                <div class="k-metric-k">реальное время</div>
+                <div class="k-metric-v" id="m-time">—</div>
+              </div>
+              <div class="k-metric k-metric--pink">
+                <div class="k-metric-k">пик живых</div>
+                <div class="k-metric-v" id="m-peak">—</div>
+              </div>
+              <div class="k-metric k-metric--green">
+                <div class="k-metric-k">сообщений/с (реальные)</div>
+                <div class="k-metric-v" id="m-rate" style="font-size:18px">—</div>
+              </div>
+              <div class="k-metric">
+                <div class="k-metric-k">событий трассы</div>
+                <div class="k-metric-v" id="m-events" style="font-size:18px">—</div>
+              </div>
+            </div>
+            <p class="k-hint" style="margin-top:8px">«Реальное время» — весь прогон интерпретатора, не анимация.</p>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head" style="margin-bottom:8px">
+              <h2 class="k-panel-title">Баланс по горутинам</h2>
+            </div>
+            <div class="k-bars" id="balance"></div>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head" style="margin-bottom:8px">
+              <h2 class="k-panel-title">Глубина каналов</h2>
+            </div>
+            <div class="k-bars" id="queues"></div>
+            <p class="k-hint" style="margin-top:8px">Очередь не ограничена: <code>send</code> не блокируется.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="k-wrap k-section">
+      <div class="k-section-head">
+        <div>
+          <h2 class="k-section-title">Почему это killer feature</h2>
+          <p class="k-sub">CSP-конкурентность встроена в грамматику, а не прикручена библиотекой.</p>
+        </div>
+        <span class="k-badge k-badge--violet">4 причины</span>
+      </div>
+      <div class="k-grid k-grid--4">
+        <div class="k-card">
+          <div class="k-card-icon">⇄</div>
+          <h3 class="k-card-title">Каналы — синтаксис</h3>
+          <p class="k-card-text"><code>ch <- v</code> и <code>&lt;-ch</code> — операторы языка. Никаких импортов, токенов и обёрток: <code>channel()</code>, <code>send</code>, <code>recv</code>, <code>select</code> и <code>yield</code> понимает и парсер, и интерпретатор.</p>
+        </div>
+        <div class="k-card">
+          <div class="k-card-icon">◉</div>
+          <h3 class="k-card-title">Планировщик виден</h3>
+          <p class="k-card-text">Трасса показывает каждый шаг кооперативного планировщика: кто уступил, кто ждал канал и кто выполнился следующим. Это не «магия async/await», а явная очередь задач.</p>
+        </div>
+        <div class="k-card">
+          <div class="k-card-icon">⚡</div>
+          <h3 class="k-card-title">1000 горутин</h3>
+          <p class="k-card-text">Тысяча <code>spawn</code> и тысяча сообщений — это тысячи событий трассы за единицы миллисекунд реального времени. Демо специально показывает и пик живых горутин, и то, что выполняется ровно одна.</p>
+        </div>
+        <div class="k-card">
+          <div class="k-card-icon">⛔</div>
+          <h3 class="k-card-title">Дедлок ловится</h3>
+          <p class="k-card-text">Если потребитель ждёт пустой канал, а готовых задач нет, рантайм останавливает программу с <code>Deadlock: recv on empty channel…</code> вместо тихого зависания, как у промиса в JS.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="k-wrap k-section">
+      <div class="k-panel">
+        <div class="k-panel-head">
+          <div>
+            <h2 class="k-panel-title">Честные ограничения</h2>
+            <p class="k-sub">Это принципиально: демо не изображает параллельные потоки.</p>
+          </div>
+          <span class="k-badge k-badge--amber">важно</span>
+        </div>
+        <div class="k-grid k-grid--2">
+          <div class="k-stack-sm">
+            <p class="k-small"><b>Кооперативный, а не вытесняющий.</b> Задачи не прерываются: переключение происходит только на <code>recv</code> в пустой канал, <code>select</code> или <code>yield</code>. В «1000 горутин» одновременно выполняется одна, хотя живы все 1000.</p>
+            <p class="k-small"><b>Нет потоков и параллелизма.</b> Это один JS-поток; выигрыш — в структуре кода и детерминизме, а не в скорости на нескольких ядрах.</p>
+            <p class="k-small"><b>Очередь канала не ограничена.</b> <code>send</code> никогда не блокируется, поэтому обратного давления нет; буферизованный канал — задел на будущее.</p>
+          </div>
+          <div class="k-stack-sm">
+            <p class="k-small"><b>select опрашивает по порядку.</b> В отличие от Go, ветки не выбираются случайно: при двух готовых каналах выигрывает первая объявленная. В счётчиках сценария это видно.</p>
+            <p class="k-small"><b>yield отдаёт одну задачу.</b> Он не переставляет текущую горутину в конец очереди: порядок вывода в сценарии «Yield» — реальная семантика движка, включая вложенность.</p>
+            <p class="k-small"><b>Анимация — воспроизведение трассы.</b> Код исполняется синхронно, затем трасса проигрывается; числа метрик взяты из прогона, а не из анимации.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="k-foot">
+    <div class="k-wrap k-foot-inner">
+      <span>Latent · killer demos · движок №1 (JS-интерпретатор) · без сборки и зависимостей</span>
+      <div class="k-foot-links">
+        <a href="../">Все демо</a>
+        <a href="../../examples/frontend-showcase">Frontend showcase</a>
+        <a href="../../examples/concurrency">Разбор конкурентности</a>
+        <a href="../../reference/wasm-abi">WASM ABI</a>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module" src="./killer-concurrency.js"></script>
+</body>
+</html>

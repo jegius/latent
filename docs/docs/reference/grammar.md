@@ -1,6 +1,6 @@
 ---
 title: "Грамматика (EBNF по парсеру)"
-description: "Полная EBNF-грамматика Latent, восстановленная по src/parser: объявления, инструкции, выражения (Pratt), типы, паттерны. Таблица приоритетов и примечания о том, что парсится, но отвергается или игнорируется."
+description: "Полная EBNF-грамматика Latent, восстановленная по src/parser: объявления, import/export, инструкции, выражения (Pratt), типы, паттерны. Таблица приоритетов и примечания о том, что парсится, но отвергается или игнорируется."
 sidebar_position: 3
 ---
 
@@ -21,6 +21,8 @@ sidebar_position: 3
 Program        ::= { Declaration } EOF
 
 Declaration    ::= Decorator
+                 | ExportDecl
+                 | ImportDecl
                  | TestDeclaration
                  | LetDecl
                  | AsyncFnDecl
@@ -66,6 +68,33 @@ Variant        ::= Ident [ "(" [ Type { "," Type } ] ")" ]
   — циклы разбора завершаются по виду токена).
 - `Decorator` навешивается на любое объявление: `@forall("array") fn f(...)`,
   `@ai_contract("sorting") fn g(...)`, `@test("x") fn h(...)`.
+
+## Import и export
+
+Файловые модули v1 (`src/parser/imports.rs`). Разбираются только на верхнем
+уровне файла — внутри блока парсер отвечает ошибкой
+`ожидалось 'declaration (import/export допустимы только на верхнем уровне)'`.
+
+```ebnf
+ImportDecl     ::= "import" String ";"
+                 | "import" "{" ImportSpec { "," ImportSpec } "}" "from" String ";"
+ImportSpec     ::= Ident [ "as" Ident ]
+
+ExportDecl     ::= "export" ( FnDecl | AsyncFnDecl | ClassDecl | EnumDecl )
+```
+
+- `import "path";` — подключение файла без имён; `import { a, b as c } from
+  "path";` — именованный импорт. Второй формы без `from`/строки не существует.
+- Точка с запятой в конце **обязательна** в обеих формах, как и кавычки вокруг
+  пути: путь — обычный строковый литерал.
+- `export` допускает `fn`, `async fn`, `class`, `enum`. Любое другое объявление
+  даёт `ожидалось 'fn, class or enum after export'`.
+- Ключевые слова: `import` и `export` — **жёсткие** (`let import = 1;` — ошибка);
+  `from` и `as` — **мягкие** (лексер помечает их, но в позиции имени они
+  принимаются как идентификаторы).
+- Семантика путей, линковка и ограничения — [модули](../guide/modules.md);
+  продукция не описывает проверки вида «файл существует» и «символ
+  экспортирован» — это работа линкера, а не парсера.
 
 ## Инструкции
 
@@ -258,6 +287,8 @@ Name           ::= Ident | SoftKeyword
 | `channel()` | парсится; в движке №2 — ошибка «Builtin 'channel' не поддерживается…» |
 | `@decorator fn f(...)` / `@decorator class C` | парсится, но цель декоратора **не регистрируется** сканером функций/классов: вызов `f(...)`/`new C(...)` даст `Unknown function` |
 | `test "name" { ... }` на верхнем уровне | парсится, типизируется, но тело не эмитится (раннера нет) |
+| `import * as ns`, `export *`, re-export, `import()` | **не парсится**: после `import` ожидается `{` или строка; `export` принимает только `fn`/`async fn`/`class`/`enum` |
+| `export let` / `export` у метода класса | ошибка `ожидалось 'fn, class or enum after export'` |
 
 ## Грамматика движка №1 (отличия)
 
@@ -273,7 +304,14 @@ Name           ::= Ident | SoftKeyword
 - `let x = if (...) ...` не поддерживается;
 - нет блочных комментариев `/* */`;
 - аннотации типов разбираются, но не проверяются и отбрасываются;
-- `enum` не поддерживается вовсе (лексер/парсер не знают такого объявления).
+- `enum` поддерживается (`compiler/parser-modules.js`): варианты с payload,
+  конструкторы и `match` по ним;
+- `import`/`export` поддерживаются и линкуются нативно
+  (`compiler/modules*.js`): `import { a, b as c } from "./x.lat";`,
+  `import "./x.lat";`, `export fn/class/enum`. Точка с запятой после `import`
+  обязательна, путь — только относительный с `.lat`;
+- тексты ошибок английские (`Unexpected token ... at line N`,
+  `module '...' does not export '...'`), в отличие от русских у движка №2.
 
 ## Связанные разделы
 

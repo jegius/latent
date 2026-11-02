@@ -46,8 +46,9 @@ editors/idea/            плагин IntelliJ IDEA
   Gradle в `editors/idea/`).
 - `src/` декомпозирован по зонам ответственности (SRP); новые фичи —
   отдельными функциями/модулями, а не «ещё одним if».
-- В `selfhost/src/*.lat`: язык без модулей, поэтому части —
-  ответственностно-разделённые файлы, склеиваемые `build.mjs`.
+- В `selfhost/src/*.lat`: сам selfhost остаётся однофайловым (модули он не
+  разбирает — получает `bundle`), поэтому части — ответственностно-разделённые
+  файлы, склеиваемые `build.mjs`.
 
 ## Инварианты, которые нельзя ломать
 
@@ -99,21 +100,23 @@ regression-тест, который проверяет `WebAssembly.validate`, �
 
 - Rust: `cargo test` — **265 тестов**; покрытие **91.00% строк / 93.53%
   функций** (`pwsh scripts/coverage-rust.ps1`); golden-набор
-  `node scripts/check-golden.mjs` — **47 программ совпали байт-в-байт, 0
-  расхождений** (1 пропуск: `selfhost/shc.lat` изменён selfhost-агентом после
-  снятия эталона). Тесты: `src/lexer/tests`, `src/parser/tests`,
+  `node scripts/check-golden.mjs` — **48 программ совпали байт-в-байт, 0
+  расхождений, 0 пропусков**. Тесты: `src/lexer/tests`, `src/parser/tests`,
   `src/typechecker/tests`, `src/codegen/tests`, `src/runtime/tests`,
-  `src/ai/tests`, `src/fp/tests`.
-- web IDE: `node --test "web-ide/test/*.test.js"` — **368 тестов** (359 JS-тестов), покрытие **99.53% строк / 96.98% ветвей / 98.39% функций**; структурный аудит —
-  `pnpm run check:structure`.
-- selfhost: `node --test "selfhost/test/*.test.mjs"` — **166 тестов** (17 сьютов; 25 Rust-free в `bootstrap-wasm.test.mjs`), покрытие **94.56% функций / 96.68% строк**; `bootstrap.mjs` — фиксированная точка.
+  `src/ai/tests`, `src/fp/tests`, `src/modules/tests`.
+- web IDE: `node --test "web-ide/test/*.test.js" "web-ide/test/*.test.mjs"` —
+  **414 тестов** (368 было + 46 на модули), покрытие **97.51% строк / 91.47%
+  ветвей / 98.52% функций**; структурный аудит —
+  `pnpm run check:structure` (96 `.js`-файлов).
+- selfhost: `node --test "selfhost/test/*.test.mjs"` — **173 теста** (19 сьютов), покрытие **100% функций / 97.94% строк**; `bootstrap.mjs` — фиксированная точка.
 - MCP: `node --test "mcp/docs-mcp/test/*.test.mjs"` — **300 тестов**.
-- LSP: `node --test "tooling/latent-lsp/test/*.test.mjs"` — **133 теста**.
+- LSP: `node --test "tooling/latent-lsp/test/*.test.mjs"` — **146 тестов**
+  (94.59% строк, порог 90%).
 - VS Code: `node --test "editors/vscode/test/*.test.mjs"` — **70 тестов**,
   покрытие строк 98.77%.
 - IDEA: `cd editors/idea && ./gradlew test` — **49 тестов**, `buildPlugin` —
   zip в `build/distributions/`.
-- docs: `node docs/scripts/validate-examples.mjs` — **194 блока** (165 валидны, 29 помечены); сайт — **75 страниц RU + 75 EN**, `llms.txt`/`llms-en.txt` генерируются сборкой. Частые проблемы — см.
+- docs: `node docs/scripts/validate-examples.mjs` — **213 блоков** (173 валидны, 34 помечены, 6 `module-part` пропущены); сайт — **79 страниц RU + 79 EN**, `llms.txt`/`llms-en.txt` генерируются сборкой. Частые проблемы — см.
   [bootstrap](./bootstrap.md).
 
 ## Git-процесс
@@ -147,6 +150,11 @@ regression-тест, который проверяет `WebAssembly.validate`, �
 - Host-only и заведомо невалидные примеры помечаются первой строкой
   `// ошибка: ...` / `// Не компилируется движком №2: ...` либо info-string
   `latent expected-error`.
+- Многофайловые примеры (файловые модули) помечаются первой строкой
+  `// module-part <файл>` (или info-string `latent module-part`): такой блок не
+  компилируется по отдельности — валидатор его пропускает и считает отдельно, а
+  проект проверяется через `latentc check <entry.lat>`. См.
+  [модули](../guide/modules.md).
 - Сигнатуры, грамматику и псевдокод давайте в ```text.
 - Ссылки на другие страницы — относительные `.md` (Docusaurus
   `onBrokenLinks: throw`).

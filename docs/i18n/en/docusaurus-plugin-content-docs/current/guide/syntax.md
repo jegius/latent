@@ -9,7 +9,9 @@ description: Literals, identifiers, comments, keywords, semicolons, and program 
 
 ## File and program structure
 
-A Latent program is a single `.lat` file. There are no modules, imports, or namespaces.
+A Latent program may consist of several `.lat` files: file modules v1 provide
+`import`/`export`, and linking happens at compile time —
+[modules](./modules.md). There are no namespaces and no packages.
 The top level holds declarations:
 
 - `fn` / `async fn` — functions;
@@ -18,7 +20,8 @@ The top level holds declarations:
 - `let` — global variables (they are type-checked but **not executed** by engine
   #2: no code is emitted for top-level statements);
 - `test "name" { ... }` — tests;
-- `@decorator` on a declaration.
+- `@decorator` on a declaration;
+- `import` / `export` — connecting and exporting names between files.
 
 The entry point is `fn main() -> int`; declaring it exports `main` from the
 WASM module. A program without `main` compiles, but there is nothing to run it with.

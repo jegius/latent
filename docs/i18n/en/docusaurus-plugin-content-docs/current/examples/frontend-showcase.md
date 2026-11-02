@@ -1,25 +1,226 @@
 ---
-title: "Interactive demos: Latent vs JS"
-sidebar_label: "Demos and performance"
+title: "Eight interactive Latent demos"
+sidebar_label: "Demos and killer features"
 sidebar_position: 15
-description: "Three browser demos for Latent: a benchmark against JS, canvas image filters, and physics with tens of thousands of particles. Architecture, sources, iframes, and an honest comparison with JavaScript."
+description: "Eight browser demos: goroutines and channels, AI primitives, the self-hosted compiler, a sandbox for untrusted code, modules — plus a benchmark, canvas filters and physics. Real execution, live metrics, honest limits."
 ---
 
-# Interactive demos: Latent vs JS
+# Eight interactive Latent demos
 
-This section is not about "hello world". Here Latent compiles to WebAssembly and
-runs real workloads directly on the page: millions of integer operations,
-`ImageData` pixels, and gravity for tens of thousands of particles. Every demo
-ships its `.lat` source next to it, and the numbers are measured by **your**
-browser, not by the author of this page.
+This section is not about "hello world". Latent **runs right on the page**:
+goroutines and channels, AI primitives, the self-hosted compiler, a wasm sandbox,
+and a multi-file project. Five new demos execute real code — either with engine #1
+(the JS interpreter) or engine #2 (`compiler.wasm`) — and show real metrics: time,
+wasm size, scheduler events, stage sha256, the capability list. The `.lat` sources
+sit next to them, and the numbers are measured by **your** browser.
 
-The demos are static pages with no bundler and no external dependencies. They
-live in `docs/static/demos/` and are published at `/latent/demos/...`.
+The demos are static pages with no bundler and no external dependencies. They live
+in `docs/static/demos/` and are published at `/latent/demos/...`; everything works
+offline, including a copy of the interpreter in `demos/vendor/compiler/`.
 
-## Benchmark: five algorithms, two runtimes
+## Map: demo → killer feature → what you will see
 
-The most revealing demo: the same algorithms in JavaScript and in Latent→WASM,
-the same input data, a checksum comparison, and the median of three runs.
+| Demo | Killer feature | What you will see |
+|---|---|---|
+| <a href="/latent/demos/concurrency/">Goroutines & channels</a> | CSP in the grammar: `spawn`, `channel`, `<-`, `select`, `yield` | a live visualization of goroutines, channel pipes and message tokens; the scheduler trace; fan-in, map-reduce, worker pool, select, **1000 goroutines**, deadlock |
+| <a href="/latent/demos/ai/">AI-native</a> | `ai_embed`, `ai_infer`, `ai_stream`, `tensor`, `matmul` are language syntax | embeddings as vectors, a cosine heatmap, token streaming, real A/B/C matrices, optional gateway |
+| <a href="/latent/demos/selfhost/">Compiler compiles itself</a> | a 41 KiB `seed.wasm` compiles the 164 KiB `shc.lat` in the browser | the `seed → stage1′ → stage2′ → stage3′` chain, sha256 per stage, **FIXED POINT**, sample run |
+| <a href="/latent/demos/sandbox/">Sandbox</a> | a single `env.print` import, wasm traps, Worker termination | editor → `compiler.wasm` → Worker; infinite loop, OOB, `memory.grow` 64 MiB, DOM/fetch rejected |
+| <a href="/latent/demos/modules/">Modules</a> | `import`/`export`, module graph, two-phase linking | a 4-file tree, SVG graph, mangled names, an `a ↔ b` cycle, a build through `latent_compile_files` |
+| <a href="/latent/demos/bench/">Benchmark</a> | dense `i32` loops in linear memory | JS vs Latent→WASM on five algorithms, medians, parity checksums |
+| <a href="/latent/demos/image/">Images</a> | pointers into memory instead of copies | grayscale, blur, Sobel, threshold over `ImageData`, an original/filter slider |
+| <a href="/latent/demos/physics/">Physics</a> | one buffer, fixed point, no GC | up to 30,000 particles, an FPS graph, bit-for-bit parity with the JS twin |
+
+## 1. Goroutines and channels
+
+The flagship demo. Eight scenarios are real Latent programs with `spawn`,
+`channel`, `ch.send`, `select` and `yield`. Engine #1 executes the program, records
+a trace (spawns, messages, waits, scheduler steps), and the page replays it as an
+animation. The metrics come from the real run, not from the animation.
+
+<iframe
+  src="/latent/demos/concurrency/?embed=1"
+  title="Latent — goroutines, channels and the scheduler"
+  loading="lazy"
+  style={{width: '100%', height: '980px', border: 0, borderRadius: '12px'}}
+/>
+
+If the iframe does not load, open the page directly:
+<a href="/latent/demos/concurrency/">latent/demos/concurrency</a>.
+
+```latent
+// Does not compile with engine #2: channels and spawn require the host runtime.
+// Executed by engine #1 in the demo.
+fn producer(ch: channel, n: int) {
+    let i = 1;
+    while (i <= n) {
+        ch.send(i * i);
+        i = i + 1;
+    }
+}
+
+fn consumer(ch: channel, n: int) {
+    let sum = 0;
+    let got = 0;
+    while (got < n) {
+        let v = ch.recv();
+        sum = sum + v;
+        got = got + 1;
+    }
+    print("consumer: got", got, "sum =", sum);
+}
+
+fn main() -> int {
+    let ch = channel();
+    spawn producer(ch, 12);
+    spawn consumer(ch, 12);
+    return 0;
+}
+```
+
+What you see: producer/consumer over a channel, fan-in from three workers, four
+workers with partial sums (map-reduce), a worker pool over two channels, a select
+race, 1000 goroutines, a deadlock, and `yield` semantics. Every scenario ships a JS
+equivalent built on promises, so you can compare size and readability.
+
+Honest part: the scheduler is **cooperative**, single-threaded, channels have no
+bounded queue, and `select` polls arms in order. The counters show it, and the
+limitations section on the page spells it out.
+
+## 2. AI-native primitives
+
+<iframe
+  src="/latent/demos/ai/?embed=1"
+  title="Latent — AI primitives in the browser"
+  loading="lazy"
+  style={{width: '100%', height: '980px', border: 0, borderRadius: '12px'}}
+/>
+
+```latent
+// host-only: ai_embed/cosine_similarity require the host runtime (engine #1).
+fn main() -> int {
+    let docs = ["channels and goroutines", "ai-native primitives"];
+    let mat = [];
+    let i = 0;
+    while (i < docs.length) {
+        mat.push(ai_embed(docs[i]));
+        i = i + 1;
+    }
+    let q = ai_embed("how do channels work?");
+    i = 0;
+    while (i < docs.length) {
+        print("sim", i, cosine_similarity(q, mat[i]));
+        i = i + 1;
+    }
+    return 0;
+}
+```
+
+The page executes a program with `ai_embed`, `cosine_similarity`, `ai_infer`,
+`ai_stream`/`stream_next`, `tensor` and `matmul`, then visualizes the **real**
+values: 8-dimensional vectors, the similarity matrix, a document ranking, the token
+stream, and A(2×3)·B(3×2)=C(2×2). By default it uses the deterministic offline mock
+from `interpreter-ai.js`; optionally you can connect an Ollama/OpenAI-compatible
+gateway (for `ai_infer` only; the key is never stored).
+
+Honest part: mock embeddings are a hash projection, not semantics; streaming
+replays tokens that were already returned; `ai_generate!` is parsed by the Rust
+parser (engine #2) but is not executed by the JS interpreter — the page says so.
+
+## 3. The compiler compiles itself
+
+<iframe
+  src="/latent/demos/selfhost/?embed=1"
+  title="Latent — self-hosted compiler in the browser"
+  loading="lazy"
+  style={{width: '100%', height: '980px', border: 0, borderRadius: '12px'}}
+/>
+
+```latent
+// This sample is compiled by seed.wasm and executed in the demo.
+fn main() -> int {
+    print("hello from seed.wasm");
+    return 42;
+}
+```
+
+The demo fetches `seed.wasm` (41.5 KiB), checks its sha256 against `seed.json`, and
+in a Web Worker compiles `selfhost/shc.lat` (164 KiB) three times: `seed → stage1′
+→ stage2′ → stage3′`. Each stage shows its size, time and sha256; byte equality is
+checked with `crypto.subtle` plus a byte-wise comparison. In the current build
+`seed = stage1′ = stage2′ = stage3′` — a fixed point from the first step. Then the
+same seed compiles and runs the selected sample through the ABI
+`[len][utf8]` → `main()` → `[len][wasm]`.
+
+Honest part: seed is the trusted starting point; the self-hosted compiler may
+reject some host-only corpus programs; a 30 s timeout terminates the Worker. This is
+about reproducibility, not magic.
+
+## 4. Sandbox for untrusted code
+
+<iframe
+  src="/latent/demos/sandbox/?embed=1"
+  title="Latent — safe execution of untrusted code"
+  loading="lazy"
+  style={{width: '100%', height: '980px', border: 0, borderRadius: '12px'}}
+/>
+
+You write Latent code, `compiler.wasm` compiles it to WASM, and a Worker
+instantiates the module with **exactly one** import: `env.print`. The page shows
+the real import list from `WebAssembly.Module.imports()` — the binary, not a
+declaration.
+
+Buttons: infinite loop (the host calls `worker.terminate()` on timeout), OOB access
+(`memory access out of bounds`), `alloc(64 MiB)` (memory grows to 1025 pages), and
+`alert`/`fetch` (a compile error: those names do not exist in the language). The
+capability list, memory gauge and event log update live.
+
+Honest part: this is not an OS sandbox and not a boundary against browser bugs;
+`compiler.wasm` is trusted; the timeout is host-side. The page has a full
+limitations section.
+
+## 5. A multi-file project
+
+<iframe
+  src="/latent/demos/modules/?embed=1"
+  title="Latent — modules and linking in the browser"
+  loading="lazy"
+  style={{width: '100%', height: '980px', border: 0, borderRadius: '12px'}}
+/>
+
+```latent
+// Does not compile on its own: a module file (the project entry).
+import { mean, square } from "./math.lat";
+import { variance } from "./stats.lat";
+
+fn main() -> int {
+    let data = [2, 4, 6, 8];
+    print("mean =", mean(data));
+    print("variance =", variance(data));
+    return square(9);
+}
+```
+
+A four-file tree, an editor, an SVG import graph, two-phase linking, and a run. The
+demo uses the real `resolveModuleGraph` / `linkModuleProject` from
+`web-ide/compiler` and shows the mangled names (`m1$square`, `m3$variance`) — the
+linker result, not a label. The "cycles allowed" project demonstrates a permitted
+`a.lat ↔ b.lat` cycle, and "missing import" shows an error with a path and a line.
+
+Build: the page checks `compiler.wasm` via `WebAssembly.Module.exports`. If
+`latent_compile_files` is present, it encodes an `LPF1` manifest and compiles the
+project to WASM (as in the current build); otherwise it runs on engine #1. Both
+paths are real.
+
+Honest part: modules v1 is named imports and relative `.lat` paths only; the editor
+lives in tab memory; cycles are resolved by the linker, but recursion is still
+recursion.
+
+## Performance: benchmark, images, physics
+
+Three demos about dense computation and predictable memory. They are not about CSP
+or AI — they show that `int` is exactly `i32`, that `alloc` is explicit, and that a
+hot loop does not depend on JIT mood.
 
 <iframe
   src="/latent/demos/bench/?embed=1"
@@ -28,34 +229,6 @@ the same input data, a checksum comparison, and the median of three runs.
   style={{width: '100%', height: '780px', border: 0, borderRadius: '12px'}}
 />
 
-If the embedded page does not load (for example, because of an iframe policy),
-open it directly: <a href="/latent/demos/bench/">latent/demos/bench</a>.
-
-| Demo | What it shows | Why Latent fits |
-|---|---|---|
-| <a href="/latent/demos/bench/">Benchmark</a> | FNV-1a over bytes, sieve of Eratosthenes, matrix multiply, quicksort, UTF-8 scan; live milliseconds and parity | dense loops over `i32` in linear memory, zero allocations in the hot path |
-| <a href="/latent/demos/image/">Images</a> | grayscale, box blur, Sobel and threshold over `ImageData`; WASM/JS switch, an original/filtered split slider | pointers instead of copies, integer math, stable frame time |
-| <a href="/latent/demos/physics/">Physics</a> | up to 30,000 particles, three rotating attractors, integrator, collisions with cores and walls, FPS graph | one linear buffer, fixed point, no GC pauses |
-| <a href="/latent/demos/bench/#compile">Compiler in the browser</a> | a button compiles `sieve.lat` with `compiler.wasm` and runs the result immediately | compiler-as-WASM: source → module without a server |
-
-## Physics: 10,000+ particles in one buffer
-
-<iframe
-  src="/latent/demos/physics/?embed=1"
-  title="Latent — gravity simulation with 30,000 particles"
-  loading="lazy"
-  style={{width: '100%', height: '760px', border: 0, borderRadius: '12px'}}
-/>
-
-The whole simulation lives in the module's memory: four `i32` arrays (x, y, vx,
-vy) at fixed offsets, with no object per particle. The JS host reads those
-numbers as `Int32Array` and draws them on a canvas — no serialization and no
-`postMessage`.
-
-## Key fragments
-
-### FNV-1a: bytes and i32 overflow
-
 ```latent
 // FNV-1a over a 1 MiB byte buffer, `rounds` passes.
 fn main(n: int, rounds: int) -> int {
@@ -63,16 +236,7 @@ fn main(n: int, rounds: int) -> int {
     if (ptr == 0) {
         ptr = alloc(n + 8);
         store32(8, ptr);
-        let s = 123456789;
-        let g = 0;
-        while (g < n) {
-            s = (s * 1103515245 + 12345) & 2147483647;
-            store8(ptr + g, (s >> 8) & 255);
-            g = g + 1;
-        }
     }
-
-    // 0x811c9dc5 as a signed i32: literals above 2^31 - 1 wrap.
     let h = 0 - 2128831035;
     let r = 0;
     while (r < rounds) {
@@ -87,175 +251,111 @@ fn main(n: int, rounds: int) -> int {
 }
 ```
 
-Note `0 - 2128831035` instead of `2166136261`: a literal above `2^31 - 1`
-wraps on the i32 path, and writing it as a signed value makes the behaviour
-obvious. The JS twin uses `Math.imul` with the same signed seed — the checksums
-match.
+- <a href="/latent/demos/bench/">Benchmark</a>: five algorithms, identical inputs,
+  checksum parity, median of three runs.
+- <a href="/latent/demos/image/">Images</a>: grayscale, box blur, Sobel, threshold
+  over `ImageData`; a WASM/JS switch and a comparison slider.
+- <a href="/latent/demos/physics/">Physics</a>: up to 30,000 particles, three
+  attractors, an FPS graph and bit-for-bit parity with the JS twin.
 
-### Pixels: `load8`/`store8` instead of objects
-
-```latent
-fn luma(r: int, g: int, b: int) -> int {
-    return (77 * r + 150 * g + 29 * b) >> 8;
-}
-
-fn gray(src: int, dst: int, size: int) {
-    let i = 0;
-    while (i < size) {
-        let v = luma(load8(src + i), load8(src + i + 1), load8(src + i + 2));
-        store8(dst + i, v);
-        store8(dst + i + 1, v);
-        store8(dst + i + 2, v);
-        store8(dst + i + 3, 255);
-        i = i + 4;
-    }
-}
-```
-
-`src` and `dst` are ordinary `i32` addresses in linear memory. The host copies
-`ImageData` into the module's memory once, then wraps the result pointer in
-`new ImageData(view)` — `putImageData` reads WASM memory directly.
-
-### Gravity: fixed point without `sqrt`
-
-```latent
-// A simplified fragment of particles.lat: the force of one attractor.
-fn attractor_force(x: int, y: int, ax: int, ay: int, gravity: int, vx: int, vy: int) -> int {
-    let dx = ax - x;
-    let dy = ay - y;
-    let d2 = dx * dx + dy * dy;
-    if (d2 < 90000) {
-        return vx;
-    }
-    let f = (gravity << 24) / (d2 + 40000);
-    return vx + ((dx * f) >> 13) - ((dy * f) >> 13);
-}
-```
-
-Positions are stored in 1/16 of a pixel, velocities in 1/256 of a pixel per
-step. The force is a softened inverse square, but with no `sqrt` and no
-`float`: just `i32`, division, and shifts. That is why the JS twin can
-reproduce the trajectories bit for bit — the **Parity** button checks exactly
-that.
+Honest part: for short calls, JS↔WASM overhead can eat the win; the demos show
+that too. The numbers are live and machine-dependent.
 
 ## How it works
 
 ```
 docs/static/demos/
-├── index.html              # demo hub
+├── index.html                 # demo hub
 ├── assets/
-│   ├── demo.css            # shared dark shell
-│   ├── wasm.js             # fetch/instantiate, compiler C ABI
-│   ├── bench.js            # JS twins of the five benchmarks
-│   ├── imaging.js          # JS twins of the filters
-│   ├── physics.js          # JS twin of the integrator
-│   └── highlight.js        # .lat syntax highlighting
-├── bench/                  # index.html + 5 *.lat + 5 *.wasm
-├── image/                  # index.html + filter.lat + filter.wasm
-├── physics/                # index.html + particles.lat + particles.wasm
-├── compiler.wasm           # copy used by "compile in browser"
-└── build-demos.mjs         # .lat → .wasm + smoke run
+│   ├── demo.css               # shared shell of the old demos
+│   ├── killer.css             # design system for the five new demos
+│   ├── killer.js              # highlighter, CodeViewer, EnhancedEditor, canvas
+│   ├── wasm.js                # fetch/instantiate, compiler C ABI
+│   └── bench.js / imaging.js / physics.js
+├── vendor/compiler/           # engine #1 (ESM) copy — generated by build-demos
+├── concurrency/               # index.html + killer-programs.js + killer-concurrency.js
+├── ai/                        # index.html + killer-ai.js
+├── selfhost/                  # index.html + killer-selfhost.js + seed.wasm + shc.lat
+├── sandbox/                   # index.html + killer-sandbox.js
+├── modules/                   # index.html + killer-modules.js
+├── bench/  image/  physics/   # old demos (WASM modules built by build-demos)
+├── compiler.wasm              # compiler for sandbox/modules
+└── build-demos.mjs            # vendor copy + seed/shc + .lat → .wasm + smoke run
 ```
 
-1. **Building the modules.** `build-demos.mjs` loads `web-ide/compiler.wasm`,
-   calls the C ABI `latent_alloc` / `latent_compile` / `latent_free`, and writes
-   a ready `.wasm` next to every `.lat`. It then instantiates and runs each
-   module once as a smoke test.
-2. **Loading on the page.** `wasm.js` fetches the `.wasm`, creates a
-   `WebAssembly.Instance` with a single import, `env.print(i32)`, and exposes
-   `exports.main` and `exports.memory`.
-3. **Passing data.** Arrays and strings are bytes behind a pointer:
-   `[len u32][i32…]` and `[len u32][utf8…]`. No JSON and no serialization: JS
-   writes into a `Uint8Array` over `memory.buffer`, and the module reads the same
-   bytes.
-4. **Compiling in the browser.** The button on the benchmark page downloads
-   `sieve.lat`, compiles it with the same `compiler.wasm` in a few milliseconds,
-   and runs the result. It is the same compiler as in the playground, called
-   from an ordinary static page.
+1. **Prepare artifacts.** `build-demos.mjs` copies `web-ide/compiler/**` to
+   `demos/vendor/compiler/` (the ESM interpreter), and `selfhost/seed.wasm`,
+   `seed.json`, `shc.lat` to `demos/selfhost/`; then it compiles the old demos'
+   `.lat` files with `compiler.wasm` and smoke-runs them.
+2. **Execute.** The new demos import the interpreter from vendor and execute
+   Latent code in the browser; sandbox/modules take `compiler.wasm` (engine #2)
+   and the `latent_compile` / `latent_compile_files` ABI.
+3. **Isolate.** Sandbox runs wasm in a Web Worker with one import and terminates
+   on timeout; selfhost also compiles in a Worker (30 s limit).
+4. **Measure.** Time, sizes, sha256, imports, memory and events come from real
+   calls; the animation only presents data that already exists.
+5. **Stay offline.** No CDN, fonts or bundler: relative paths, local `fetch`, and
+   browser APIs only.
 
-The full ABI is described in [WASM ABI](../reference/wasm-abi.md), and the basic
-"JS host + `.wasm`" scenario is in [Canvas and frames](./frontend-canvas.md).
+The full ABI is in [WASM ABI](../reference/wasm-abi.md), modules in the
+[modules guide](../guide/modules.md), self-host in the
+[self-host spec](../specs/selfhost.md).
 
-## Why Latent instead of plain JS
+## Where Latent does not win
 
-The honest answer: **not always**. JavaScript engines are excellent at typed
-arrays and integer loops today, and on short calls the JS↔WASM transition can
-eat the win. The demo shows that too — if JavaScript is faster, you will see the
-matching label instead of a hidden number.
-
-Where the win is real:
-
-- **Memory control.** `alloc` is an explicit allocation in linear memory. No
-  object per particle, no hidden allocations in the loop, no garbage collector.
-  For canvas, audio, and games, what matters is not average speed but the
-  absence of rare GC pauses and a stable p95 frame time.
-- **Predictable integers.** `int` is exactly `i32`: overflow, shifts, and
-  division are defined. The result does not depend on how the JIT happened to
-  optimize a branch this time.
-- **One buffer instead of an object graph.** 30,000 particles are 480 KB of
-  memory and four `Int32Array` views. Cache locality and no pointer chasing
-  produce an even simulation step.
-- **Sandboxing.** The module has no access to the DOM, the network, or cookies.
-  If you execute generated or untrusted code, WASM limits it to exactly the
-  memory you allocated.
-- **Compiler-as-WASM.** The Latent compiler is built to WebAssembly. A source
-  file can become a module on the client, with no server and no installed
-  toolchain.
-
-What the demos do **not** do:
-
-- pairwise particle collisions (the demo uses collisions with attractor cores
-  and walls) — that is O(N·3), not O(N²);
-- a background Worker: everything runs on the main thread, so the comparison is
-  honest and measurable;
-- a promise that "WASM is always faster". The numbers on the page are live.
+- **Parallelism.** Engine #1 is a cooperative single-threaded scheduler; it is not
+  multi-threading and not a core-count speedup.
+- **AI by default.** Embeddings and inference are mocks; a real gateway is optional
+  and limited by CORS/provider.
+- **Sandbox.** It isolates wasm capabilities, not the OS; the compiler and the
+  browser are trusted.
+- **Self-host.** Seed is a trusted point, part of the host-only corpus does not
+  compile, and the timeout is protection, not infinite power.
+- **Performance.** JS can win on short calls; the advantage is predictable memory
+  and the absence of GC pauses, not "WASM is always faster".
 
 ## Running and checking
 
 The demos need no build. Serve `docs/static/` with any static server:
 
 ```bash
-# from the repository root
+# from the repo root
 python -m http.server 8000 --directory docs/static
 # open http://localhost:8000/demos/
 ```
 
-Rebuild the `.wasm` files after editing `.lat`:
+Rebuild the artifacts after edits:
 
 ```bash
-node docs/static/demos/build-demos.mjs            # compile + smoke run
+node docs/static/demos/build-demos.mjs            # vendor + seed/shc + .wasm + smoke
 node docs/static/demos/build-demos.mjs --no-verify
+node docs/scripts/validate-examples.mjs           # every ```latent block
+cd docs && pnpm run build                         # site and broken links
 ```
 
-The script uses `web-ide/compiler.wasm` (override it with the
-`LATENT_COMPILER_WASM` environment variable). The "compile in browser" button
-uses `docs/static/demos/compiler.wasm`, and if that file is missing it tries
-`/latent/playground/compiler.wasm`; on the published site the playground is
-synced by `scripts/sync-playground.mjs`.
+`build-demos.mjs` uses `web-ide/compiler.wasm` (override with
+`LATENT_COMPILER_WASM`). The five new demos do not depend on `demo.css` — they ship
+their own `assets/killer.css`, so a hub redesign cannot break them.
 
-All ```latent blocks on this page are checked by
-`docs/scripts/validate-examples.mjs`; the site build is `pnpm run build` in
-`docs/`.
+## What to try
 
-## Things to try
-
-1. In the benchmark, press **"Run all 5"** and compare the orders of magnitude
-   on your machine. Then switch tabs and come back — the numbers are not
-   hard-coded.
-2. In the image demo, select **Sobel** and drag the original/filtered slider:
-   the filter works over RGBA, not over CSS.
-3. In physics, set 30,000 particles and gravity 50 — the simulation step is
-   still measured in microseconds, and the canvas stays at 60 fps.
-4. Press **Parity** in physics: the JS twin and WASM run 120 steps and must
-   match bit for bit. If the implementations diverge, the badge turns red.
+1. In **goroutines**, press "1000 goroutines" and watch the peak alive count vs the
+   single running goroutine; then press "Deadlock" and let the runtime stop it.
+2. In **AI**, change the prompt and documents, press "Recalculate", and hover a
+   heatmap cell: the values come from the interpreter's `cosine_similarity`.
+3. In **selfhost**, wait for FIXED POINT, compare the sha256 of all stages, then
+   pick `fib.lat` and see `main() = 55`.
+4. In the **sandbox**, run "infinite loop", then "OOB access" and `memory.grow`:
+   the log shows terminate, trap and 1025 pages.
+5. In **modules**, switch to "cycles allowed", run, and look at the `a.lat ↔ b.lat`
+   cycle in the graph; then "missing import" for a path-level error.
 
 ## Related sections
 
-- [WASM ABI](../reference/wasm-abi.md) — `main`, `memory`, strings, arrays,
-  the compiler C ABI.
-- [Canvas and frames](./frontend-canvas.md) — the minimal "WASM computes, canvas
-  draws" example.
-- [Compiler in the browser](./frontend-compiler-playground.md) —
-  `latent_alloc`, `latent_compile`, `latent_free`.
-- [Latent in the frontend](../guide/web-and-frontend.md) — React, Worker, Vite.
-- [Web IDE](../tooling/web-ide.md) — the playground with two engines.
+- [WASM ABI](../reference/wasm-abi.md) — `main`, `memory`, strings, arrays, the
+  compiler C ABI.
+- [Modules](../guide/modules.md) — v1 syntax, semantics and linking.
+- [Self-host](../specs/selfhost.md) — fixed point and bootstrap.
+- [Concurrency](../guide/concurrency.md) — `spawn`, `channel`, `select`.
+- [AI primitives](../guide/ai-features.md) — `ai_infer`, `ai_embed`, tensors.
+- [Web IDE](../tooling/web-ide.md) — a playground with two engines.

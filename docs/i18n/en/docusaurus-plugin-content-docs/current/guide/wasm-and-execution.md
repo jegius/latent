@@ -198,7 +198,8 @@ checked separately (markers `// Does not compile with engine #2`, `// error`,
 
 ### Semantic limitations
 
-- No modules, imports, packages, inheritance, or generic classes.
+- No packages, inheritance, or generic classes; file modules (`import`/`export`)
+  exist, but they are linked at compile time — see [modules](./modules.md).
 - No GC/deallocation and no bounds checking.
 - No exceptions; `assert` is a trap, `assert_eq` compares i32 bits.
 - No function or operator overloading; duplicates are not diagnosed.

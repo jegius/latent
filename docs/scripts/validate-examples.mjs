@@ -21,6 +21,18 @@
 // невалидный WASM-модуль. Если он неожиданно скомпилировался в валидный
 // WASM — это ошибка проверки (маркер устарел).
 //
+// Соглашение о многофайловых примерах (файловые модули, `import`/`export`):
+//   - блок помечается маркером `module-part` — либо в info-string
+//     (```latent module-part), либо первой непустой строкой-комментарием
+//     `// module-part <имя файла>`;
+//   - такой блок НЕ компилируется по отдельности (в нём есть `import`, а
+//     однофайловый ABI `latent_compile` импорты не поддерживает), поэтому он
+//     пропускается БЕЗ ошибки и только подсчитывается (`module-part blocks`);
+//   - v1: наборы `module-part` не собираются в проект и не проверяются
+//     компилятором. Проверка многофайлового проекта — `latentc check <entry.lat>`
+//     или IDE; когда в ABI валидатора появится группировка блоков по странице,
+//     маркер станет полноценной проверкой, а соглашение не изменится.
+//
 // Использование:
 //   node docs/scripts/validate-examples.mjs [--root <repo>] [--verbose]
 //
@@ -151,6 +163,26 @@ function expectsError(block) {
   );
 }
 
+/** Первая непустая строка блока (без ведущих пробелов). */
+function firstCodeLine(block) {
+  return (
+    block.code
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .find((s) => s.length > 0) || ''
+  );
+}
+
+/**
+ * Маркер многофайлового примера: `module-part` в info-string или первая строка
+ * `// module-part <файл>`. Такой блок не компилируется отдельно (в нём есть
+ * `import`) — он пропускается и только подсчитывается.
+ */
+function isModulePart(block) {
+  if (/module-part|module part/i.test(block.meta)) return true;
+  return /^\/\/\s*module-part\b/i.test(firstCodeLine(block));
+}
+
 // ---------------------------------------------------------------------------
 // Загрузка движка №2 (Rust → WASM)
 // ---------------------------------------------------------------------------
@@ -253,6 +285,7 @@ async function main() {
   let total = 0;
   let validOk = 0;
   let expectedOk = 0;
+  let skippedParts = 0;
   /** @type {string[]} */
   const failures = [];
   /** @type {string[]} */
@@ -264,6 +297,12 @@ async function main() {
     for (const block of blocks) {
       total++;
       const where = `${relative(repoRoot, file)}:${block.line}`;
+      if (isModulePart(block)) {
+        // Многофайловый пример: компилировать по отдельности нельзя.
+        skippedParts++;
+        if (verbose) console.log(`  skip (module-part) ${where}`);
+        continue;
+      }
       const expectErr = expectsError(block);
       let compiled;
       let compileError = null;
@@ -315,6 +354,7 @@ async function main() {
   console.log('всего блоков ```latent: ' + total);
   console.log(`  компилируются:        ${validOk}`);
   console.log(`  ожидаемо невалидны:   ${expectedOk}`);
+  console.log(`  module-part (пропуск): ${skippedParts}`);
 
   if (staleMarkers.length) {
     console.error('');

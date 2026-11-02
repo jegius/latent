@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI-native примитивы — Latent killer demo</title>
+  <meta name="description" content="ai_embed, cosine_similarity, ai_infer, ai_stream, tensor и matmul — синтаксис Latent. Настоящее исполнение в браузере, тепловая карта похожести, стриминг токенов, умножение матриц; офлайн mock и опциональный gateway." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23070b12'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%235eead4'%3E%CE%BB%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="../assets/killer.css" />
+  <style>
+    .k-heat { width: 100%; height: 360px; }
+    .k-matrix-panel { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; gap: 10px; }
+    .k-matrix-panel .k-times { color: var(--k-dim); font-family: var(--k-mono); font-size: 18px; }
+    @media (max-width: 760px) {
+      .k-matrix-panel { grid-template-columns: 1fr; justify-items: center; }
+      .k-matrix-panel .k-times { transform: rotate(90deg); }
+      .k-heat { height: 300px; }
+    }
+    .k-stream-meta { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+    .k-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .k-settings-grid .k-full { grid-column: 1 / -1; }
+    @media (max-width: 600px) { .k-settings-grid { grid-template-columns: minmax(0, 1fr); } }
+  </style>
+</head>
+<body>
+  <header class="k-top">
+    <div class="k-wrap k-top-inner">
+      <a class="k-brand" href="../"><span class="k-mark">λ</span> Latent · killer demos</a>
+      <nav class="k-nav" aria-label="Демо">
+        <a href="../concurrency/">Конкурентность</a>
+        <a class="is-active" href="./">AI-native</a>
+        <a href="../selfhost/">Self-host</a>
+        <a href="../sandbox/">Песочница</a>
+        <a href="../modules/">Модули</a>
+        <a href="../../examples/frontend-showcase">Документация</a>
+        <span class="k-pill k-pill--live"><span class="k-dot"></span>engine #1</span>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="k-wrap k-hero">
+      <p class="k-eyebrow">ai_embed · cosine_similarity · ai_infer · ai_stream · tensor · matmul</p>
+      <h1 class="k-title">AI — это<br /><span class="k-grad">синтаксис языка.</span></h1>
+      <p class="k-lead">
+        Не библиотека и не SDK: <code>ai_embed</code>, <code>ai_infer</code>,
+        <code>ai_stream</code>/<code>stream_next</code>, <code>tensor</code> и <code>matmul</code> —
+        обычные конструкции Latent. Программа ниже <strong>исполняется прямо здесь</strong>
+        движком №1: она строит эмбеддинги, считает косинусную близость, делает инференс,
+        стримит токены и умножает матрицы. По умолчанию — детерминированный офлайн-mock;
+        реальный gateway можно подключить в настройках.
+      </p>
+      <div class="k-actions">
+        <button class="k-btn k-btn--primary" id="run-ai" type="button">Пересчитать пайплайн</button>
+        <button class="k-btn" id="stream-btn" type="button" disabled>Стримить ответ</button>
+        <button class="k-btn k-btn--ghost" id="matmul-btn" type="button" disabled>Показать умножение</button>
+        <span class="k-pill" id="gateway-badge">offline mock</span>
+      </div>
+      <div class="k-meta">
+        <span><b>6</b> AI-примитивов в одной программе</span>
+        <span><b>8</b> измерений эмбеддинга</span>
+        <span><b>0</b> сетевых запросов</span>
+        <span><b>offline</b> детерминированный mock</span>
+      </div>
+    </section>
+
+    <section class="k-wrap k-section">
+      <div class="k-pipe" id="pipeline" aria-label="Этапы AI-пайплайна">
+        <div class="k-pipe-step" data-step="0">
+          <div class="k-pipe-k">01 · prompt</div>
+          <div class="k-pipe-v">запрос + документы</div>
+        </div>
+        <div class="k-pipe-step" data-step="1">
+          <div class="k-pipe-k">02 · ai_embed</div>
+          <div class="k-pipe-v">8-мерные векторы <small>детерминированный mock</small></div>
+        </div>
+        <div class="k-pipe-step" data-step="2">
+          <div class="k-pipe-k">03 · cosine_similarity</div>
+          <div class="k-pipe-v">матрица «документ × документ» <small>и близость к запросу</small></div>
+        </div>
+        <div class="k-pipe-step" data-step="3">
+          <div class="k-pipe-k">04 · ai_infer / ai_stream</div>
+          <div class="k-pipe-v">ответ и токены <small>token stream</small></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="k-wrap k-section">
+      <div class="k-grid k-grid--main">
+        <div class="k-stack">
+          <div class="k-panel">
+            <div class="k-panel-head">
+              <div>
+                <h2 class="k-panel-title">Матрица похожести</h2>
+                <p class="k-sub">Реальные значения <code>cosine_similarity</code> из Latent-программы. Наведите на клетку.</p>
+              </div>
+              <span class="k-badge k-badge--violet" id="m-sim-badge">cos ∈ [−1, 1]</span>
+            </div>
+            <div class="k-heat-wrap"><canvas class="k-heat" id="heatmap" aria-label="Тепловая карта косинусной близости документов"></canvas></div>
+            <p class="k-hint">Mock-эмбеддинги — это хэш-проекция, а не семантика: heatmap честно показывает значения, которые вернул интерпретатор.</p>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head">
+              <div>
+                <h2 class="k-panel-title">Стриминг ответа</h2>
+                <p class="k-sub">Токены, записанные <code>ai_stream</code> / <code>stream_next</code>.</p>
+              </div>
+              <span class="k-badge" id="stream-count">0 / 0 токенов</span>
+            </div>
+            <div class="k-stream" id="stream" aria-live="polite">нажмите «Пересчитать пайплайн»…</div>
+            <div class="k-stream-meta" style="margin-top:10px">
+              <span class="k-small k-dim" id="stream-status">ожидание</span>
+              <span class="k-small k-dim">·</span>
+              <span class="k-small k-dim">инференс: <b class="k-mono" id="m-infer">—</b></span>
+              <span class="k-small k-dim">·</span>
+              <span class="k-small k-dim">эмбеддингов: <b class="k-mono" id="m-embed">—</b></span>
+              <span class="k-small k-dim">·</span>
+              <span class="k-small k-dim">cosine: <b class="k-mono" id="m-cosine">—</b></span>
+              <span class="k-small k-dim">·</span>
+              <span class="k-small k-dim">токенов: <b class="k-mono" id="m-tokens">—</b></span>
+              <span class="k-small k-dim">·</span>
+              <span class="k-small k-dim">время: <b class="k-mono" id="m-time">—</b></span>
+            </div>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head">
+              <div>
+                <h2 class="k-panel-title">Tensor: A × B = C</h2>
+                <p class="k-sub" id="mat-shapes">2×3 · 3×2 → 2×2</p>
+              </div>
+              <div class="k-row">
+                <span class="k-badge" id="m-flops">—</span>
+                <span class="k-badge k-badge--muted">flops</span>
+                <span class="k-badge k-badge--violet"><span id="m-matmul">—</span> matmul</span>
+              </div>
+            </div>
+            <div class="k-matrix-panel">
+              <div id="mat-a"></div>
+              <span class="k-times">×</span>
+              <div id="mat-b"></div>
+              <span class="k-times">=</span>
+              <div id="mat-c"></div>
+            </div>
+            <p class="k-hint" style="margin-top:12px"><code>tensor</code>, <code>matmul</code> и форма — часть языка; значения и форма взяты из реального вызова.</p>
+          </div>
+        </div>
+
+        <aside class="k-stack">
+          <div class="k-panel">
+            <div class="k-panel-head" style="margin-bottom:10px">
+              <div>
+                <h2 class="k-panel-title">Запрос</h2>
+                <p class="k-sub">Prompt и корпус документов</p>
+              </div>
+              <span class="k-badge k-badge--green">Latent</span>
+            </div>
+            <label class="k-label" for="prompt">prompt</label>
+            <textarea class="k-textarea" id="prompt" rows="3" spellcheck="false"></textarea>
+            <label class="k-label" for="docs" style="margin-top:10px">документы (по одному в строке, до 7)</label>
+            <textarea class="k-textarea" id="docs" rows="6" spellcheck="false"></textarea>
+            <div class="k-row" style="margin-top:10px">
+              <span class="k-small k-dim" id="ai-status">загрузка…</span>
+            </div>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head" style="margin-bottom:8px">
+              <div>
+                <h2 class="k-panel-title">Эмбеддинги</h2>
+                <p class="k-sub">8 измерений на текст</p>
+              </div>
+            </div>
+            <div class="k-vectors" id="vectors"></div>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head" style="margin-bottom:8px">
+              <div>
+                <h2 class="k-panel-title">Близость к запросу</h2>
+                <p class="k-sub">сортировка по cosine</p>
+              </div>
+            </div>
+            <div class="k-rank" id="rank"></div>
+          </div>
+
+          <div class="k-panel">
+            <details>
+              <summary class="k-panel-title" style="cursor:pointer">Реальный gateway <span class="k-badge k-badge--muted">опционально</span></summary>
+              <p class="k-hint" style="margin:8px 0 10px">
+                По умолчанию всё офлайн. Для <code>ai_infer</code> можно подключить Ollama или
+                OpenAI-совместимый endpoint. Ключ живёт только в памяти вкладки; запросы
+                подчиняются CORS браузера. Эмбеддинги остаются mock.
+              </p>
+              <div class="k-settings-grid">
+                <div class="k-full">
+                  <label class="k-label" for="gateway-provider">provider</label>
+                  <select class="k-select" id="gateway-provider">
+                    <option value="mock">mock (offline)</option>
+                    <option value="ollama">ollama</option>
+                    <option value="openai-compatible">openai-compatible</option>
+                  </select>
+                </div>
+                <div id="gateway-fields" class="k-full k-settings-grid">
+                  <div>
+                    <label class="k-label" for="gateway-url">base URL</label>
+                    <input class="k-input" id="gateway-url" value="http://localhost:11434" />
+                  </div>
+                  <div>
+                    <label class="k-label" for="gateway-model">model</label>
+                    <input class="k-input" id="gateway-model" value="qwen3:4b" />
+                  </div>
+                  <div class="k-full">
+                    <label class="k-label" for="gateway-key">API key (не сохраняется)</label>
+                    <input class="k-input" id="gateway-key" type="password" autocomplete="off" />
+                  </div>
+                </div>
+              </div>
+              <div class="k-row" style="margin-top:10px">
+                <button class="k-btn k-btn--sm k-btn--primary" id="gateway-apply" type="button">Применить</button>
+                <button class="k-btn k-btn--sm k-btn--ghost" id="gateway-reset" type="button">Вернуть mock</button>
+              </div>
+              <p class="k-hint" id="gateway-status" style="margin-top:8px">mock: сеть не используется</p>
+            </details>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="k-wrap k-section">
+      <div class="k-panel">
+        <div class="k-panel-head">
+          <div>
+            <h2 class="k-panel-title">Одна программа: Latent и JavaScript</h2>
+            <p class="k-sub">Слева — исполняемый исходник со всеми AI-примитивами. Справа — типичный JS-путь через SDK и HTTP.</p>
+          </div>
+          <span class="k-badge" id="latent-lines">—</span>
+        </div>
+        <div class="k-compare">
+          <div class="k-stack-sm">
+            <div class="k-row" style="justify-content:space-between">
+              <span class="k-mono k-small k-dim">pipeline.lat</span>
+              <span class="k-badge k-badge--green">исполняется</span>
+            </div>
+            <div id="code-latent"></div>
+          </div>
+          <div class="k-stack-sm">
+            <div class="k-row" style="justify-content:space-between">
+              <span class="k-mono k-small k-dim">pipeline.js</span>
+              <span class="k-badge k-badge--muted">эквивалент</span>
+            </div>
+            <div id="code-js"></div>
+          </div>
+        </div>
+        <p class="k-hint" style="margin-top:10px">
+          В JS те же шаги — это SDK, ключи, HTTP, JSON, ручной стриминг и отдельная
+          библиотека тензоров. В Latent они уже часть грамматики и семантики.
+        </p>
+      </div>
+    </section>
+
+    <section class="k-wrap k-section">
+      <div class="k-section-head">
+        <div>
+          <h2 class="k-section-title">AI-native, а не AI-adjacent</h2>
+          <p class="k-sub">Примитивы знает парсер и интерпретатор — их не нужно импортировать.</p>
+        </div>
+        <span class="k-badge k-badge--violet">синтаксис</span>
+      </div>
+      <div class="k-grid k-grid--3">
+        <div class="k-card">
+          <div class="k-card-icon">◈</div>
+          <h3 class="k-card-title">ai_embed → vector</h3>
+          <p class="k-card-text">Детерминированный 8-мерный вектор прямо в языке. В демо — mock, в IDE — тот же вызов с реальным провайдером. Результат можно сравнивать через <code>cosine_similarity</code>.</p>
+        </div>
+        <div class="k-card">
+          <div class="k-card-icon">⌁</div>
+          <h3 class="k-card-title">ai_stream / stream_next</h3>
+          <p class="k-card-text">Поток токенов — это handle и два примитива, а не async-итератор из библиотеки. Стриминг в демо воспроизводит токены, реально возвращённые интерпретатором.</p>
+        </div>
+        <div class="k-card">
+          <div class="k-card-icon">▦</div>
+          <h3 class="k-card-title">tensor / matmul</h3>
+          <p class="k-card-text">Форма и данные — часть значения <code>tensor</code>; умножение — встроенная операция. Здесь показаны реальные A, B и C, посчитанные интерпретатором.</p>
+        </div>
+        <div class="k-card">
+          <div class="k-card-icon">✦</div>
+          <h3 class="k-card-title">ai_generate!</h3>
+          <p class="k-card-text">Синтаксис «сгенерируй код» с восклицательным знаком разбирает Rust-парсер (движок №2), но JS-интерпретатор его пока не исполняет — честно говорим об этом.</p>
+        </div>
+        <div class="k-card">
+          <div class="k-card-icon">◎</div>
+          <h3 class="k-card-title">Контракты и snapshot</h3>
+          <p class="k-card-text"><code>@ai_contract</code>, <code>snapshot</code> и <code>assert_eq</code> позволяют фиксировать поведение AI-функций как обычные тесты — это тоже синтаксис, а не плагин.</p>
+        </div>
+        <div class="k-card">
+          <div class="k-card-icon">⇄</div>
+          <h3 class="k-card-title">Два движка, честно</h3>
+          <p class="k-card-text">AI-примитивы — host-only: движок №2 (Rust→WASM) отвечает «требует host-рантайма». Демо исполняет их движком №1 и подписывает это на каждом шаге.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="k-wrap k-section">
+      <div class="k-panel">
+        <div class="k-panel-head">
+          <div>
+            <h2 class="k-panel-title">Честные ограничения</h2>
+            <p class="k-sub">Что именно здесь настоящее, а что — mock и почему.</p>
+          </div>
+          <span class="k-badge k-badge--amber">важно</span>
+        </div>
+        <div class="k-grid k-grid--2">
+          <div class="k-stack-sm">
+            <p class="k-small"><b>Mock-эмбеддинги не семантические.</b> Это детерминированная хэш-проекция из <code>interpreter-ai.js</code>, поэтому heatmap показывает реальные значения косинуса, но не «смысл» текста.</p>
+            <p class="k-small"><b>Инференс по умолчанию офлайн.</b> <code>ai_infer</code> возвращает контекстный mock-ответ; реальный ответ появляется только после подключения gateway.</p>
+            <p class="k-small"><b>Gateway — только для ai_infer.</b> Эмбеддинги и тензоры остаются локальными; CORS, лимиты и стоимость — на стороне провайдера. Ключ не сохраняется.</p>
+          </div>
+          <div class="k-stack-sm">
+            <p class="k-small"><b>Стриминг — воспроизведение.</b> <code>ai_stream</code> уже вернул все токены; анимация печатает их с задержкой, а не читает сеть по одному токену.</p>
+            <p class="k-small"><b>host-only.</b> Движок №2 не принимает <code>ai_embed</code>, <code>ai_infer</code>, <code>tensor</code> и <code>matmul</code>; в WASM эти примитивы появятся только с host-рантаймом.</p>
+            <p class="k-small"><b>ai_generate! не исполняется.</b> Синтаксис есть в Rust-парсере, но JS-интерпретатор его не знает; демо не притворяется, что знает.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="k-foot">
+    <div class="k-wrap k-foot-inner">
+      <span>Latent · killer demos · движок №1 · AI-примитивы исполняются в браузере</span>
+      <div class="k-foot-links">
+        <a href="../">Все демо</a>
+        <a href="../../examples/frontend-showcase">Frontend showcase</a>
+        <a href="../../examples/ai">Разбор AI-примеров</a>
+        <a href="../../reference/builtins">Builtins</a>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module" src="./killer-ai.js"></script>
+</body>
+</html>

@@ -45,10 +45,12 @@ answers "how the language is put together and what exactly it guarantees".
 ## Two engines in one paragraph
 
 - **Engine #1** — the JS interpreter in the web IDE: it runs programs, including
-  channels, AI, and tensors; it does not know `enum`, bitwise operators, or block
-  comments.
+  channels, AI, and tensors, and supports `enum` and file modules; it does not
+  know bitwise operators or block comments.
 - **Engine #2** — the Rust compiler in WASM: it compiles a subset into a
   WASM module; for host features it reports an explicit error
   `Builtin '...' не поддерживается движком №2 (требует host-рантайма)`.
 
-Latent has no modules: one program is one `.lat` file.
+A program may consist of several `.lat` files: file modules (`import`/`export`)
+are linked at compile time — see [modules](./modules.md). There is still no
+package manager and no external dependencies.

@@ -1,6 +1,6 @@
 ---
 title: "Diagnostics Catalog"
-description: "The exact Latent error texts: lexer, parser, type checker, codegen, self-hosted compiler; causes, how to fix, and format limitations (no error codes, the L:C position inside the text)."
+description: "The exact Latent error texts: lexer, parser, modules and linking, type checker, codegen, self-hosted compiler; causes, how to fix, and format limitations (no error codes, the L:C position inside the text)."
 sidebar_position: 7
 ---
 
@@ -70,6 +70,60 @@ Typical examples:
 Engine #1: `Expected <T> but got '<value>' at line N`,
 `Unexpected token '<value>' at line N`, `Expected decorator name at line N`,
 `Invalid type annotation at line N`.
+
+## Modules and linking
+
+Sources: `src/modules/loader.rs` (loading, paths), `src/modules/linker.rs`
+(tables, mangling), `src/modules/manifest.rs` (the `LPF1` manifest), `src/lib.rs`
+(the single-file API). Every loader/linker error carries a **file path**, and
+import errors also carry the declaration position: `path:line:col: ...`. The
+message texts themselves are Russian (engine #2), so they are quoted verbatim.
+
+| Text (verbatim) | Cause | Fix |
+|---|---|---|
+| `абсолютный путь импорта недопустим: '<path>'` | the path starts with `/`, `C:\` or `\\` | use a relative path (`./`, `../`) |
+| `путь импорта должен оканчиваться на '.lat': '<path>'` | the extension is missing | add `.lat` |
+| `путь импорта должен быть относительным ('./' или '../'): '<path>'` | `import { x } from "math.lat"` | put `./` before the name |
+| `<path>:<L>:<C>: файл не найден: <resolved>` | no file at the resolved path | create the file or fix the path |
+| `<path>:<L>:<C>: символ '<name>' не экспортирован из '<path>'` | importing a private/non-existent name, a typo | add `export` or fix the name |
+| `<path>:<L>:<C>: имя '<name>' уже объявлено в модуле` | the import conflicts with a local `fn`/`class`/`enum` | rename the local name or use an alias |
+| `<path>:<L>:<C>: дубликат импортированного имени '<name>'` | the same name is imported twice | keep one import |
+| `<path>:<L>:<C>: export '<name>': объявление не найдено` | `export` is attached to a name that does not exist (internal linker check) | move the `export` to the declaration |
+| `<path>:<L>:<C>: модуль не найден: <resolved>` | the file was present at load time but got lost during linking | check the file set/paths |
+| `<path>: файл передан дважды с разным содержимым` | two files with one canonical path and different text | keep one file with one content |
+| `<path>: entry-файл не найден среди переданных файлов` | the entry is not in the `SourceFile` set | pass the entry in `files` |
+| `<path>: <lexer/parser error>` | a syntax error in a specific file | see "Lexer"/"Parser" |
+| `Импорты не поддерживаются в однофайловой компиляции: используйте latent::compile_files / latentc compile <entry.lat> (проект из нескольких файлов)` | the source contains `import` but `compile_source`/`latent_compile` was called | compile the project with `compile_files`/`latentc compile` |
+| `bundle: программа должна быть связана (import/export уже сняты)` | internal: `bundle_files` received a non-linked AST | do not call `bundle::print_program` directly |
+| `LPF1: манифест слишком короткий` · `LPF1: неверная магия (ожидалось 'LPF1')` · `LPF1: неожиданный конец манифеста` · `LPF1: неожиданный конец манифеста (строка)` · `LPF1: путь/исходник не является UTF-8` · `LPF1: манифест без файлов` · `LPF1: entry_index <N> вне диапазона файлов` | a broken/incompatible manifest in the `latent_compile_files`/`latent_bundle_files` C-ABI | rebuild the manifest (see [CLI](./cli.md#multi-file-abi-latent_compile_files)) |
+
+A real output (engine #2, `latentc check`, verbatim):
+
+```text
+$ latentc check main.lat
+error: main.lat:1:10: символ 'sq' не экспортирован из 'math.lat'
+```
+
+Parser/type-checker diagnostics are not appended to a module error: the project
+structure is checked first, the types after it. If the error is in an imported
+file, it is printed with that file's path, not the entry's.
+
+### The same errors in engine #1 (English)
+
+Engine #1 (`web-ide/compiler/modules*.js`) throws `ModuleError` with a `code`
+field; the text carries the path and, when known, the line (`path:line: ...`):
+
+| Text | `code` |
+|---|---|
+| `module path must be relative, got '<path>'` / `module path must end with '.lat': '<path>'` / `module path '<path>' escapes the project root` | `MODULE_PATH_ABSOLUTE` / `MODULE_PATH_EXTENSION` / `MODULE_PATH_OUTSIDE` |
+| `import path must be relative ('./' or '../'), got '<path>'` | `MODULE_PATH_NOT_RELATIVE` |
+| `module '<path>' not found (resolved to '<path>'). Create the file in the workspace (＋) or fix the import path.` | `MODULE_NOT_FOUND` |
+| `module '<path>' does not export '<name>'` | `NOT_EXPORTED` |
+| `duplicate imported name '<name>'` | `DUPLICATE_IMPORT` |
+| `duplicate module file '<path>' in workspace` · `duplicate top-level declaration '<name>'` · `duplicate enum variant '<name>'` | `DUPLICATE_MODULE` / `DUPLICATE_DECLARATION` |
+| `ambiguous enum variant '<variant>' imported from '<path>'` | `AMBIGUOUS_VARIANT` |
+| `entry file '<path>' not found in workspace` · `project has no .lat files` | `ENTRY_NOT_FOUND` / `PROJECT_EMPTY` |
+| `invalid module manifest: <detail>` | `MANIFEST_INVALID` |
 
 ## Type checker
 
@@ -215,6 +269,12 @@ non-empty line is a comment such as `// Does not compile with engine #2: ...`
 info string contains `expected-error`. This is how the host-only examples and the
 examples from the table above are marked. Do not mark working examples: the validator
 reports «устаревший маркер» ("stale marker").
+
+Multi-file examples (a block with `import` that does not compile on its own) are
+marked with the `module-part` marker — either as the first line
+`// module-part <file>` or in the info string (`latent module-part`). The
+validator **skips and counts** such blocks separately; to check a project use
+`latentc check <entry.lat>`. See [modules](../guide/modules.md).
 
 ## How to read a diagnostic
 

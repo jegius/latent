@@ -56,7 +56,8 @@ ES-модуль `main.js`, все остальные файлы — обычны
 | Исполнение | `interpreter.js`, `interpreter-statements.js`, `interpreter-expressions.js`, `interpreter-builtins.js`, `interpreter-ai.js` | планировщик goroutines, вызовы функций/методов, инструкции, выражения, таблица builtins, детерминированные AI-mock'и |
 | AI | `ai-config.js`, `ai-gateway.js`, `repair.js`, `run.js` | конфигурация и persistent-кэш инференса, HTTP-гейтвей (ollama / openai-compatible), self-repair, pre-fetch + запуск программы |
 | Анализ | `analysis.js` | метрики и оценка сложности для вкладки AI Insights |
-| Движок №2 | `wasm-loader.js`, `loader.js` | ленивая загрузка/ABI WASM-компилятора; публичный API движка №1 (`compile`/`checkSyntax`/`getVersion`) |
+| Модули | `modules.js`, `modules-link.js`, `modules-manifest.js`, `modules-rewrite.js`, `parser-modules.js` | канонизация путей и DFS-граф импортов, двухфазная линковка с манглингом `mN$`, манифест `LPF1` и хэш проекта, переписывание AST, грамматика `import`/`export` и `enum` |
+| Движок №2 | `wasm-loader.js`, `loader.js` | ленивая загрузка/ABI WASM-компилятора (`latent_compile` и `latent_compile_files`); публичный API движка №1 (`compile`/`checkSyntax`/`getVersion`) |
 | Публичный API | `index.js` | агрегатор; `compiler-loader.js` — его браузерный фасад |
 
 ### 3.3 Слой сервисов `services/` (бизнес-логика, без DOM)
@@ -64,6 +65,7 @@ ES-модуль `main.js`, все остальные файлы — обычны
 | Модуль | Ответственность |
 |---|---|
 | `compiler-service.js` | компиляция/запуск, self-repair-цикл, форматирование результата и hex-дампа байткода, ленивая загрузка движка №2 |
+| `compiler-service-project.js` | многофайловые проекты: нормализация project-input, выбор движка, линковка (движок №1) и манифест `LPF1` (движок №2), кэш по хэшу набора файлов |
 | `ai-settings-service.js` | загрузка/сохранение настроек AI в `localStorage`, применение к `AIConfig`, проверка соединения |
 | `workspace-service.js` | модель файлов `.lat` (создание/переименование/удаление/активный файл), персистентность |
 | `share-service.js` | код в base64 URL-hash (UTF-8-безопасно) и `localStorage` |
@@ -107,7 +109,7 @@ ES-модуль `main.js`, все остальные файлы — обычны
 | `examples/` | реальные `.lat`-файлы (единый источник правды), `manifest.js` (метаданные), `loader.js` (fetch в браузере / fs в Node), `index.js` |
 | `styles/` | base, menubar, toolbar, panels, editor, output, statusbar, responsive, modal, ai-settings; точка входа — `index.css` |
 | `scripts/` | `check-structure.mjs` — структурный аудит (см. §6) |
-| `test/` | 22 файла `node:test`, 368 тестов, покрывают все слои, кроме DOM-обвязки (см. §7) |
+| `test/` | 27 файлов `node:test`, 414 тестов, покрывают все слои, кроме DOM-обвязки (см. §7) |
 
 ### 3.7 Направление зависимостей
 
@@ -163,6 +165,31 @@ main.js ──► controllers/ ──► services/ ──► compiler-loader.js 
    модуль → `null` (IDE остаётся на движке №1). `version()` берётся из
    `latent_version`, если экспортирована.
 
+Дополнительно `wasm-loader` определяет `supportsModules` (есть ли в сборке
+`latent_compile_files`) и даёт `compileFiles(manifest)`.
+
+### 4.4 Многофайловый проект (модули)
+
+Точка входа — `CompilerService.compileForRunProject(files, entry)` из
+`services/compiler-service-project.js`; активный файл workspace считается entry.
+
+1. `normalizeProjectInput` приводит вход к `{files: [{name, code}], entry}` и
+   валидирует, что entry есть в наборе.
+2. `projectUsesModules` решает, нужен ли модульный путь: файлов больше одного
+   или в каком-то файле есть `import`.
+3. **Движок №2** (если ABI есть): `buildModuleManifest` сортирует файлы по
+   пути, `encodeModuleManifest` собирает `LPF1`, `wasm.compileFiles(bytes)`
+   отдаёт байткод; результат кэшируется по `projectHash` (пути + содержимое +
+   entry, лимит 32).
+4. **Движок №1**: `linkModuleProject(files, entry)` — DFS-граф, таблицы
+   символов, манглинг, переписанный AST; интерпретатор исполняет уже связанную
+   программу (`runLatentProject`). Кэш линковки — по хэшу набора файлов.
+5. При ошибке движка №2 проект сначала проверяется JS-линкером (его
+   диагностика «нет файла / символ не экспортирован» точнее), затем исполнение
+   идёт движком №1 с пометкой в статус-баре.
+6. `checkSyntaxProject` проверяет только линковку и синтаксис; self-repair
+   правит **только entry-файл**, остальные считаются библиотечными.
+
 ## 5. SOLID-решения и что декомпозировано
 
 - **SRP**: один модуль — одна зона ответственности. Крупные модули разбиты:
@@ -193,7 +220,7 @@ main.js ──► controllers/ ──► services/ ──► compiler-loader.js 
   (qwen3 и т.п.) действительно очищаются; покрыто тестом.
 - **Порог 300 строк** на `.js`-файл соблюдается во всём `web-ide/`: самый
   длинный модуль (`services/formatter-service.js`) доходит примерно до 270
-  строк, остальные меньше; аудит подтверждает `OK (77 .js-файлов)`.
+  строк, остальные меньше; аудит подтверждает `OK (96 .js-файлов)`.
 
 ## 6. Структурный аудит
 
@@ -201,81 +228,89 @@ main.js ──► controllers/ ──► services/ ──► compiler-loader.js 
 проверяет: размер каждого `.js`-файла (< 300 строк), что barrel-фасады
 (`compiler-loader.js`, `examples.js`, `views/canvas-editor.js`,
 `compiler/index.js`) не толще 40 строк и содержат только реэкспорт, отсутствие
-BOM и TODO-заглушек. Текущий результат: **OK (77 `.js`-файлов)**.
+BOM и TODO-заглушек. Текущий результат: **OK (96 `.js`-файлов)**.
 
 ## 7. Покрытие тестами
 
-Методика: `node --experimental-test-coverage --test "test/*.test.js"`
+Методика: `node --experimental-test-coverage --test "test/*.test.js" "test/*.test.mjs"`
 (Node v24.21.0), покрытие считается по модулям, которые реально загружены
-тестами. Всего **368 тестов, 0 падений**. Итог: **99.53% строк / 96.98% ветвей /
-98.39% функций** (до работы: 89.44 / 85.44 / 87.73 на 149 тестах).
+тестами. Всего **414 тестов, 0 падений**. Итог: **97.51% строк / 91.47% ветвей /
+98.52% функций** (до модульной работы: 99.53 / 96.98 / 98.39 на 368 тестах — доля
+упала, потому что добавились новые файлы модулей с неполным покрытием:
+`modules-rewrite.js` — 70.95% строк).
 
 | Файл | Line % | Branch % | Funcs % |
 |---|---:|---:|---:|
 | `compiler-loader.js` | 100.00 | 100.00 | 100.00 |
 | `compiler/ai-config.js` | 100.00 | 100.00 | 100.00 |
 | `compiler/ai-gateway.js` | 100.00 | 97.50 | 100.00 |
-| `compiler/analysis.js` | 100.00 | 100.00 | 100.00 |
+| `compiler/analysis.js` | 100.00 | 92.16 | 100.00 |
 | `compiler/environment.js` | 100.00 | 100.00 | 100.00 |
+| `compiler/host-features.js` | 100.00 | 93.33 | 100.00 |
 | `compiler/index.js` | 100.00 | 100.00 | 100.00 |
 | `compiler/interpreter-ai.js` | 100.00 | 100.00 | 100.00 |
 | `compiler/interpreter-builtins.js` | 100.00 | 100.00 | 100.00 |
-| `compiler/interpreter-expressions.js` | 99.56 | 99.00 | 100.00 |
-| `compiler/interpreter-statements.js` | 100.00 | 98.70 | 100.00 |
-| `compiler/interpreter.js` | 98.43 | 89.89 | 96.15 |
+| `compiler/interpreter-expressions.js` | 99.59 | 98.13 | 100.00 |
+| `compiler/interpreter-statements.js` | 98.30 | 97.44 | 100.00 |
+| `compiler/interpreter.js` | 97.67 | 85.98 | 96.67 |
+| `compiler/lazy-ai.js` | 95.00 | 100.00 | 80.00 |
 | `compiler/lexer.js` | 100.00 | 97.78 | 100.00 |
 | `compiler/loader.js` | 100.00 | 100.00 | 100.00 |
+| `compiler/modules-link.js` | 96.49 | 79.31 | 100.00 |
+| `compiler/modules-manifest.js` | 97.58 | 74.58 | 100.00 |
+| `compiler/modules-rewrite.js` | 70.95 | 55.13 | 100.00 |
+| `compiler/modules.js` | 96.85 | 82.52 | 100.00 |
 | `compiler/oop.js` | 100.00 | 100.00 | 100.00 |
 | `compiler/parser-concurrency.js` | 100.00 | 100.00 | 100.00 |
 | `compiler/parser-core.js` | 100.00 | 100.00 | 100.00 |
-| `compiler/parser-declarations.js` | 100.00 | 97.06 | 100.00 |
-| `compiler/parser-expressions.js` | 98.73 | 96.21 | 100.00 |
+| `compiler/parser-declarations.js` | 100.00 | 97.50 | 100.00 |
+| `compiler/parser-expressions.js` | 98.73 | 96.24 | 100.00 |
 | `compiler/parser-match.js` | 100.00 | 100.00 | 100.00 |
-| `compiler/parser-statements.js` | 100.00 | 98.33 | 100.00 |
+| `compiler/parser-modules.js` | 95.08 | 90.32 | 100.00 |
+| `compiler/parser-statements.js` | 100.00 | 98.35 | 100.00 |
 | `compiler/parser.js` | 100.00 | 100.00 | 100.00 |
-| `compiler/repair.js` | 100.00 | 91.43 | 100.00 |
-| `compiler/run.js` | 100.00 | 100.00 | 100.00 |
+| `compiler/repair-core.js` | 100.00 | 89.66 | 100.00 |
+| `compiler/repair.js` | 100.00 | 100.00 | 100.00 |
+| `compiler/run.js` | 100.00 | 94.87 | 100.00 |
 | `compiler/token.js` | 100.00 | 100.00 | 100.00 |
-| `compiler/value-utils.js` | 100.00 | 100.00 | 100.00 |
-| `compiler/wasm-loader.js` | 100.00 | 80.00 | 100.00 |
+| `compiler/value-utils.js` | 98.26 | 98.61 | 100.00 |
+| `compiler/wasm-loader.js` | 100.00 | 73.68 | 100.00 |
 | `examples.js` | 100.00 | 100.00 | 100.00 |
 | `examples/index.js` | 100.00 | 100.00 | 100.00 |
-| `examples/loader.js` | 100.00 | 100.00 | 100.00 |
+| `examples/loader.js` | 92.75 | 76.92 | 77.78 |
 | `examples/manifest.js` | 100.00 | 100.00 | 100.00 |
 | `hot-reload.js` | 100.00 | 94.44 | 91.67 |
 | `services/ai-settings-service.js` | 100.00 | 100.00 | 100.00 |
-| `services/compiler-service.js` | 100.00 | 97.37 | 100.00 |
+| `services/compiler-service-project.js` | 92.23 | 74.70 | 95.24 |
+| `services/compiler-service.js` | 98.25 | 92.19 | 100.00 |
 | `services/formatter-service.js` | 100.00 | 99.26 | 100.00 |
 | `services/share-service.js` | 100.00 | 100.00 | 100.00 |
-| `services/workspace-service.js` | 100.00 | 100.00 | 100.00 |
+| `services/workspace-service.js` | 100.00 | 98.18 | 100.00 |
 | `views/editor/editor-metrics.js` | 98.73 | 95.00 | 100.00 |
 | `views/editor/editor-theme.js` | 100.00 | 100.00 | 100.00 |
 | `views/editor/line-tokenizer.js` | 100.00 | 100.00 | 100.00 |
-| **Итого** | **99.53** | **96.98** | **98.39** |
+| **Итого** | **97.51** | **91.47** | **98.52** |
 
-Непокрытые строки — только защитные/недостижимые ветки: проверка остатка
+Непокрытые строки — защитные/недостижимые ветки и редкие пути: остаток
 goroutine-очереди после опустошения планировщика (`interpreter.js`), `catch`
 восстановления позиции в `skipTypeArgs` (`parser-expressions.js`),
-`default`-ветка неизвестного паттерна (`interpreter-expressions.js`),
-недостижимые из WASM возвраты `Uint8Array`/`ArrayBuffer` (`wasm-loader.js`).
+недостижимые из WASM возвраты `Uint8Array`/`ArrayBuffer` (`wasm-loader.js`),
+ветки диагностики в `modules-rewrite.js` (переписывание редких видов паттернов и
+декораторов), защитные проверки манифеста (`modules-manifest.js`,
+`modules-link.js`), деградация `examples/loader.js` без браузерных API.
 
-### Что добавлено в тесты (11 новых файлов, 188 тестов)
+### Что добавлено в тесты
 
-| Файл | Что проверяет |
-|---|---|
-| `test/ai-gateway.test.js` | оба провайдера гейтвея на стабе `fetch`, HTTP-ошибки, нормализация ответов, вырезание `<think>`, pre-fetch и persistent-кэш `runLatent`, AI-ветка `repairCode` и fallback |
-| `test/ai-settings.test.js` | загрузка/сохранение/применение настроек, битый JSON, недоступный `localStorage`, `testConnection` (mock/ollama/ошибка) |
-| `test/builtins.test.js` | таблица builtins: print/len/push/range/zeros/ones/channel/tensor/semantic/matmul/dot/magnitude/Result/Option/assert/AI/контракты |
-| `test/value-utils.test.js` | Tensor/формы, deepEqual, formatValue, matmul (2D/1D), callMethod (каналы/тензоры/массивы/строки), Environment, Instance/findMethod |
-| `test/compiler-pipeline.test.js` | CompilerService, self-repair (успех/отказ/лимит 3 попыток), детерминированный ремонт, анализ сложности, mock-AI |
-| `test/engine1-extra.test.js` | структурные assert_eq, FieldAssign/IndexAssign, for-in по тензорам/Result/экземплярам, вложенные fn/class, select-инструкции и выражения, rethrow, AI-режим, Channel.close |
-| `test/parser-edge.test.js` | match-паттерны и ошибки, лямбды, декораторы, аннотации типов, for-in без `let`, C-for с выражением-update, return/spawn/assert/test-крайние случаи |
-| `test/services-extra.test.js` | шаринг без браузерных API и с `location`, деградация workspace при битом/недоступном storage, браузерный путь загрузчика примеров, HotReload/toggle |
-| `test/formatter-edge.test.js` | пробелы в if/for/else, многострочные и inline-комментарии, строки с экранированием, пустые строки, вложенные отступы |
-| `test/wasm-loader-edge.test.js` | Cache API (промах/попадание/ошибка), голый fetch, чужие/битые WASM, оба контракта compile, `CompilerService.ensureWasmCompiler` на реальном `compiler.wasm` |
-| `test/editor-core.test.js` | `line-tokenizer` (все типы токенов) и `editor-metrics` (line/col, скролл, автоскролл, sync textarea) — без DOM |
+- Раньше: 11 новых файлов, 188 тестов (гейтвей, настройки AI, builtins,
+  value-utils, pipeline, engine1-extra, parser-edge, services-extra,
+  formatter-edge, wasm-loader-edge, editor-core). Старые 149 тестов не менялись.
+- Модули (+46 тестов): `test/modules.test.js` (резолвер путей, граф, циклы,
+  кэш), `test/modules-engine1.test.js` (линковка и исполнение в движке №1),
+  `test/modules-manifest.test.js` (`LPF1`, `projectHash`),
+  `test/modules-wasm-abi.test.js` (реальный `latent_compile_files`),
+  `test/modules-service.test.js` (проектный сервис, кэш, engine #2-фолбэк),
+  `test/bundling.test.mjs` (сборка/чанки).
 
-Старые 149 тестов не менялись и остаются зелёными.
 
 ## 8. Как запускать
 

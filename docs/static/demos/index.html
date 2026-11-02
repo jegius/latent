@@ -3,14 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Latent в браузере — интерактивные демо</title>
-  <meta name="description" content="Три интерактивных демо Latent: бенчмарки против JS, обработка изображений и физика частиц. Компилятор Latent — это WASM, ядро — тоже WASM." />
+  <title>Latent в браузере — компилятор, горутины, WASM</title>
+  <meta name="description" content="Интерактивные демо Latent: компилятор в WebAssembly, CSP-горутины и каналы, AI-примитивы, self-hosted компилятор, песочница, модули и детерминированная память. Живые замеры, честный parity, ноль зависимостей." />
+  <meta name="theme-color" content="#04070d" />
+  <meta property="og:title" content="Latent в браузере — компилятор, горутины, WASM" />
+  <meta property="og:description" content="Язык с CSP-конкурентностью, AI-примитивами и self-hosted компилятором — прямо в браузере. Живые демо без зависимостей." />
+  <meta property="og:type" content="website" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23070b12'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%235eead4'%3E%CE%BB%3C/text%3E%3C/svg%3E" />
   <script>
-    // Keep relative URLs stable whether the host serves /demos/bench or
-    // /demos/bench/ (Docusaurus serve drops the trailing slash).
+    // Keep relative URLs stable whether the host serves /demos or /demos/
+    // (Docusaurus serve drops the trailing slash).
     (() => {
-      const m = location.pathname.match(/^(.*\/demos)(?:\/(bench|image|physics))?\/?$/);
+      const m = location.pathname.match(/^(.*\/demos)(?:\/(bench|image|physics|concurrency|ai|selfhost|sandbox|modules))?\/?$/);
       if (!m) return;
       const base = document.createElement('base');
       base.href = `${m[1]}/${m[2] ? `${m[2]}/` : ''}`;
@@ -21,60 +25,327 @@
         onerror="this.onerror=null;this.href='./assets/demo.css'" />
 </head>
 <body>
+  <a class="skip-link" href="#main">Перейти к содержимому</a>
+
   <header class="topbar">
     <div class="wrap topbar-inner">
-      <a class="brand" href="./"><span class="brand-mark">λ</span> Latent demos</a>
-      <nav class="topnav">
-        <a class="active" href="./">Обзор</a>
+      <a class="brand" href="./">
+        <span class="brand-mark">λ</span>
+        <span>Latent demos<small>компилятор в браузере</small></span>
+      </a>
+      <button class="btn btn-icon btn-ghost nav-toggle" type="button" data-nav-toggle
+              aria-label="Меню" aria-expanded="false" aria-controls="topnav">☰</button>
+      <nav class="topnav" id="topnav" aria-label="Основная навигация">
+        <a class="active" href="./" aria-current="page">Обзор</a>
         <a href="./bench/">Бенчмарк</a>
         <a href="./image/">Изображения</a>
         <a href="./physics/">Физика</a>
+        <a href="#killer">Killer-демо</a>
         <a class="keep" href="../examples/frontend-showcase">Документация</a>
         <span class="tag">WASM</span>
       </nav>
     </div>
   </header>
 
-  <main>
+  <main id="main">
+    <!-- ================= HERO ================= -->
     <section class="wrap hero">
-      <p class="eyebrow">vanilla JS · без зависимостей · запускается на этой странице</p>
-      <h1>Latent в браузере.<br /><span class="grad">Не «hello world», а рабочая нагрузка.</span></h1>
-      <p class="lead">
-        Три демо, где Latent компилируется в <strong>WebAssembly</strong> и делает настоящую работу:
-        гоняет алгоритмы против JS, фильтрует пиксели, считает гравитацию для десятков тысяч частиц.
-        Рядом — исходники <code class="mono">.lat</code>, живые метрики и честное сравнение.
-      </p>
-      <div class="hero-actions">
-        <a class="btn btn-primary" href="./bench/">Открыть бенчмарк <span aria-hidden="true">→</span></a>
-        <a class="btn" href="./image/">Фильтры на canvas</a>
-        <a class="btn" href="./physics/">10 000+ частиц</a>
-      </div>
-      <div class="hero-meta">
-        <span><b id="mod-count">7</b> wasm-модулей</span>
-        <span><b id="mod-size">12.1 KiB</b> суммарно</span>
-        <span><b>0</b> внешних зависимостей</span>
-        <span><b>compiler.wasm</b> компилирует код в браузере</span>
+      <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">vanilla JS · 0 зависимостей · компилятор — тоже WASM</p>
+          <h1>
+            <span class="line">Latent <span class="grad">в браузере.</span></span>
+            <span class="line" style="font-size:.62em;letter-spacing:-.03em;color:var(--muted);font-weight:700">От исходника до 60 fps —</span>
+            <span class="line grad-warm" style="font-size:.62em;letter-spacing:-.03em">без сервера и сборщика.</span>
+          </h1>
+          <p class="lead">
+            Компилятор Latent — это <strong>WebAssembly</strong>. Горутины, каналы, AI-примитивы
+            и песочница — <em>часть языка</em>, а не библиотеки. Ниже — живые демо, которые считают
+            настоящую нагрузку прямо на этой странице: ваши числа, честный parity и ноль
+            внешних зависимостей.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#killer">Смотреть killer-демо <span aria-hidden="true">→</span></a>
+            <a class="btn" href="./bench/">Бенчмарк JS ↔ WASM</a>
+            <a class="btn btn-ghost" href="../examples/frontend-showcase">Документация</a>
+          </div>
+          <div class="hero-meta" aria-label="Ключевые цифры">
+            <span><b id="mod-count">7</b> wasm-модулей · 3 демо</span>
+            <span class="dot" aria-hidden="true"></span>
+            <span><b id="mod-size">12.1 KiB</b> суммарно</span>
+            <span class="dot" aria-hidden="true"></span>
+            <span><b id="compiler-size">616 KiB</b> compiler.wasm</span>
+            <span class="dot" aria-hidden="true"></span>
+            <span><b class="teal">0</b> зависимостей</span>
+          </div>
+        </div>
+
+        <div class="hero-visual">
+          <canvas class="hero-canvas" id="hero-canvas" aria-hidden="true"></canvas>
+          <div class="terminal" style="position:relative" data-tabs>
+            <div class="terminal-head">
+              <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="terminal-title">latent · syntax</span>
+              <div class="terminal-tabs" role="tablist" aria-label="Примеры синтаксиса Latent">
+                <button type="button" role="tab" data-tab="spawn" aria-selected="true">channels.lat</button>
+                <button type="button" role="tab" data-tab="select" aria-selected="false" tabindex="-1">select_yield.lat</button>
+                <button type="button" role="tab" data-tab="ai" aria-selected="false" tabindex="-1">ai_embed.lat</button>
+              </div>
+            </div>
+            <div data-panel="spawn">
+              <pre><code class="hero-src" data-src="spawn">fn main() -&gt; int {
+    let jobs = channel();
+
+    spawn producer(jobs, 5);
+    spawn consumer(jobs, 5);
+
+    // fan-in: три воркера — один канал
+    let results = channel();
+    spawn worker(results, 10);
+    spawn worker(results, 20);
+    spawn worker(results, 30);
+
+    let total = 0;
+    for (let i = 0; i &lt; 3; i = i + 1) {
+        total = total + results.recv();
+    }
+    return total;
+}</code></pre>
+            </div>
+            <div data-panel="select" hidden>
+              <pre><code class="hero-src" data-src="select">fn main() -&gt; int {
+    let ch = channel&lt;int&gt;();
+    spawn producer(ch, 3);
+
+    // блокирующий select
+    let first = select {
+        case v &lt;- ch: v
+    };
+
+    let done = channel&lt;int&gt;();
+    spawn {
+        done &lt;- 100;
+    }
+
+    let i = 0;
+    while (i &lt; 2) {
+        yield;
+        i = i + 1;
+    }
+    return first + done.recv();
+}</code></pre>
+            </div>
+            <div data-panel="ai" hidden>
+              <pre><code class="hero-src" data-src="ai">fn main() -&gt; int {
+    let v1 = ai_embed("parallel map-reduce");
+    let v2 = ai_embed("goroutines and channels");
+    let v3 = ai_embed("chocolate cake recipe");
+
+    let related = cosine_similarity(v1, v2);
+    let unrelated = cosine_similarity(v1, v3);
+
+    let report = ai_infer("gpt-4",
+        "explain the similarity scores");
+
+    print(related, unrelated, report);
+    return 0;
+}</code></pre>
+            </div>
+            <div class="terminal-foot">
+              <span class="pill-live"><i></i> syntax</span>
+              <span id="hero-src-meta">web-ide/examples/channels.lat</span>
+              <span class="spacer"></span>
+              <a href="../examples/frontend-showcase" style="color:var(--muted)">исходники →</a>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
-    <section class="wrap section">
+    <!-- ================= TICKER ================= -->
+    <div class="ticker" aria-hidden="true">
+      <div class="ticker-track">
+        <span>spawn</span><span>channel()</span><span>select</span><span>yield</span>
+        <span>ai_embed</span><span>ai_infer</span><span>seed.wasm</span><span>stage2 === stage3</span>
+        <span>env.print</span><span>import</span><span>fixed-point i32</span><span>0 GC</span>
+        <span>spawn</span><span>channel()</span><span>select</span><span>yield</span>
+        <span>ai_embed</span><span>ai_infer</span><span>seed.wasm</span><span>stage2 === stage3</span>
+        <span>env.print</span><span>import</span><span>fixed-point i32</span><span>0 GC</span>
+      </div>
+    </div>
+
+    <!-- ================= KILLER DEMOS ================= -->
+    <section class="wrap section" id="killer">
       <div class="section-head">
         <div>
-          <h2>Три сценария, где WASM-ядро уместно</h2>
-          <p class="sub">Не замена React и не «перепишите всё». Вычислительное ядро — да.</p>
+          <p class="eyebrow">killer-демо · 5 направлений</p>
+          <h2>То, чего нет у «просто JS»</h2>
+          <p class="sub">
+            Конкурентность, AI и компилятор — в грамматике языка. Каждое демо открывается
+            отдельной страницей и считает всё у вас в браузере.
+          </p>
         </div>
-        <span class="badge ok">все демо работают офлайн</span>
+        <span class="badge ok no-dot">работают офлайн</span>
+      </div>
+
+      <div class="killer-grid">
+        <article class="killer-card" data-spotlight>
+          <div class="k-head">
+            <span class="k-icon" aria-hidden="true">⇄</span>
+            <span class="tag">CSP</span>
+            <span class="k-index">01</span>
+          </div>
+          <div class="k-visual kv-concurrency" aria-hidden="true">
+            <svg viewBox="0 0 260 104" preserveAspectRatio="none">
+              <path d="M 24 31 C 70 18, 110 60, 148 34 S 210 26, 232 70" />
+              <path d="M 48 70 C 90 92, 130 52, 170 72 S 214 54, 240 30" />
+              <path d="M 24 31 C 80 46, 130 20, 176 66 S 220 84, 240 30" />
+            </svg>
+            <i class="node n1"></i><i class="node n2"></i><i class="node n3"></i><i class="node n4"></i>
+            <i class="token"></i>
+          </div>
+          <h3><a href="./concurrency/">Горутины и каналы</a></h3>
+          <p>
+            <code class="mono">spawn</code>, <code class="mono">channel()</code>,
+            <code class="mono">select</code> и <code class="mono">yield</code> — синтаксис.
+            Живой планировщик, 1 000 горутин, токены сообщений и сравнение с promise-кодом.
+          </p>
+          <div class="k-foot">
+            <span class="badge violet no-dot">killer · открыть</span>
+            <a class="card-link" href="./concurrency/">Открыть</a>
+          </div>
+        </article>
+
+        <article class="killer-card violet" data-spotlight>
+          <div class="k-head">
+            <span class="k-icon" aria-hidden="true">◈</span>
+            <span class="tag violet">AI-native</span>
+            <span class="k-index">02</span>
+          </div>
+          <div class="k-visual kv-ai" aria-hidden="true" data-heatmap></div>
+          <h3><a href="./ai/">AI-примитивы в грамматике</a></h3>
+          <p>
+            <code class="mono">ai_embed</code>, <code class="mono">ai_infer</code>,
+            <code class="mono">tensor</code>, <code class="mono">matmul</code> — не SDK.
+            Embedding → heatmap похожести → стриминг токенов, офлайн-mock по умолчанию.
+          </p>
+          <div class="k-foot">
+            <span class="badge violet no-dot">AI · открыть</span>
+            <a class="card-link" href="./ai/">Открыть</a>
+          </div>
+        </article>
+
+        <article class="killer-card sky" data-spotlight>
+          <div class="k-head">
+            <span class="k-icon" aria-hidden="true">λ</span>
+            <span class="tag">self-hosted</span>
+            <span class="k-index">03</span>
+          </div>
+          <div class="k-visual kv-selfhost" aria-hidden="true">
+            <span>seed.wasm</span><em>→</em><span>stage1</span><em>→</em><span>stage2</span><em>→</em><span>✓ stage3</span>
+          </div>
+          <h3><a href="./selfhost/">Компилятор компилирует себя</a></h3>
+          <p>
+            42 KB <code class="mono">seed.wasm</code> собирает Latent прямо в браузере.
+            Цепочка stage1 → stage2 → stage3, sha256 и побайтовый fixed point.
+          </p>
+          <div class="k-foot">
+            <span class="badge info no-dot">42 KB seed</span>
+            <a class="card-link" href="./selfhost/">Открыть</a>
+          </div>
+        </article>
+
+        <article class="killer-card pink" data-spotlight>
+          <div class="k-head">
+            <span class="k-icon" aria-hidden="true">⛨</span>
+            <span class="tag pink">sandbox</span>
+            <span class="k-index">04</span>
+          </div>
+          <div class="k-visual kv-sandbox" aria-hidden="true">
+            <span class="shield"></span>
+            <ul>
+              <li>env.print</li>
+              <li>DOM</li>
+              <li>network</li>
+              <li>cookies</li>
+            </ul>
+          </div>
+          <h3><a href="./sandbox/">Безопасное исполнение</a></h3>
+          <p>
+            Единственный импорт — <code class="mono">env.print</code>. Бесконечный цикл,
+            OOB-память и большой malloc безопасно ловятся лимитами, а не «доверием».
+          </p>
+          <div class="k-foot">
+            <span class="badge pink no-dot">sandbox</span>
+            <a class="card-link" href="./sandbox/">Открыть</a>
+          </div>
+        </article>
+
+        <article class="killer-card lime span-2" data-spotlight>
+          <div class="k-head">
+            <span class="k-icon" aria-hidden="true">⌘</span>
+            <span class="tag" style="color:var(--lime);border-color:rgba(190,242,100,.3);background:rgba(190,242,100,.07)">modules</span>
+            <span class="k-index">05</span>
+          </div>
+          <div style="display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:18px;align-items:center">
+            <div>
+              <h3><a href="./modules/">Многофайловый проект в браузере</a></h3>
+              <p style="margin-top:9px">
+                Дерево <code class="mono">.lat</code>-файлов, <code class="mono">import</code> /
+                <code class="mono">export</code>, граф модулей и ленивые чанки. Сборка и запуск —
+                без сервера, без node_modules.
+              </p>
+              <div class="chip-row" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">
+                <span class="chip">math.lat</span>
+                <span class="chip">model.lat</span>
+                <span class="chip">main.lat</span>
+                <span class="chip">lazy chunk</span>
+              </div>
+            </div>
+            <div class="k-visual kv-modules" style="height:126px" aria-hidden="true">
+              <svg viewBox="0 0 300 126" preserveAspectRatio="none">
+                <path d="M 54 30 C 100 22, 140 40, 210 38" />
+                <path d="M 68 96 C 120 106, 170 78, 232 42" />
+                <path d="M 82 32 C 130 60, 180 96, 246 96" />
+              </svg>
+              <span class="file f1">math.lat</span>
+              <span class="file f2">model.lat</span>
+              <span class="file f3">main.lat</span>
+              <span class="file f4">ui.lat</span>
+            </div>
+          </div>
+          <div class="k-foot">
+            <span class="badge lime no-dot">modules</span>
+            <a class="card-link" href="./modules/">Открыть</a>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ================= EXISTING DEMOS ================= -->
+    <section class="wrap section" id="demos">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">измеряемые демо · ваши числа</p>
+          <h2>Три сценария, где WASM-ядро уместно</h2>
+          <p class="sub">
+            Не замена React и не «перепишите всё». Вычислительное ядро — да.
+            Одинаковые алгоритмы на двух рантаймах, контрольные суммы и живой FPS.
+          </p>
+        </div>
+        <a class="btn btn-sm" href="./bench/">Сразу к замерам <span aria-hidden="true">→</span></a>
       </div>
 
       <div class="grid grid-3">
-        <article class="demo-card">
+        <article class="demo-card" data-spotlight>
           <div class="thumb thumb-bench" aria-hidden="true">
-            <i class="bar js" style="height: 62%"></i>
-            <i class="bar js" style="height: 48%"></i>
-            <i class="bar" style="height: 92%"></i>
-            <i class="bar" style="height: 74%"></i>
-            <i class="bar js" style="height: 40%"></i>
-            <i class="bar" style="height: 66%"></i>
+            <i class="bar js" style="height: 58%"></i>
+            <i class="bar js" style="height: 44%"></i>
+            <i class="bar" style="height: 96%"></i>
+            <i class="bar" style="height: 78%"></i>
+            <i class="bar js" style="height: 36%"></i>
+            <i class="bar" style="height: 64%"></i>
           </div>
           <div class="card-tags">
             <span class="chip">FNV-1a</span><span class="chip">sieve</span>
@@ -84,16 +355,16 @@
           <h3>JS vs Latent→WASM</h3>
           <p>
             Пять одинаковых алгоритмов на двух рантаймах. Живые миллисекунды, медиана из трёх
-            прогонов, проверка совпадения контрольных сумм и компиляция исходника в браузере.
+            прогонов, parity контрольных сумм и компиляция исходника в браузере.
           </p>
           <div class="card-foot">
             <a class="card-link" href="./bench/">Запустить бенчмарк</a>
-            <span class="badge">5 задач</span>
+            <span class="badge no-dot">5 задач</span>
           </div>
         </article>
 
-        <article class="demo-card">
-          <div class="thumb thumb-image" aria-hidden="true"></div>
+        <article class="demo-card" data-spotlight>
+          <div class="thumb thumb-image" aria-hidden="true"><span class="scan"></span></div>
           <div class="card-tags">
             <span class="chip">ImageData</span><span class="chip">box blur</span>
             <span class="chip">sobel</span><span class="chip">threshold</span>
@@ -101,15 +372,15 @@
           <h3>Пиксели в линейной памяти</h3>
           <p>
             RGBA-буфер уходит в память WASM, фильтры считаются целочисленно, результат
-            возвращается на canvas. Один и тот же алгоритм на JS — для честного сравнения.
+            возвращается на canvas. Before/after слайдер и график времени кадра.
           </p>
           <div class="card-foot">
             <a class="card-link" href="./image/">Открыть фильтры</a>
-            <span class="badge">real-time</span>
+            <span class="badge no-dot">real-time</span>
           </div>
         </article>
 
-        <article class="demo-card">
+        <article class="demo-card" data-spotlight>
           <div class="thumb thumb-physics" aria-hidden="true">
             <div class="orb b"></div>
             <div class="orb c"></div>
@@ -126,54 +397,102 @@
           </p>
           <div class="card-foot">
             <a class="card-link" href="./physics/">Запустить симуляцию</a>
-            <span class="badge">60 fps</span>
+            <span class="badge no-dot">60 fps</span>
           </div>
         </article>
       </div>
     </section>
 
-    <section class="wrap section">
+    <!-- ================= WHY LATENT ================= -->
+    <section class="wrap section" id="why">
       <div class="section-head">
         <div>
-          <h2>Почему Latent, а не «просто JS»</h2>
+          <p class="eyebrow">почему Latent, а не «просто JS»</p>
+          <h2>Шесть вещей, которые язык даёт из коробки</h2>
           <p class="sub">Честно: не всегда и не во всём. Вот где выигрыш реальный.</p>
         </div>
       </div>
-      <div class="grid grid-2">
-        <div class="panel panel-flat">
-          <div class="row" style="margin-bottom: 8px"><span class="tag">01</span><h3>Память под контролем</h3></div>
-          <p class="muted small" style="margin: 0">
-            Массивы и буферы — это байты в линейной памяти, а не объекты в куче JS. Аллокации
-            явные (<code class="mono">alloc</code>), сборщика мусора нет: нет пауз GC и
-            непредсказуемых «просадок» кадра. Для аудио, canvas и анимаций это важнее среднего FPS.
+
+      <div class="bento">
+        <div class="bento-item reveal" data-spotlight>
+          <span class="b-num">01</span>
+          <div class="b-icon" aria-hidden="true">⇄</div>
+          <h3>CSP-конкурентность в синтаксисе</h3>
+          <p>
+            <code class="mono">spawn</code> и <code class="mono">channel</code> — не промисы
+            и не библиотека. В языке есть <code class="mono">select</code>,
+            <code class="mono">yield</code> и переиспользуемые горутины.
           </p>
+          <span class="b-code">spawn worker(jobs, done);
+let total = 0;
+while (i &lt; 3) {
+    total = total + &lt;-done;
+}</span>
         </div>
-        <div class="panel panel-flat">
-          <div class="row" style="margin-bottom: 8px"><span class="tag">02</span><h3>Компилятор — тоже WASM</h3></div>
-          <p class="muted small" style="margin: 0">
-            <code class="mono">compiler.wasm</code> — это Rust-компилятор Latent, собранный в
-            WebAssembly. Он умеет принимать исходник в браузере и отдавать готовый модуль за
-            миллисекунды. Не нужен сервер, не нужен toolchain на машине пользователя.
+
+        <div class="bento-item reveal" data-spotlight>
+          <span class="b-num">02</span>
+          <div class="b-icon" aria-hidden="true">◈</div>
+          <h3>AI-примитивы в грамматике</h3>
+          <p>
+            <code class="mono">ai_embed</code>, <code class="mono">ai_infer</code>,
+            <code class="mono">cosine_similarity</code> и <code class="mono">tensor</code>
+            компилируются как обычные вызовы — не нужен SDK.
           </p>
+          <span class="b-code">let v = ai_embed(text);
+let s = cosine_similarity(v, q);
+let r = ai_infer("gpt-4", prompt);</span>
         </div>
-        <div class="panel panel-flat">
-          <div class="row" style="margin-bottom: 8px"><span class="tag">03</span><h3>Песочница по построению</h3></div>
-          <p class="muted small" style="margin: 0">
-            У модуля нет доступа к DOM, сети и cookie. Единственный импорт — <code class="mono">env.print</code>.
-            Если вы исполняете чужой или сгенерированный код, WASM ограничивает его ровно тем,
-            что вы сами передали в память.
+
+        <div class="bento-item reveal" data-spotlight>
+          <span class="b-num">03</span>
+          <div class="b-icon" aria-hidden="true">λ</div>
+          <h3>Self-hosted компилятор</h3>
+          <p>
+            <code class="mono">seed.wasm</code> компилирует Latent в браузере. Фиксированная
+            точка stage2 === stage3 проверяется побайтово, а не «на глаз».
           </p>
+          <div class="stat-inline" style="margin-top:14px"><b>42 KB</b><span>seed.wasm</span></div>
+          <span class="b-code">seed.wasm → stage1 → stage2 → stage3
+sha256(stage2) === sha256(stage3)</span>
         </div>
-        <div class="panel panel-flat">
-          <div class="row" style="margin-bottom: 8px"><span class="tag">04</span><h3>Числа — не «примерно»</h3></div>
-          <p class="muted small" style="margin: 0">
-            <code class="mono">int</code> — это i32, переполнение предсказуемо, битовые операции
-            на месте. Фиксированная точка позволяет считать физику и графику без
-            <code class="mono">float</code>-сюрпризов — и без разницы между движками JIT.
+
+        <div class="bento-item reveal" data-spotlight>
+          <span class="b-num">04</span>
+          <div class="b-icon" aria-hidden="true">⛨</div>
+          <h3>Песочница по построению</h3>
+          <p>
+            У модуля нет DOM, сети и cookie — только <code class="mono">env.print</code>.
+            Чужой или сгенерированный код не может выйти за пределы переданной памяти.
           </p>
+          <div class="stat-inline" style="margin-top:14px"><b>0</b><span>доступов к DOM и сети</span></div>
+        </div>
+
+        <div class="bento-item reveal" data-spotlight>
+          <span class="b-num">05</span>
+          <div class="b-icon" aria-hidden="true">⌘</div>
+          <h3>Модули и ленивые чанки</h3>
+          <p>
+            <code class="mono">import</code> / <code class="mono">export</code> между
+            <code class="mono">.lat</code>-файлами, граф модулей и lazy-загрузка — без
+            node_modules и бандлера.
+          </p>
+          <div class="stat-inline" style="margin-top:14px"><b>0</b><span>node_modules</span></div>
+        </div>
+
+        <div class="bento-item reveal" data-spotlight>
+          <span class="b-num">06</span>
+          <div class="b-icon" aria-hidden="true">▦</div>
+          <h3>Детерминированная память</h3>
+          <p>
+            Ручные <code class="mono">alloc</code>, линейная память и i32 вместо объектов.
+            Нет GC-пауз и «иногда 16 мс, иногда 3 мс» — кадр предсказуем.
+          </p>
+          <div class="stat-inline" style="margin-top:14px"><b>0</b><span>GC-пауз в WASM</span></div>
         </div>
       </div>
-      <p class="note" style="margin-top: 16px">
+
+      <p class="note" style="margin-top:18px">
         <b>О цифрах.</b> JS-движки сегодня отличные, и на многих задачах разница небольшая.
         Демо не «доказывают», что WASM быстрее всегда: они показывают ваши собственные числа
         и отдельно — то, что нельзя измерить миллисекундами: отсутствие GC-пауз, контроль
@@ -181,48 +500,111 @@
       </p>
     </section>
 
-    <section class="wrap section">
-      <div class="serction-head section-head">
+    <!-- ================= ARCHITECTURE ================= -->
+    <section class="wrap section" id="architecture">
+      <div class="section-head">
         <div>
-          <h2>Как это устроено</h2>
-          <p class="sub">Один и тот же конвейер на всех трёх страницах.</p>
+          <p class="eyebrow">архитектура · один конвейер на всех страницах</p>
+          <h2>Исходник → WASM → canvas</h2>
+          <p class="sub">
+            Никакой магии и сериализации: байты, указатели и один вызов
+            <code class="mono">main(...)</code>.
+          </p>
         </div>
       </div>
-      <div class="grid grid-3">
-        <div class="panel panel-flat">
-          <div class="metric"><div class="k">шаг 1</div><div class="v" style="font-size:16px">.lat → .wasm</div></div>
-          <p class="muted small" style="margin: 10px 0 0">
-            Модули собираются заранее скриптом <code class="mono">build-demos.mjs</code> через
-            настоящий компилятор. На странице рядом лежит исходник — его можно прочитать.
-          </p>
+
+      <div class="flow" aria-label="Конвейер сборки и запуска">
+        <span class="flow-dot" aria-hidden="true"></span>
+        <div class="flow-step reveal">
+          <span class="fs-n">01</span>
+          <span class="fs-t">.lat</span>
+          <span class="fs-d">Исходник на 40–200 строк. Лежит рядом со страницей и читается без сборки.</span>
+          <span class="fs-tag">текст</span>
         </div>
-        <div class="panel panel-flat">
-          <div class="metric"><div class="k">шаг 2</div><div class="v" style="font-size:16px">JS ⇄ memory</div></div>
-          <p class="muted small" style="margin: 10px 0 0">
-            Хост вызывает <code class="mono">main(...)</code>, кладёт данные по указателю в
-            линейную память и читает результат. Строки — <code class="mono">[len][utf8]</code>,
-            массивы — <code class="mono">[len][i32…]</code>.
-          </p>
+        <div class="flow-step reveal">
+          <span class="fs-n">02</span>
+          <span class="fs-t">compiler.wasm</span>
+          <span class="fs-d">Компилятор Latent (Rust → WASM). C-ABI: latent_alloc / latent_compile.</span>
+          <span class="fs-tag" id="flow-compiler-size">616 KiB</span>
         </div>
+        <div class="flow-step reveal">
+          <span class="fs-n">03</span>
+          <span class="fs-t">.wasm</span>
+          <span class="fs-d">Модуль на 1–3 KiB. Единственный импорт — env.print, экспорт — main.</span>
+          <span class="fs-tag">песочница</span>
+        </div>
+        <div class="flow-step reveal">
+          <span class="fs-n">04</span>
+          <span class="fs-t">canvas / DOM</span>
+          <span class="fs-d">Результат — байты по указателю: ImageData и Int32Array без копий.</span>
+          <span class="fs-tag">0 копий</span>
+        </div>
+      </div>
+
+      <div class="grid grid-hero" style="margin-top:16px">
         <div class="panel panel-flat">
-          <div class="metric"><div class="k">шаг 3</div><div class="v" style="font-size:16px">canvas / DOM</div></div>
-          <p class="muted small" style="margin: 10px 0 0">
-            Результат — байты или числа. Рисует их обычный canvas, а не «магия». Поэтому демо и
-            остаются статическими страницами без сборки и зависимостей.
-          </p>
+          <div class="panel-head">
+            <h3>Хост — это 9 строк</h3>
+            <span class="badge info no-dot">wasm.js</span>
+          </div>
+          <div class="code">
+            <div class="code-head">
+              <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>assets/wasm.js</span>
+              <span class="spacer"></span>
+              <span>inline</span>
+            </div>
+            <pre><code id="abi-code" class="lines"></code></pre>
+          </div>
+        </div>
+        <div class="stack">
+          <div class="panel panel-flat">
+            <div class="metrics" style="grid-template-columns:1fr 1fr">
+              <div class="metric">
+                <div class="k">модулей</div>
+                <div class="v" id="arch-modules">7</div>
+              </div>
+              <div class="metric">
+                <div class="k">суммарно</div>
+                <div class="v" id="arch-size" style="font-size:18px">12.1 KiB</div>
+              </div>
+              <div class="metric">
+                <div class="k">зависимостей</div>
+                <div class="v" style="color:var(--ok)">0</div>
+              </div>
+              <div class="metric">
+                <div class="k">сборка</div>
+                <div class="v" style="font-size:18px">build-demos.mjs</div>
+              </div>
+            </div>
+          </div>
+          <div class="note">
+            <b>Сборка детерминирована.</b> <code class="mono">build-demos.mjs</code> компилирует
+            каждый <code class="mono">.lat</code> настоящим компилятором и делает smoke-run —
+            те же <code class="mono">.wasm</code> работают в Node, CI и браузере.
+          </div>
         </div>
       </div>
     </section>
 
+    <!-- ================= CTA ================= -->
     <section class="wrap section">
-      <div class="panel" style="display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap">
-        <div>
-          <h2 style="font-size:22px">Хотите те же приёмы в своём проекте?</h2>
-          <p class="sub" style="margin-bottom:0">
-            В документации — ABI, передача массивов и строк, React-обёртка и разбор каждого демо.
-          </p>
+      <div class="panel" style="position:relative;overflow:hidden;padding:34px;border-radius:26px">
+        <div style="position:absolute;inset:-40% -10% auto auto;width:520px;height:520px;background:radial-gradient(circle,rgba(94,234,212,.16),transparent 65%);filter:blur(30px);pointer-events:none" aria-hidden="true"></div>
+        <div class="spread" style="position:relative">
+          <div style="max-width:660px">
+            <p class="eyebrow">дальше</p>
+            <h2 style="font-size:clamp(24px,3.4vw,34px)">Хотите те же приёмы в своём проекте?</h2>
+            <p class="sub">
+              В документации — ABI, передача массивов и строк, React-обёртка, разбор каждого
+              демо и честные ограничения подхода.
+            </p>
+          </div>
+          <div class="btn-row">
+            <a class="btn btn-primary" href="../examples/frontend-showcase">Читать frontend-showcase <span aria-hidden="true">→</span></a>
+            <a class="btn" href="./physics/">Смотреть физику</a>
+          </div>
         </div>
-        <a class="btn btn-primary" href="../examples/frontend-showcase">Читать frontend-showcase <span aria-hidden="true">→</span></a>
       </div>
     </section>
   </main>
@@ -233,30 +615,153 @@
       <a href="./bench/">bench</a><span class="dim">/</span>
       <a href="./image/">image</a><span class="dim">/</span>
       <a href="./physics/">physics</a><span class="dim">/</span>
+      <a href="./concurrency/">concurrency</a><span class="dim">/</span>
+      <a href="./ai/">ai</a><span class="dim">/</span>
       <a href="../examples/frontend-showcase">docs</a>
     </span>
   </footer>
 
   <script type="module">
+    import {
+      initHeader, initReveal, initSpotlight, initTabs,
+      initHeroParticles, codeLines, reduceMotion,
+    } from './assets/ui.js';
+    import {highlightLatent, highlightJS} from './assets/highlight.js';
+    import {formatBytes} from './assets/wasm.js';
+
+    initHeader();
+    initReveal();
+    initSpotlight();
+    initTabs();
+
+    /* ---- hero constellation ---- */
+    initHeroParticles(document.getElementById('hero-canvas'), {count: 90, link: 122});
+
+    /* ---- terminal snippets: real syntax from web-ide/examples ---- */
+    const SRC_NAMES = {
+      spawn: 'web-ide/examples/channels.lat',
+      select: 'web-ide/examples/select_yield.lat',
+      ai: 'web-ide/examples/ai_embed.lat',
+    };
+    for (const el of document.querySelectorAll('.hero-src')) {
+      const text = el.textContent;
+      el.innerHTML = highlightLatent(text);
+      el.dataset.plain = text;
+    }
+
+    // Auto-cycle the syntax tabs; pause on hover/focus and stop after a click.
+    const tabs = document.querySelector('.terminal-tabs');
+    const panels = [...document.querySelectorAll('.terminal [data-panel]')];
+    const meta = document.getElementById('hero-src-meta');
+    let tabIndex = 0;
+    let timer = 0;
+    let userPicked = false;
+
+    function pick(key, user) {
+      if (user) userPicked = true;
+      const buttons = tabs ? [...tabs.querySelectorAll('[data-tab]')] : [];
+      buttons.forEach((b) => {
+        const on = b.dataset.tab === key;
+        b.setAttribute('aria-selected', String(on));
+        b.tabIndex = on ? 0 : -1;
+      });
+      panels.forEach((p) => {
+        p.hidden = p.dataset.panel !== key;
+      });
+      if (meta) meta.textContent = SRC_NAMES[key] || '';
+    }
+
+    function rotate() {
+      const keys = Object.keys(SRC_NAMES);
+      tabIndex = (tabIndex + 1) % keys.length;
+      pick(keys[tabIndex], false);
+    }
+
+    if (tabs && panels.length) {
+      tabs.addEventListener('click', (event) => {
+        const btn = event.target.closest('[data-tab]');
+        if (!btn) return;
+        tabIndex = Object.keys(SRC_NAMES).indexOf(btn.dataset.tab);
+        pick(btn.dataset.tab, true);
+        if (timer) clearInterval(timer);
+        timer = 0;
+      });
+      const term = document.querySelector('.terminal');
+      const pause = () => {
+        if (timer) clearInterval(timer);
+        timer = 0;
+      };
+      const resume = () => {
+        if (userPicked || reduceMotion() || timer) return;
+        timer = setInterval(rotate, 5600);
+      };
+      term.addEventListener('pointerenter', pause);
+      term.addEventListener('pointerleave', resume);
+      term.addEventListener('focusin', pause);
+      term.addEventListener('focusout', resume);
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) pause();
+        else resume();
+      });
+      if (!reduceMotion()) timer = setInterval(rotate, 5600);
+    }
+
+    /* ---- generated heatmap cells for the AI card ---- */
+    for (const grid of document.querySelectorAll('[data-heatmap]')) {
+      const cells = 48;
+      for (let i = 0; i < cells; i++) {
+        const cell = document.createElement('i');
+        const hot = [3, 6, 7, 14, 15, 22, 23, 30, 31, 38, 39, 46].includes(i);
+        if (hot) cell.className = 'hot';
+        cell.style.animationDelay = `${-(i % 9) * 0.4}s`;
+        grid.appendChild(cell);
+      }
+    }
+
+    /* ---- ABI snippet (the real host contract) ---- */
+    const abi = `const imports = {
+  env: { print(ptr) { /* [len][utf8] */ } }
+};
+const {instance} = await WebAssembly.instantiate(bytes, imports);
+const ptr = instance.exports.main(1048576, 4);
+const bytesOut = new Uint8Array(instance.exports.memory.buffer);
+
+// ImageData / Int32Array читают память модуля напрямую:
+// никакой сериализации и копий на кадр.`;
+    document.getElementById('abi-code').innerHTML = codeLines(abi, highlightJS);
+
+    /* ---- live wasm sizes from the static host ---- */
     const files = [
       'bench/hash.wasm', 'bench/sieve.wasm', 'bench/matmul.wasm', 'bench/sort.wasm',
       'bench/utf8.wasm', 'image/filter.wasm', 'physics/particles.wasm',
     ];
-    let total = 0;
-    let loaded = 0;
-    for (const file of files) {
-      try {
-        const res = await fetch(file, {method: 'HEAD'});
-        if (res.ok) {
+    (async () => {
+      let total = 0;
+      let loaded = 0;
+      await Promise.all(files.map(async (file) => {
+        try {
+          const res = await fetch(file, {method: 'HEAD'});
+          if (!res.ok) return;
           total += Number(res.headers.get('content-length') || 0);
           loaded += 1;
-        }
-      } catch { /* static host without HEAD */ }
-    }
-    if (loaded) {
+        } catch { /* static host without HEAD */ }
+      }));
+      if (!loaded) return;
       document.getElementById('mod-count').textContent = String(loaded);
-      document.getElementById('mod-size').textContent = `${(total / 1024).toFixed(1)} KiB`;
-    }
+      document.getElementById('arch-modules').textContent = String(loaded);
+      const size = formatBytes(total);
+      document.getElementById('mod-size').textContent = size;
+      document.getElementById('arch-size').textContent = size;
+      try {
+        const res = await fetch('compiler.wasm', {method: 'HEAD'});
+        if (res.ok && res.headers.get('content-length')) {
+          const compilerSize = formatBytes(Number(res.headers.get('content-length')));
+          document.getElementById('compiler-size').textContent = compilerSize;
+          document.getElementById('flow-compiler-size').textContent = compilerSize;
+        }
+      } catch { /* optional */ }
+    })();
+
   </script>
 </body>
 </html>

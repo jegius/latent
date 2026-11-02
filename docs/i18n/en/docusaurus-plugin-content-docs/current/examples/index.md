@@ -21,6 +21,7 @@ engine #2.
 | [AI and tensors](./ai.md) | `ai_infer.lat`, `ai_embed.lat`, `ai_streaming.lat`, `ai_pipeline.lat`, `tensors.lat`, `testing_contracts.lat` |
 | [OOP](./oop.md) | `classes.lat` |
 | [Functional style](./functional.md) | `fp_patterns.lat`, `lambdas.lat` |
+| [Modules](./modules.md) | the multi-file project `math.lat` + `model.lat` + `main.lat` |
 
 ## Web and frontend
 
@@ -36,13 +37,26 @@ see on the page):
 | [React](./frontend-react.md) | a component in TypeScript, `useEffect` + `ref`, Vite |
 | [Canvas](./frontend-canvas.md) | WASM computes a frame or a sorting step, canvas draws it |
 | [Compiler in the browser](./frontend-compiler-playground.md) | `latent_alloc`/`latent_compile`/`latent_free`, your own playground |
-| [Interactive demos](./frontend-showcase.md) | a JS-vs-WASM benchmark, image filters and particle physics; live metrics in the browser |
+| [Interactive demos](./frontend-showcase.md) | eight browser demos: goroutines and channels, AI primitives, self-host, sandbox, modules, benchmark, image filters and physics |
 
-## Demos and performance
+## Demos and killer features
 
-Three self-contained demos run right on the page and put Latent under a real
-workload: [a benchmark against JS, canvas filters and particle physics](./frontend-showcase.md).
-Each one ships its `.lat` source, live milliseconds and an honest comparison.
+Five new self-contained demos execute real Latent code right on the page; the older
+ones put it under real load:
+
+| Demo | What it shows |
+|---|---|
+| <a href="/latent/demos/concurrency/">Goroutines and channels</a> | `spawn`, `channel`, `select`, `yield`: scheduler trace, fan-in, worker pool, 1000 goroutines, deadlock |
+| <a href="/latent/demos/ai/">AI-native</a> | `ai_embed`/`cosine_similarity`/`ai_infer`/`ai_stream`/`tensor`/`matmul`, heatmap and streaming |
+| <a href="/latent/demos/selfhost/">Self-host</a> | `seed.wasm` compiles `shc.lat`: stages, sha256, FIXED POINT, sample run |
+| <a href="/latent/demos/sandbox/">Sandbox</a> | untrusted code in a Worker with one import: timeout, OOB trap, memory.grow |
+| <a href="/latent/demos/modules/">Modules</a> | four `.lat` files, import graph, two-phase linking, mangled names, cycles |
+| <a href="/latent/demos/bench/">Benchmark</a> | JS vs Latent→WASM on five algorithms |
+| <a href="/latent/demos/image/">Images</a> | filters over `ImageData` and a comparison slider |
+| <a href="/latent/demos/physics/">Physics</a> | up to 30,000 particles, FPS graph, parity with JS |
+
+Each one ships its `.lat` source, live metrics and honest limits. The detailed
+walkthrough is [Eight interactive demos](./frontend-showcase.md).
 
 The general theory is in [Latent in the frontend](../guide/web-and-frontend.md)
 and [Latent in the browser in 5 minutes](../getting-started/web-browser.md).
@@ -62,9 +76,9 @@ and [Latent in the browser in 5 minutes](../getting-started/web-browser.md).
 
 - **Run executes engine #1**, not the WASM. The behavior in the console is the
   semantics of the JS interpreter.
-- Engine #1 does not support `enum`, bitwise operators, `str/int/float/sqrt`,
-  block comments — some examples will only work in engine #2 (compilation) or
-  only in #1 (execution).
+- Engine #1 does not support bitwise operators, `str/int/float/sqrt`, block
+  comments — some examples will only work in engine #2 (compilation) or only in
+  #1 (execution). `enum` and file modules are supported in both engines.
 - Host-only examples (AI, tensors, channels, contracts) are marked in the
   walkthroughs: engine #2 reports "requires the host runtime" on them — that is
   expected.
@@ -77,8 +91,10 @@ and [Latent in the browser in 5 minutes](../getting-started/web-browser.md).
 
 All `latent` blocks in this section are verified by the compiler
 (`docs/scripts/validate-examples.mjs`); host-only blocks are marked with the first
-line `// Does not compile with engine #2: ...`. If you change an example in
-`web-ide/examples/`, update the walkthrough as well.
+line `// Does not compile with engine #2: ...`. Multi-file examples (the
+[Modules](./modules.md) walkthrough) are marked `// module-part <file>`: they do
+not compile on their own, so the validator skips and counts them separately. If
+you change an example in `web-ide/examples/`, update the walkthrough as well.
 
 ## Related sections
 

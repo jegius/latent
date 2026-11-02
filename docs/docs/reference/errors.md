@@ -1,6 +1,6 @@
 ---
 title: "Каталог диагностик"
-description: "Точные тексты ошибок Latent: лексер, парсер, тайпчекер, кодоген, self-hosted компилятор; причины, как исправить, ограничения формата (без кодов ошибок, позиция L:C в тексте)."
+description: "Точные тексты ошибок Latent: лексер, парсер, модули и линковка, тайпчекер, кодоген, self-hosted компилятор; причины, как исправить, ограничения формата (без кодов ошибок, позиция L:C в тексте)."
 sidebar_position: 7
 ---
 
@@ -66,6 +66,59 @@ sidebar_position: 7
 Движок №1: `Expected <T> but got '<значение>' at line N`,
 `Unexpected token '<значение>' at line N`, `Expected decorator name at line N`,
 `Invalid type annotation at line N`.
+
+## Модули и линковка
+
+Источники: `src/modules/loader.rs` (загрузка, пути), `src/modules/linker.rs`
+(таблицы, манглинг), `src/modules/manifest.rs` (манифест `LPF1`), `src/lib.rs`
+(однофайловый API). Все ошибки загрузчика и линкера содержат **путь файла**, а
+ошибки импорта — ещё и позицию объявления: `path:line:col: ...`.
+
+| Текст (точно) | Причина | Как исправить |
+|---|---|---|
+| `абсолютный путь импорта недопустим: '<путь>'` | путь начинается с `/`, `C:\` или `\\` | путь только относительный (`./`, `../`) |
+| `путь импорта должен оканчиваться на '.lat': '<путь>'` | забыли расширение | дописать `.lat` |
+| `путь импорта должен быть относительным ('./' или '../'): '<путь>'` | `import { x } from "math.lat"` | поставить `./` перед именем |
+| `<path>:<L>:<C>: файл не найден: <resolved>` | файла нет по разрешённому пути | создать файл или поправить путь |
+| `<path>:<L>:<C>: символ '<имя>' не экспортирован из '<path>'` | импорт приватного/несуществующего имени, опечатка | добавить `export` или исправить имя |
+| `<path>:<L>:<C>: имя '<имя>' уже объявлено в модуле` | импорт конфликтует с локальным `fn`/`class`/`enum` | переименовать локальное имя или алиас |
+| `<path>:<L>:<C>: дубликат импортированного имени '<имя>'` | одно имя импортировано дважды | оставить один импорт |
+| `<path>:<L>:<C>: export '<имя>': объявление не найдено` | `export` повешен на имя, которого нет (внутренняя проверка линкера) | перенести `export` к объявлению |
+| `<path>:<L>:<C>: модуль не найден: <resolved>` | файл был при загрузке, но потерялся при линковке | проверить набор файлов/пути |
+| `<path>: файл передан дважды с разным содержимым` | два файла с одним canonical path и разным текстом | оставить один файл с одним содержимым |
+| `<path>: entry-файл не найден среди переданных файлов` | entry не входит в набор `SourceFile` | передать entry в `files` |
+| `<path>: <ошибка лексера/парсера>` | синтаксическая ошибка в конкретном файле | см. разделы «Лексер»/«Парсер» |
+| `Импорты не поддерживаются в однофайловой компиляции: используйте latent::compile_files / latentc compile <entry.lat> (проект из нескольких файлов)` | в исходнике есть `import`, а вызван `compile_source`/`latent_compile` | компилировать проект `compile_files`/`latentc compile` |
+| `bundle: программа должна быть связана (import/export уже сняты)` | внутренняя ошибка: `bundle_files` получил несвязанный AST | не вызывать `bundle::print_program` напрямую |
+| `LPF1: манифест слишком короткий` · `LPF1: неверная магия (ожидалось 'LPF1')` · `LPF1: неожиданный конец манифеста` · `LPF1: неожиданный конец манифеста (строка)` · `LPF1: путь/исходник не является UTF-8` · `LPF1: манифест без файлов` · `LPF1: entry_index <N> вне диапазона файлов` | битый/несовместимый манифест в C-ABI `latent_compile_files`/`latent_bundle_files` | пересобрать манифест (см. [CLI](./cli.md#многофайловый-abi-latent_compile_files)) |
+
+Пример реального вывода (движок №2, `latentc check`):
+
+```text
+$ latentc check main.lat
+error: main.lat:1:10: символ 'sq' не экспортирован из 'math.lat'
+```
+
+Ошибки парсера/type checker'а к тексту модульной ошибки не приписываются:
+сначала проверяется структура проекта, потом типы. Если ошибка в импортированном
+файле — она печатается с его путём, а не с путём entry.
+
+### Те же ошибки в движке №1 (английские)
+
+Движок №1 (`web-ide/compiler/modules*.js`) бросает `ModuleError` с полем `code`;
+в тексте — путь и, если известно, строка (`path:line: ...`):
+
+| Текст | `code` |
+|---|---|
+| `module path must be relative, got '<путь>'` / `module path must end with '.lat': '<путь>'` / `module path '<путь>' escapes the project root` | `MODULE_PATH_ABSOLUTE` / `MODULE_PATH_EXTENSION` / `MODULE_PATH_OUTSIDE` |
+| `import path must be relative ('./' or '../'), got '<путь>'` | `MODULE_PATH_NOT_RELATIVE` |
+| `module '<путь>' not found (resolved to '<путь>'). Create the file in the workspace (＋) or fix the import path.` | `MODULE_NOT_FOUND` |
+| `module '<путь>' does not export '<имя>'` | `NOT_EXPORTED` |
+| `duplicate imported name '<имя>'` | `DUPLICATE_IMPORT` |
+| `duplicate module file '<путь>' in workspace` · `duplicate top-level declaration '<имя>'` · `duplicate enum variant '<имя>'` | `DUPLICATE_MODULE` / `DUPLICATE_DECLARATION` |
+| `ambiguous enum variant '<вариант>' imported from '<путь>'` | `AMBIGUOUS_VARIANT` |
+| `entry file '<путь>' not found in workspace` · `project has no .lat files` | `ENTRY_NOT_FOUND` / `PROJECT_EMPTY` |
+| `invalid module manifest: <подробность>` | `MANIFEST_INVALID` |
 
 ## Тайпчекер
 
@@ -208,6 +261,12 @@ sidebar_position: 7
 ...`, либо в info-string есть `expected-error`. Так помечаются примеры
 host-only и примеры из таблицы выше. Не помечайте рабочие примеры: валидатор
 сообщит «устаревший маркер».
+
+Многофайловые примеры (блок с `import`, который по отдельности не компилируется)
+помечаются маркером `module-part` — первой строкой `// module-part <файл>` или в
+info-string (`latent module-part`). Валидатор такие блоки **пропускает и
+считает отдельно**; проверять проект нужно через `latentc check <entry.lat>`. См.
+[модули](../guide/modules.md).
 
 ## Как читать диагностику
 

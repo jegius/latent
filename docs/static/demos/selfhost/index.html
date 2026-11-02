@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Компилятор компилирует себя — Latent killer demo</title>
+  <meta name="description" content="seed.wasm (41 KiB) компилирует selfhost/shc.lat (164 KiB) прямо в браузере: цепочка seed → stage1′ → stage2′ → stage3′, sha256, fixed point, запуск sample-программ. Без сервера и Rust." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23070b12'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%235eead4'%3E%CE%BB%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="../assets/killer.css" />
+  <style>
+    #forge { width: 100%; height: 240px; }
+    .k-chain-wide { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .k-fixed {
+      margin-top: 14px; padding: 14px 16px; border-radius: 12px;
+      border: 1px solid rgba(52, 211, 153, 0.4);
+      background: linear-gradient(120deg, rgba(52, 211, 153, 0.12), rgba(94, 234, 212, 0.04));
+      box-shadow: 0 0 54px -20px rgba(52, 211, 153, 0.55);
+      animation: k-fixed-in 0.5s var(--k-ease) both;
+    }
+    .k-fixed b { display: block; font-family: var(--k-mono); font-size: 14px; color: var(--k-green); letter-spacing: 0.02em; margin-bottom: 3px; }
+    .k-fixed span { color: var(--k-muted); font-size: 12.5px; }
+    @keyframes k-fixed-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    .k-samples-grid { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 16px; }
+    @media (max-width: 900px) { .k-samples-grid { grid-template-columns: minmax(0, 1fr); } }
+    #sample-console { min-height: 120px; max-height: 180px; }
+    .k-prov { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    @media (max-width: 600px) { .k-prov { grid-template-columns: minmax(0, 1fr); } }
+  </style>
+</head>
+<body>
+  <header class="k-top">
+    <div class="k-wrap k-top-inner">
+      <a class="k-brand" href="../"><span class="k-mark">λ</span> Latent · killer demos</a>
+      <nav class="k-nav" aria-label="Демо">
+        <a href="../concurrency/">Конкурентность</a>
+        <a href="../ai/">AI-native</a>
+        <a class="is-active" href="./">Self-host</a>
+        <a href="../sandbox/">Песочница</a>
+        <a href="../modules/">Модули</a>
+        <a href="../../examples/frontend-showcase">Документация</a>
+        <span class="k-pill k-pill--live"><span class="k-dot"></span>seed.wasm</span>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="k-wrap k-hero">
+      <p class="k-eyebrow">selfhost/shc.lat · seed.wasm · fixed point</p>
+      <h1 class="k-title">Компилятор<br /><span class="k-grad">компилирует себя.</span></h1>
+      <p class="k-lead">
+        Компилятор Latent, собранный в <strong>41 KiB WebAssembly</strong>, компилирует свой
+        собственный исходник на 164 KiB — прямо в этой вкладке, без сервера, Rust и
+        установленного toolchain. Цепочка <code>seed → stage1′ → stage2′ → stage3′</code>
+        доходит до неподвижной точки, а <strong>sha256</strong> каждой стадии считается
+        через SubtleCrypto. Затем seed компилирует и запускает sample-программы через
+        документированный ABI.
+      </p>
+      <div class="k-actions">
+        <button class="k-btn k-btn--primary" id="run-chain" type="button">Запустить бутстрап</button>
+        <button class="k-btn" id="run-sample" type="button">Скомпилировать sample</button>
+        <span class="k-pill" id="provenance-badge">seed.json …</span>
+      </div>
+      <div class="k-meta">
+        <span><b id="m-seed-size">—</b> seed.wasm</span>
+        <span><b id="m-shc">—</b> shc.lat</span>
+        <span><b>3</b> стадии self-compile</span>
+        <span><b>1</b> импорт: env.print</span>
+      </div>
+    </section>
+
+    <section class="k-wrap k-section">
+      <div class="k-grid k-grid--main">
+        <div class="k-stack">
+          <div class="k-panel">
+            <div class="k-panel-head">
+              <div>
+                <h2 class="k-panel-title">Кузница компилятора</h2>
+                <p class="k-sub">seed.wasm исполняется в Web Worker; каждая стадия — настоящая компиляция shc.lat.</p>
+              </div>
+              <span class="k-badge k-badge--violet" id="seed-version">—</span>
+            </div>
+            <div class="k-forge"><canvas id="forge" aria-label="Анимация самокомпиляции: seed, stage1, stage2, stage3"></canvas></div>
+            <div class="k-progress" style="margin-top:12px"><i id="chain-progress"></i></div>
+            <div class="k-row" style="margin-top:10px; justify-content:space-between">
+              <span class="k-small k-dim" id="chain-status">загрузка seed.wasm…</span>
+              <span class="k-badge k-badge--muted">sha256 · crypto.subtle</span>
+            </div>
+            <div class="k-fixed k-hide" id="fixed-banner">
+              <b id="fixed-title">FIXED POINT</b>
+              <span id="fixed-text">stage2′ === stage3′</span>
+            </div>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head">
+              <div>
+                <h2 class="k-panel-title">Цепочка стадий</h2>
+                <p class="k-sub">Одинаковые исходники, разные компиляторы: побайтовое равенство проверяется автоматически.</p>
+              </div>
+            </div>
+            <div class="k-chain k-chain-wide">
+              <div class="k-chain-node is-done" id="stage-0">
+                <div class="k-chain-k">stage 0 · seed</div>
+                <div class="k-chain-name">seed.wasm</div>
+                <div class="k-chain-meta" data-role="meta">загрузка…</div>
+                <div class="k-chain-hash" data-role="hash">—</div>
+              </div>
+              <div class="k-chain-node" id="stage-1">
+                <div class="k-chain-k">stage 1′</div>
+                <div class="k-chain-name">seed(shc.lat)</div>
+                <div class="k-chain-meta" data-role="meta">ожидание</div>
+                <div class="k-chain-hash" data-role="hash">—</div>
+              </div>
+              <div class="k-chain-node" id="stage-2">
+                <div class="k-chain-k">stage 2′</div>
+                <div class="k-chain-name">stage1′(shc.lat)</div>
+                <div class="k-chain-meta" data-role="meta">ожидание</div>
+                <div class="k-chain-hash" data-role="hash">—</div>
+              </div>
+              <div class="k-chain-node" id="stage-3">
+                <div class="k-chain-k">stage 3′</div>
+                <div class="k-chain-name">stage2′(shc.lat)</div>
+                <div class="k-chain-meta" data-role="meta">ожидание</div>
+                <div class="k-chain-hash" data-role="hash">—</div>
+              </div>
+            </div>
+            <div class="k-metrics" style="margin-top:14px">
+              <div class="k-metric k-metric--accent">
+                <div class="k-metric-k">размер stage wasm</div>
+                <div class="k-metric-v" id="m-stage-bytes">—</div>
+              </div>
+              <div class="k-metric">
+                <div class="k-metric-k">последняя компиляция</div>
+                <div class="k-metric-v" id="m-compile">—</div>
+              </div>
+              <div class="k-metric k-metric--green">
+                <div class="k-metric-k">сумма компиляций</div>
+                <div class="k-metric-v" id="m-chain-time">—</div>
+              </div>
+              <div class="k-metric k-metric--violet">
+                <div class="k-metric-k">seed sha256</div>
+                <div class="k-metric-v" id="m-seed-sha" style="font-size:14px">—</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head">
+              <div>
+                <h2 class="k-panel-title">Sample: скомпилировать и запустить</h2>
+                <p class="k-sub">Тот же seed.wasm компилирует программу в WASM, затем она исполняется с единственным импортом <code>env.print</code>.</p>
+              </div>
+              <span class="k-badge" id="sample-status">готово</span>
+            </div>
+            <div class="k-samples-grid">
+              <div class="k-samples" id="samples"></div>
+              <div class="k-stack-sm" style="min-width:0">
+                <div class="k-row" style="justify-content:space-between">
+                  <span class="k-mono k-small" id="sample-name">hello.lat</span>
+                  <span class="k-small k-dim" id="sample-desc"></span>
+                </div>
+                <div id="sample-code"></div>
+                <div class="k-console" id="sample-console" role="log" aria-live="polite"></div>
+                <div class="k-row k-small k-dim">
+                  <span>compile <b class="k-mono" id="m-sample-compile">—</b></span>
+                  <span>·</span>
+                  <span>wasm <b class="k-mono" id="m-sample-bytes">—</b></span>
+                  <span>·</span>
+                  <span>run <b class="k-mono" id="m-run">—</b></span>
+                  <span>·</span>
+                  <span>memory <b class="k-mono" id="m-sample-memory">—</b></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="k-stack">
+          <div class="k-panel">
+            <div class="k-panel-head" style="margin-bottom:8px">
+              <div>
+                <h2 class="k-panel-title">Происхождение seed</h2>
+                <p class="k-sub">Сверка с selfhost/seed.json</p>
+              </div>
+            </div>
+            <div class="k-prov">
+              <div class="k-metric">
+                <div class="k-metric-k">seed bytes</div>
+                <div class="k-metric-v" id="m-seed-size-2">—</div>
+              </div>
+              <div class="k-metric">
+                <div class="k-metric-k">shc.lat bytes</div>
+                <div class="k-metric-v" id="m-shc-2">—</div>
+              </div>
+            </div>
+            <div class="k-hash" id="seed-sha-full" style="margin-top:8px">—</div>
+            <p class="k-hint" style="margin-top:8px">sha256 совпадает с seed.json — доверенная начальная точка; Rust в сборке не участвует.</p>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head" style="margin-bottom:8px">
+              <h2 class="k-panel-title">ABI компилятора</h2>
+            </div>
+            <div id="abi-code"></div>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head" style="margin-bottom:8px">
+              <h2 class="k-panel-title">Что происходит</h2>
+            </div>
+            <div class="k-stack-sm k-small k-muted">
+              <p><b class="mono" style="color:var(--k-cyan)">1</b> Хост пишет shc.lat в память компилятора: <code>[len u32][utf8]</code> по адресу 3 145 728.</p>
+              <p><b style="color:var(--k-cyan)">2</b> <code>main()</code> компилятора возвращает <code>[len][wasm]</code> по адресу 65 536.</p>
+              <p><b style="color:var(--k-cyan)">3</b> Полученный wasm снова компилирует shc.lat — и так до совпадения байтов.</p>
+              <p><b style="color:var(--k-cyan)">4</b> sha256 каждой стадии считается в браузере; равенство проверяется побайтово.</p>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="k-wrap k-section">
+      <div class="k-section-head">
+        <div>
+          <h2 class="k-section-title">Почему это killer feature</h2>
+          <p class="k-sub">Компилятор как переносимый артефакт, а не как сервис.</p>
+        </div>
+        <span class="k-badge k-badge--violet">self-host</span>
+      </div>
+      <div class="k-grid k-grid--4">
+        <div class="k-card">
+          <div class="k-card-icon">λ</div>
+          <h3 class="k-card-title">Ноль установки</h3>
+          <p class="k-card-text">41 KiB wasm заменяет toolchain: компилятор скачивается как обычный ассет и работает офлайн. Rust нужен только для обновления seed.</p>
+        </div>
+        <div class="k-card">
+          <div class="k-card-icon">∞</div>
+          <h3 class="k-card-title">Fixed point</h3>
+          <p class="k-card-text">Компилятор воспроизводит себя побайтово: <code>stage1′ = stage2′ = stage3′ = seed</code>. Это самая сильная проверка корректности, какую можно сделать в браузере.</p>
+        </div>
+        <div class="k-card">
+          <div class="k-card-icon">⛓</div>
+          <h3 class="k-card-title">Доказуемая цепочка</h3>
+          <p class="k-card-text">sha256 каждой стадии, размер и время компиляции видны на странице. Никаких «поверьте, оно работает»: байты сравниваются здесь.</p>
+        </div>
+        <div class="k-card">
+          <div class="k-card-icon">⌂</div>
+          <h3 class="k-card-title">Один импорт</h3>
+          <p class="k-card-text">Компилятор импортирует только <code>env.print</code>. Ни DOM, ни сети, ни файловой системы — весь ввод-вывод через линейную память.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="k-wrap k-section">
+      <div class="k-panel">
+        <div class="k-panel-head">
+          <div>
+            <h2 class="k-panel-title">Честные ограничения</h2>
+            <p class="k-sub">Self-host — это про доверие и воспроизводимость, а не про скорость.</p>
+          </div>
+          <span class="k-badge k-badge--amber">важно</span>
+        </div>
+        <div class="k-grid k-grid--2">
+          <div class="k-stack-sm">
+            <p class="k-small"><b>Не весь корпус компилируется.</b> Seed — это зафиксированная сборка selfhost-компилятора; часть host-only примеров и некоторые конструкции может отвергнуть или обработать дольше. Демо предлагает проверенные samples.</p>
+            <p class="k-small"><b>Seed — доверенная точка.</b> Вы доверяете байтам seed.wasm; демо проверяет их sha256 по seed.json, но не «доказывает» корректность компилятора.</p>
+            <p class="k-small"><b>Один поток.</b> Компиляция идёт в Web Worker, но внутри — один поток; большие исходники могут занять секунды.</p>
+          </div>
+          <div class="k-stack-sm">
+            <p class="k-small"><b>Фиксированная точка сейчас с первой стадии.</b> В этой сборке <code>seed = stage1′ = stage2′ = stage3′</code>; страница показывает реальные хэши, а не предполагаемую «третью стадию».</p>
+            <p class="k-small"><b>Таймаут — это защита.</b> Если компилятор не уложился в 30 с, worker терминируется; это не «падение демо», а честная граница.</p>
+            <p class="k-small"><b>Версия seed.</b> Артефакт и seed.json пересобираются selfhost-агентом; страница сверяет их и явно показывает расхождение, если оно есть.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="k-foot">
+    <div class="k-wrap k-foot-inner">
+      <span>Latent · killer demos · seed.wasm компилирует shc.lat в вашем браузере</span>
+      <div class="k-foot-links">
+        <a href="../">Все демо</a>
+        <a href="../../examples/frontend-showcase">Frontend showcase</a>
+        <a href="../../specs/selfhost">Спецификация selfhost</a>
+        <a href="../../tooling/bootstrap">Bootstrap</a>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module" src="./killer-selfhost.js"></script>
+</body>
+</html>

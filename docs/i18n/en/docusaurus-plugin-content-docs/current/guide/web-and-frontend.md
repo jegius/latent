@@ -932,7 +932,7 @@ Honestly about Latent's place:
 | No imports other than `print` | no DOM, `fetch`, `console`, time, or random numbers |
 | No `i64` and no `f64` arrays | embeddings/vectors and exact arithmetic only in JS or fixed-point |
 | No `free`/GC/arena | a long-lived page means growing memory; an instance reset is required |
-| No modules/packages/imports | the whole program is a single file |
+| No packages/dependency manager | modules (`import`/`export`) exist, but there are no external packages and no npm |
 | No exceptions | errors are return codes or a trap |
 | No source maps or name section | debugging through pointers and `console.log` |
 | No timeouts or fuel | an infinite loop hangs the thread; only a Worker + `terminate` |
@@ -952,8 +952,9 @@ A list of directions, not promises:
    possibly resource reading; with an explicit list and a version.
 4. **Full-fledged `f64` arrays and `i64`** — without them, ML/vector scenarios
    stay in JS.
-5. **Modules/packages and multi-file builds** — today a program has to be a
-   single file.
+5. **Packages and multi-file builds** — file modules already exist
+   ([guide/modules](./modules.md)); packages/registry and dependency
+   distribution are next.
 6. **Tooling**: an npm package, TypeScript types, Vite/Webpack plugins,
    `wasm-opt`, a name section, source maps, trap traces.
 7. **Memory management for SPAs**: an arena/reset so that a page can live for

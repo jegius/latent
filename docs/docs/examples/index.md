@@ -19,6 +19,7 @@ sidebar_position: 1
 | [AI и тензоры](./ai.md) | `ai_infer.lat`, `ai_embed.lat`, `ai_streaming.lat`, `ai_pipeline.lat`, `tensors.lat`, `testing_contracts.lat` |
 | [ООП](./oop.md) | `classes.lat` |
 | [Функциональный стиль](./functional.md) | `fp_patterns.lat`, `lambdas.lat` |
+| [Модули](./modules.md) | многофайловый проект `math.lat` + `model.lat` + `main.lat` |
 
 ## Веб и фронтенд
 
@@ -33,13 +34,26 @@ sidebar_position: 1
 | [React](./frontend-react.md) | компонент на TypeScript, `useEffect` + `ref`, Vite |
 | [Canvas](./frontend-canvas.md) | WASM считает кадр/шаг сортировки, canvas рисует |
 | [Компилятор в браузере](./frontend-compiler-playground.md) | `latent_alloc`/`latent_compile`/`latent_free`, свой playground |
-| [Интерактивные демо](./frontend-showcase.md) | бенчмарк JS против WASM, фильтры изображений и физика частиц; живые метрики в браузере |
+| [Интерактивные демо](./frontend-showcase.md) | восемь демо в браузере: горутины и каналы, AI-примитивы, self-host, песочница, модули, бенчмарк, фильтры изображений и физика |
 
-## Демо и производительность
+## Демо и killer-фичи
 
-Три самодостаточных демо запускаются прямо на странице и показывают Latent на
-реальной нагрузке: [бенчмарк против JS, фильтры canvas и физика частиц](./frontend-showcase.md).
-Рядом с каждым — исходник `.lat`, живые миллисекунды и честное сравнение.
+Пять новых самодостаточных демо запускают настоящий Latent-код прямо на странице,
+а старые показывают реальную нагрузку:
+
+| Демо | Что показывает |
+|---|---|
+| <a href="/latent/demos/concurrency/">Горутины и каналы</a> | `spawn`, `channel`, `select`, `yield`: трасса планировщика, fan-in, worker pool, 1000 горутин, дедлок |
+| <a href="/latent/demos/ai/">AI-native</a> | `ai_embed`/`cosine_similarity`/`ai_infer`/`ai_stream`/`tensor`/`matmul`, heatmap и стриминг |
+| <a href="/latent/demos/selfhost/">Self-host</a> | `seed.wasm` компилирует `shc.lat`: стадии, sha256, FIXED POINT, запуск sample |
+| <a href="/latent/demos/sandbox/">Песочница</a> | недоверенный код в Worker с одним импортом: таймаут, OOB-trap, memory.grow |
+| <a href="/latent/demos/modules/">Модули</a> | 4 `.lat`, граф импортов, двухфазная линковка, мангленные имена, циклы |
+| <a href="/latent/demos/bench/">Бенчмарк</a> | JS против Latent→WASM на пяти алгоритмах |
+| <a href="/latent/demos/image/">Изображения</a> | фильтры над `ImageData` и слайдер сравнения |
+| <a href="/latent/demos/physics/">Физика</a> | до 30 000 частиц, FPS-график, parity с JS |
+
+Рядом с каждым — исходник `.lat`, живые метрики и честные ограничения.
+Подробный разбор — в [«Восемь интерактивных демо»](./frontend-showcase.md).
 
 Общая теория — в [«Latent во фронтенде»](../guide/web-and-frontend.md) и
 [«Latent в браузере за 5 минут»](../getting-started/web-browser.md).
@@ -59,9 +73,10 @@ sidebar_position: 1
 
 - **Run исполняет движок №1**, а не WASM. Поведение в консоли — это семантика
   JS-интерпретатора.
-- Движок №1 не поддерживает `enum`, побитовые операторы, `str/int/float/sqrt`,
+- Движок №1 не поддерживает побитовые операторы, `str/int/float/sqrt`,
   блочные комментарии — часть примеров будет работать только в движке №2
-  (компиляция) или только в №1 (исполнение).
+  (компиляция) или только в №1 (исполнение). `enum` и файловые модули движок №1
+  поддерживает.
 - Host-only примеры (AI, тензоры, каналы, контракты) помечены в разборах:
   движок №2 на них выдаёт ошибку «требует host-рантайма» — это ожидаемо.
 - Поставляемый `web-ide/compiler.wasm` актуален — собран из текущего `src/` и
@@ -72,8 +87,10 @@ sidebar_position: 1
 
 Все блоки `latent` в этом разделе проверены компилятором
 (`docs/scripts/validate-examples.mjs`); блоки host-only помечены первой строкой
-`// Не компилируется движком №2: ...`. Если вы меняете пример в
-`web-ide/examples/`, обновите и разбор.
+`// Не компилируется движком №2: ...`. Многофайловые примеры (разбор
+[«Модули»](./modules.md)) помечены `// module-part <файл>`: по отдельности они
+не компилируются, валидатор их пропускает и считает отдельно. Если вы меняете
+пример в `web-ide/examples/`, обновите и разбор.
 
 ## Связанные разделы
 

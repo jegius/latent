@@ -1,6 +1,6 @@
 ---
 title: "Parity Matrix: Rust Compiler vs Self-Hosted vs JS Interpreter"
-description: "A comparison of the three Latent implementations based on the facts of the code and on verification: lexics, types, statements, expressions, classes, enums, builtins, host features, ABI; the final selfhost parity of 64/65 and 166 tests."
+description: "A comparison of the three Latent implementations based on the facts of the code and on verification: lexics, types, statements, expressions, classes, enums, builtins, host features, ABI; the final selfhost parity of 64/65 and 173 tests."
 sidebar_position: 2
 ---
 
@@ -22,7 +22,7 @@ How it was verified:
   it.
 - **JS**: the programs were run through `runLatent(src, withAI)` from
   `web-ide/compiler-loader.js`.
-- **selfhost**: `node --test "selfhost/test/*.test.mjs"` — **166 tests, 0 failures**;
+- **selfhost**: `node --test "selfhost/test/*.test.mjs"` — **173 tests, 0 failures**;
   `bootstrap.mjs` — `stage2 === stage3`; `latent-work/gap-matrix.mjs` — **64/65** cases
   match the Rust reference (the only divergence is float literals, where selfhost is
   stronger). For details see [selfhost](./selfhost.md).
@@ -97,10 +97,23 @@ with a host runtime (engine #1).
 | `this` | ✅ | ✅ | ✅ |
 | class methods | ⚠️ only on a variable with a class | ✅ | ✅ |
 | inheritance | ❌ | ❌ | ❌ |
-| `enum` | ✅ (float payload ⚠️) | ✅ | ❌ |
+| `enum` | ✅ (float payload ⚠️) | ✅ | ✅ (v1: payload variants, `match`) |
 | built-in `Ok/Err/Some/None` | ✅ | ✅ | ✅ |
 | `match` over constructors | ✅ | ✅ | ✅ |
 | float fields/float payload | ⚠️ codegen defects | ⚠️ | ✅ |
+| file modules (`import`/`export`) | ✅ `compile_files` | ❌ (receives a `bundle`) | ✅ native linker |
+
+## Modules and linking
+
+| Capability | Rust | selfhost | JS |
+|---|---|---|---|
+| `import { a, b as c } from "./x.lat"` | ✅ | ❌ (no file system) | ✅ |
+| `import "./x.lat"` (connecting a file) | ✅ | ❌ | ✅ |
+| `export fn`/`class`/`enum` | ✅ | ❌ | ✅ |
+| import cycles | ✅ | ❌ | ✅ |
+| mangling `m<idx>$<name>` | ✅ | receives it ready-made (`m1__name`) | ✅ (`m1$name`) |
+| `latentc bundle` (flat source) | ✅ | input, not output | ❌ |
+| multi-file ABI `latent_compile_files` | ✅ | ❌ (its own INPUT/OUTPUT ABI) | ❌ |
 
 ## Arrays, strings, builtins
 
@@ -159,11 +172,11 @@ Verified on the shipped `web-ide/compiler.wasm` build; for details see
 - `new Class(...)` without `init` in reachable code;
 - `print` of strings from `.to_str()` sometimes prints a pointer.
 
-The shipped `web-ide/compiler.wasm` (465 435 bytes) **is built from the current
+The shipped `web-ide/compiler.wasm` (630 340 bytes) **is built from the current
 `src/`**: the memory builtins (`alloc`, `load8`, `store8`, `load32`, `store32`,
 `memcopy`) are present in it, so that item has been removed from the former defect
-list. The only known old copy is in the resources of the IDEA plugin (see
-[IDEA](../tooling/idea.md)).
+list. The embedded copy in the IDEA plugin resources is synced with the same artifact
+(`node scripts/check-embedded-wasm.mjs`); there are no separate old copies.
 
 At the same time **selfhost is a strict superset of the reference with respect to
 float**: according to `selfhost/README.md`, the cases `int(2.5 * 2.0)`,
@@ -179,7 +192,7 @@ descriptions):
 
 | Source | Claim | In reality |
 |---|---|---|
-| `web-ide/README.md` | "engine #1 implements all language constructs" | there is no `enum`, no bitwise operators, no `str/int/float/sqrt`, no block comments, no `Name<...>` |
+| `web-ide/README.md` | "engine #1 implements all language constructs" | no bitwise operators, no `str/int/float/sqrt`, no block comments, no `Name<...>`; `enum` and modules are already supported |
 | `web-ide/README.md` | engine #2 supports `ttest/assert_eq` | `test` blocks compile but are not executed; only `assert`/`assert_eq` are executed |
 | `tooling/language-data/language.json` | `str/int/float/sqrt` — `engine: both` | engine #2 only |
 | `tooling/language-data/language.json` | `alloc/load8/store8/load32/store32/memcopy` — `engine: both` | engine #2 only (the JS interpreter has no such builtins) |
@@ -195,7 +208,7 @@ current `src/`.
 ## Related sections
 
 - [Web IDE engines](./engines.md) — how these implementations are used in the IDE.
-- [Self-hosted compiler](./selfhost.md) — the final status, 166 tests, and the memory
+- [Self-hosted compiler](./selfhost.md) — the final status, 173 tests, the memory
   budget.
 - [Codegen internals](./internals-codegen.md).
 - [Rust compiler architecture](./rust-architecture.md).

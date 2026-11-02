@@ -1,6 +1,6 @@
 ---
 title: "Grammar (EBNF from the Parser)"
-description: "The complete Latent EBNF grammar reconstructed from src/parser: declarations, statements, expressions (Pratt), types, and patterns. The precedence table and notes on what parses but is rejected or ignored."
+description: "The complete Latent EBNF grammar reconstructed from src/parser: declarations, import/export, statements, expressions (Pratt), types, and patterns. The precedence table and notes on what parses but is rejected or ignored."
 sidebar_position: 3
 ---
 
@@ -21,6 +21,8 @@ EBNF notation: `{ x }` — zero or more repetitions, `[ x ]` — optional,
 Program        ::= { Declaration } EOF
 
 Declaration    ::= Decorator
+                 | ExportDecl
+                 | ImportDecl
                  | TestDeclaration
                  | LetDecl
                  | AsyncFnDecl
@@ -65,6 +67,34 @@ Notes on declarations:
   loops terminate on the token kind).
 - `Decorator` can be attached to any declaration: `@forall("array") fn f(...)`,
   `@ai_contract("sorting") fn g(...)`, `@test("x") fn h(...)`.
+
+## Import and export
+
+File modules v1 (`src/parser/imports.rs`). They are parsed only at the top level
+of a file — inside a block the parser returns the error
+`ожидалось 'declaration (import/export допустимы только на верхнем уровне)'`.
+
+```ebnf
+ImportDecl     ::= "import" String ";"
+                 | "import" "{" ImportSpec { "," ImportSpec } "}" "from" String ";"
+ImportSpec     ::= Ident [ "as" Ident ]
+
+ExportDecl     ::= "export" ( FnDecl | AsyncFnDecl | ClassDecl | EnumDecl )
+```
+
+- `import "path";` connects a file without names; `import { a, b as c } from
+  "path";` is a named import. The second form does not exist without
+  `from`/the string.
+- The trailing semicolon is **mandatory** in both forms, as are the quotes around
+  the path: the path is an ordinary string literal.
+- `export` accepts `fn`, `async fn`, `class`, `enum`. Any other declaration gives
+  `ожидалось 'fn, class or enum after export'`.
+- Keywords: `import` and `export` are **hard** (`let import = 1;` is an error);
+  `from` and `as` are **soft** (the lexer tags them, but they are accepted as
+  identifiers in name position).
+- Path semantics, linking and limitations — [modules](../guide/modules.md); the
+  production does not describe checks like "the file exists" and "the symbol is
+  exported" — that is the linker's job, not the parser's.
 
 ## Statements
 
@@ -259,6 +289,8 @@ ignores.
 | `channel()` | parses; in engine #2 it is the error «Builtin 'channel' не поддерживается…» (builtin not supported…) |
 | `@decorator fn f(...)` / `@decorator class C` | parses, but the decorator target is **not registered** by the function/class scanner: calling `f(...)`/`new C(...)` yields `Unknown function` |
 | `test "name" { ... }` at top level | parses, is typed, but the body is not emitted (there is no runner) |
+| `import * as ns`, `export *`, re-export, `import()` | **do not parse**: after `import` the parser expects `{` or a string; `export` accepts only `fn`/`async fn`/`class`/`enum` |
+| `export let` / `export` on a class method | error `ожидалось 'fn, class or enum after export'` |
 
 ## Engine #1 grammar (differences)
 
@@ -275,7 +307,14 @@ differences that matter for the IDE:
 - `let x = if (...) ...` is not supported;
 - there are no block comments `/* */`;
 - type annotations are parsed but not checked and are discarded;
-- `enum` is not supported at all (the lexer/parser do not know such a declaration).
+- `enum` is supported (`compiler/parser-modules.js`): variants with a payload,
+  constructors, and `match` over them;
+- `import`/`export` are supported and linked natively
+  (`compiler/modules*.js`): `import { a, b as c } from "./x.lat";`,
+  `import "./x.lat";`, `export fn/class/enum`. The semicolon after `import` is
+  mandatory, and the path must be relative and end with `.lat`;
+- error texts are English (`Unexpected token ... at line N`,
+  `module '...' does not export '...'`) unlike the Russian ones of engine #2.
 
 ## Related sections
 

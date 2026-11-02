@@ -49,6 +49,17 @@ and lazy loading plus chunks (`engine2` / `ai` / `editor` / `examples` /
 [Latent in the browser in 5 minutes](../getting-started/web-browser.md) and
 [Latent on the frontend](../guide/web-and-frontend.md).
 
+## Killer features and demos
+
+What lets Latent beat JS/TS on the frontend has its own page,
+[“Killer Features”](../guide/killer-features.md): CSP concurrency in the
+language, AI primitives as syntax, a self-hosted compiler in the browser, a WASM
+sandbox, deterministic GC-free memory, modules with chunks, and two engines.
+Every feature can be tried live in the demos:
+<a href="/latent/demos/">/latent/demos/</a> (goroutines, an AI pipeline,
+self-host, the sandbox, modules, physics); the same page has an honest section on
+the limits and on where JS/TS is still better.
+
 ## Who might find this interesting
 
 - **Language and compiler researchers** — how a small yet complete toolchain is
@@ -64,7 +75,8 @@ and lazy loading plus chunks (`engine2` / `ai` / `editor` / `examples` /
 Honesty matters more than marketing — here is what the language **does not
 have**:
 
-- no modules, packages, or imports: a program is a single file;
+- no packages or package manager: file modules (`import`/`export`) exist, but
+  there are no external dependencies and no `node_modules`;
 - no inheritance or interfaces: classes are fields, methods, and the `init`
   constructor;
 - no user-defined generics: `Name<T>` is parsed and used for built-in types,

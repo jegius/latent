@@ -156,6 +156,16 @@ export function p95(values) {
   return s[Math.min(s.length - 1, Math.floor(s.length * 0.95))];
 }
 
+/** Linear-interpolated percentile (q in [0, 1]); used for p50/p95/p99 charts. */
+export function percentile(values, q) {
+  if (!values.length) return NaN;
+  const s = [...values].sort((a, b) => a - b);
+  const pos = Math.min(s.length - 1, Math.max(0, (s.length - 1) * q));
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  return lo === hi ? s[lo] : s[lo] + (s[hi] - s[lo]) * (pos - lo);
+}
+
 export function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

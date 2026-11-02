@@ -1,6 +1,6 @@
 ---
 title: "Self-hosted компилятор"
-description: "Финальный статус компилятора Latent, написанного на самом Latent: фиксированная точка stage2===stage3, 166 тестов, паритет 64/65 с Rust-эталоном, Rust-free bootstrap (seed+WASM), части src/*.lat, ABI компилятора, бюджет памяти, host-конструкции и остаточные расхождения."
+description: "Финальный статус компилятора Latent, написанного на самом Latent: фиксированная точка stage2===stage3, 173 теста, паритет 64/65 с Rust-эталоном, Rust-free bootstrap (seed+WASM), модули через bundle, части src/*.lat, ABI компилятора, бюджет памяти, host-конструкции и остаточные расхождения."
 sidebar_position: 1
 ---
 
@@ -18,9 +18,10 @@ sidebar_position: 1
   `bootstrap.test.mjs`); Rust-free цепочка `seed → stage-sh-1 → stage-sh-2 →
   stage-sh-3` даёт `stage-sh-2 === stage-sh-3` (проверяют `bootstrap-wasm.mjs`
   и `bootstrap-wasm.test.mjs`).
-- **Регресс-набор — 166 тестов** (`node --test "selfhost/test/*.test.mjs"`,
-  17 сьютов, 0 падений): 85 исходных + 56 дифференциальных в `parity.test.mjs`
-  + 25 Rust-free в `bootstrap-wasm.test.mjs`.
+- **Регресс-набор — 173 теста** (`node --test "selfhost/test/*.test.mjs"`,
+  19 сьютов, 0 падений): фиксированная точка, паритет с Rust-эталоном,
+  Rust-free bootstrap, лексер/скоупинг, float-арифметика, модули через bundle
+  и сборка частей.
 - **Rust не обязателен для сборки**: в репозитории лежит `selfhost/seed.wasm`
   (самохостящийся компилятор, sha256 в `seed.json`), которым собирается
   `shc.lat`; CLI `selfhost/wasm-compiler.mjs` компилирует пользовательские
@@ -43,9 +44,10 @@ node --test "selfhost/test/*.test.mjs"
 
 ## Структура: один файл, собираемый из частей
 
-У Latent нет системы модулей и импортов: программа компилируется как **один
-файл**. Поэтому «линковка» — детерминированная конкатенация частей в порядке
-имён (`selfhost/build.mjs`):
+Сам selfhost-компилятор — **один файл**. У языка есть файловые модули (v1,
+`import`/`export`), но selfhost их не разбирает: у него нет файловой системы, а
+его собственный исходник остаётся однофайловым. Поэтому «линковка» частей —
+детерминированная конкатенация в порядке имён (`selfhost/build.mjs`):
 
 ```text
 selfhost/src/00_abi.lat              карта линейной памяти, слоты состояния
@@ -83,6 +85,66 @@ shc.lat = BANNER + join(sorted(src/*.lat), разделитель)
 
 Сборка идемпотентна: один набор частей всегда даёт один и тот же `shc.lat`.
 **Редактировать `shc.lat` вручную нельзя** — он генерируется.
+
+## Модули и bundle
+
+Модули — **фича хоста/линкера**, а не selfhost. Пользовательский проект из
+нескольких `.lat`-файлов в selfhost не попадает: у компилятора нет ФС, он умеет
+читать только один исходник из линейной памяти. Поэтому хост сначала делает
+плоский эквивалент проекта:
+
+```bash
+latentc bundle main.lat bundle.lat                 # все модули слиты, имена манглены
+node selfhost/wasm-compiler.mjs compile bundle.lat bundle.wasm
+```
+
+Что именно делает `bundle` (`src/modules/bundle.rs`):
+
+- линкует проект так же, как `latentc compile` (таблицы экспортов, манглинг
+  `m<индекс>$<имя>`, циклы разрешены);
+- печатает связанный `Program` обратно в Latent: `import`/`export` удалены,
+  top-level объявления идут в порядке canonical path — тот же детерминированный
+  порядок модулей, что и при линковке;
+- `$` в именах заменяется на `__` (`m1$square` → `m1__square`), потому что
+  лексер selfhost принимает только `[A-Za-z_][A-Za-z0-9_]*`.
+
+Почему так, а не «научить selfhost импортам»:
+
+- в selfhost нет файлового ввода-вывода, и добавлять его — значит тащить в
+  компилятор хост-API и ломать Rust-free bootstrap (seed → stage1′ → …);
+- линковка — один проход по AST, который уже реализован в Rust и в JS-движке;
+  дублировать её на Latent ради selfhost не нужно;
+- bundle — **проверяемый контракт**: он детерминирован и однозначно определяет
+  поведение программы.
+
+### Контракт паритета: поведенческий, а не побайтовый
+
+Требование «`selfhost(bundle)` байт-в-байт равен `latentc compile_files`» на
+текущем selfhost **невыполнимо и не является целью**. Причина не в модулях:
+Rust и selfhost исторически генерируют разный WASM даже для простейшей
+однофайловой программы `fn main() -> int { return 42; }` — 1019 байт (selfhost)
+против 934 (Rust). Это известное расхождение кодогенераторов, а не дефект bundle.
+
+Поэтому контракт модулей для selfhost — **поведенческий паритет**:
+
+| Проверка | Кто проверяет | Статус |
+|---|---|---|
+| `latentc bundle <entry>` → в bundle нет `import`/`export` и нет `$` (только `mN__name`) | `selfhost/test/modules.test.mjs` | ✅ |
+| `latentc compile(bundle)` байт-в-байт равен `latentc compile_files(entry)` | `scripts/check-golden.mjs` + `modules.test.mjs` | ✅ инвариант линкера |
+| `main()` у Rust и у selfhost равен `expect-main` из fixture | `modules.test.mjs` | ✅ |
+| ошибки проекта (нет файла, нет экспорта, кривой путь, дубль импорта, import/export не на top-level) ловит хост, `latentc bundle` их возвращает | `modules.test.mjs` (`errors/**`) | ✅ |
+| selfhost на **сыром** модульном исходнике отказывает (`error: undefined variable: import`), а не «проглатывает» его | `modules.test.mjs` | ✅ |
+| байтовое равенство selfhost vs Rust | — | ❌ не требуется (размеры, например, 1193 против 1111 на `basic`) |
+
+Фикстуры и их маркеры (`// entry: true`, `// expect-main: N`,
+`// expect-error: <подстрока>`) описаны в
+`selfhost/test/fixtures/modules/README.md`; там же таблица наблюдаемых размеров
+(`basic`: selfhost 1193 / Rust 1111; `cycle`: 1067 / 987).
+
+Сам `bundle` проверяем отдельно: он компилируется однофайловым ABI в те же
+байты, что и проект (пример из
+[разбора модулей](../examples/modules.md#4-что-печатает-latentc-bundle)).
+
 
 ## ABI компилятора
 
@@ -144,8 +206,8 @@ node selfhost/bootstrap.mjs
 ## Bootstrap без Rust (seed + WASM)
 
 `selfhost/seed.wasm` — уже собранный selfhost-компилятор (последняя версия
-`shc.lat`, паритет 64/65). Им собирается `shc.lat`, затем компилятор
-воспроизводит себя; `cargo`/`latentc` не участвуют:
+`shc.lat`, паритет 64/65, **41 482 байта**, `seedRevision` 2). Им собирается
+`shc.lat`, затем компилятор воспроизводит себя; `cargo`/`latentc` не участвуют:
 
 ```text
 seed.wasm        -> shc.lat -> stage-sh-1.wasm   (stage1')
@@ -222,6 +284,7 @@ node selfhost/bootstrap-wasm.mjs --verify-seed      # sha256 seed.json + shc.lat
 | `channel`/`tensor`/`ai_*`/`ch <- v`/`ch.send` | ❌ ошибка «требует host-рантайма» с именем конструкции |
 | `float`-параметры `fn f(r: float)` | ❌ (в эталоне тоже невалидно) |
 | `@`-декораторы | ❌ (см. «Остаточные расхождения») |
+| `import`/`export` (файловые модули) | ❌ не разбираются: проект приходит плоским `bundle` от хоста (см. [«Модули и bundle»](#модули-и-bundle)) |
 
 **Float без IEEE754-битов.** Литерал собирается как f64-арифметика
 (`mant / 10^k * 10^exp`, i32→f64 через `f64.convert_i32_s`) — компилятору не
@@ -363,9 +426,8 @@ Selfhost повторяет **наблюдаемое поведение этал
 node --test "selfhost/test/*.test.mjs"
 ```
 
-166 тестов в 17 сьютах (покрытие: **94.56% функций / 96.68% строк**,
-`node tooling/selfhost-coverage/run.mjs`):
-
+173 теста в 19 сьютах (покрытие: **100% функций / 97.94% строк**,
+`node tooling/selfhost-coverage/run.mjs --lines --min 90`):
 - `bootstrap.test.mjs` — валидность stage1/2/3 и фиксированная точка (Rust-путь);
 - `bootstrap-wasm.test.mjs` — Rust-free bootstrap: `seed → stage-sh-1 →
   stage-sh-2 → stage-sh-3`, `stage-sh-2 === stage-sh-3`, `stage-sh-1 === seed`,
@@ -377,11 +439,18 @@ node --test "selfhost/test/*.test.mjs"
 - `features.test.mjs` — дифференциальные тесты oracle (Rust) vs stage1 vs
   stage2;
 - `coverage.test.mjs` — дифференциальное покрытие конструкций из `shc.lat`;
+- `float-arithmetic.test.mjs` — float-арифметика (`-`, `/`, `<=`, `>=`) на
+  выражениях, где oracle выдаёт невалидный WASM; поэтому тест selfhost-only;
 - `parity.test.mjs` — 56 кейсов паритета: spawn/yield/async-await/select/test,
   match по строкам, to_str/to_int, top-level let, host-ошибки
   (channel/tensor/ai_*/каналы/методы), print, null, строковые параметры,
   `float("…")`, экспоненциальные литералы, escape-строки, вложенные
   комментарии; для ошибочных кейсов требуется совпадение текстов stage1/stage2;
+- `modules.test.mjs` — дифференциальный тест модулей: `latentc bundle` → свойство
+  плоского исходника, `compile(bundle) == compile_files` (Rust), selfhost
+  компилирует bundle и даёт тот же `main()`, ошибки проекта ловит хост,
+  selfhost отказывает на сыром модульном исходнике
+  (`selfhost/test/fixtures/modules/`);
 - `build.test.mjs` — детерминизм и идемпотентность сборщика частей.
 
 Матрица паритета (вне `selfhost/`, в рабочей папке агента):

@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Многофайловый проект в браузере — Latent killer demo</title>
+  <meta name="description" content="Четыре .lat-файла, import/export, граф модулей, двухфазная линковка и запуск проекта прямо в браузере. Циклы импорта, манглинг имён, ошибки линковки — всё настоящее." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23070b12'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%235eead4'%3E%CE%BB%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="../assets/killer.css" />
+  <style>
+    .k-modules-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; }
+    @media (min-width: 1081px) {
+      .k-grid--main { grid-template-columns: minmax(0, 1.2fr) minmax(370px, 0.95fr); }
+    }
+    @media (max-width: 1000px) { .k-modules-grid { grid-template-columns: minmax(0, 1fr); } }
+    #module-editor .k-editor-area { min-height: 330px; max-height: 460px; }
+    .k-graph text { user-select: none; }
+    .k-graph-edge { animation: k-dash 1.2s linear infinite; }
+    @keyframes k-dash { to { stroke-dashoffset: -14; } }
+    @media (prefers-reduced-motion: reduce) { .k-graph-edge { animation: none; } }
+    #graph-error { margin-top: 10px; }
+    .k-graph-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--k-dim); margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <header class="k-top">
+    <div class="k-wrap k-top-inner">
+      <a class="k-brand" href="../"><span class="k-mark">λ</span> Latent · killer demos</a>
+      <nav class="k-nav" aria-label="Демо">
+        <a href="../concurrency/">Конкурентность</a>
+        <a href="../ai/">AI-native</a>
+        <a href="../selfhost/">Self-host</a>
+        <a href="../sandbox/">Песочница</a>
+        <a class="is-active" href="./">Модули</a>
+        <a href="../../examples/frontend-showcase">Документация</a>
+        <span class="k-pill k-pill--live"><span class="k-dot"></span>modules ABI</span>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="k-wrap k-hero">
+      <p class="k-eyebrow">import · export · graph · link</p>
+      <h1 class="k-title">Многофайловый проект.<br /><span class="k-grad">Целиком в браузере.</span></h1>
+      <p class="k-lead">
+        Четыре <code>.lat</code>-файла, именованные <code>import</code>/<code>export</code>,
+        граф модулей, двухфазная линковка с манглингом имён и запуск проекта — без сервера
+        и файловой системы. Граф и мангленные имена даёт <strong>настоящий линкер движка №1</strong>
+        из <code>web-ide/compiler</code>, а исполнение идёт через модульный ABI
+        <code>latent_compile_files</code> в <code>compiler.wasm</code> (движок №2).
+        Редактируйте файлы — граф и сборка пересчитываются.
+      </p>
+      <div class="k-actions">
+        <button class="k-btn k-btn--primary" id="run-project" type="button">Собрать и запустить</button>
+        <button class="k-btn k-btn--ghost" id="reset-project" type="button">Сбросить проект</button>
+        <span class="k-badge" id="abi-badge">проверяем ABI…</span>
+      </div>
+      <div class="k-meta">
+        <span><b id="m-modules">—</b> модулей</span>
+        <span><b id="m-edges">—</b> импортов</span>
+        <span><b id="m-cycles">—</b> циклов</span>
+        <span><b>0</b> серверов и файлов на диске</span>
+      </div>
+    </section>
+
+    <section class="k-wrap k-section">
+      <div class="k-grid k-grid--main">
+        <div class="k-stack">
+          <div class="k-panel">
+            <div class="k-panel-head">
+              <div>
+                <h2 class="k-panel-title">Дерево проекта</h2>
+                <p class="k-sub" id="project-desc">math → stats → model → main</p>
+              </div>
+              <span class="k-badge k-badge--muted" id="tree-count">—</span>
+            </div>
+            <div class="k-samples" id="projects" style="margin-bottom:12px"></div>
+            <div class="k-modules-grid">
+              <div class="k-stack-sm" style="min-width:0">
+                <div class="k-row" style="justify-content:space-between">
+                  <span class="k-small k-dim">файлы</span>
+                  <span class="k-badge k-badge--violet" id="entry-name">main.lat</span>
+                </div>
+                <div class="k-files" id="tree"></div>
+                <p class="k-hint">Активный файл — <span class="k-mono" id="active-file-2">main.lat</span>. Entry — <span class="k-mono">main.lat</span>.</p>
+              </div>
+              <div style="min-width:0">
+                <div class="k-row" style="justify-content:space-between;margin-bottom:6px">
+                  <span class="k-mono k-small" id="active-file">main.lat</span>
+                  <span class="k-badge k-badge--green">редактируется</span>
+                </div>
+                <div id="module-editor"></div>
+              </div>
+            </div>
+            <div class="k-row" style="margin-top:10px; justify-content:space-between">
+              <span class="k-small k-dim" id="run-status">готово</span>
+              <span class="k-kbd">Ctrl/⌘ + Enter</span>
+            </div>
+            <div class="k-console" id="project-console" style="margin-top:10px" role="log" aria-live="polite"></div>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head">
+              <div>
+                <h2 class="k-panel-title">После линковки</h2>
+                <p class="k-sub">Имена функций в плоской программе: <code>mN$name</code> — по модулям.</p>
+              </div>
+              <span class="k-badge" id="m-functions">—</span>
+            </div>
+            <div class="k-table-wrap">
+              <table class="k-table">
+                <thead><tr><th>mangled</th><th>module</th><th>source</th></tr></thead>
+                <tbody id="linked-names"><tr><td colspan="3" class="k-dim">запустите проект, чтобы увидеть имена после линковки</td></tr></tbody>
+              </table>
+            </div>
+            <p class="k-hint" style="margin-top:8px">Линкер переписывает top-level имена в <code>mN$name</code>, чтобы модули не конфликтовали. Это реальные имена из AST, а не подпись.</p>
+          </div>
+        </div>
+
+        <aside class="k-stack">
+          <div class="k-panel">
+            <div class="k-panel-head" style="margin-bottom:8px">
+              <div>
+                <h2 class="k-panel-title">Граф модулей</h2>
+                <p class="k-sub" id="graph-status">—</p>
+              </div>
+              <span class="k-badge k-badge--muted">SVG</span>
+            </div>
+            <div class="k-graph-wrap">
+              <svg class="k-graph" id="graph" viewBox="0 0 420 300" role="img" aria-label="Граф импортов между модулями проекта"></svg>
+            </div>
+            <div class="k-graph-legend">
+              <span><i class="k-legend-swatch" style="color:var(--k-cyan);background:currentColor"></i> entry</span>
+              <span><i class="k-legend-swatch" style="color:var(--k-violet);background:currentColor"></i> импорт</span>
+              <span><i class="k-legend-swatch" style="color:var(--k-amber);background:currentColor"></i> цикл</span>
+              <span>клик по узлу — открыть файл</span>
+            </div>
+            <div class="k-note k-note--danger k-hide" id="graph-error"></div>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head" style="margin-bottom:10px">
+              <h2 class="k-panel-title">Метрики сборки</h2>
+              <span class="k-badge" id="m-abi">engine #1</span>
+            </div>
+            <div class="k-metrics">
+              <div class="k-metric k-metric--accent">
+                <div class="k-metric-k">модулей</div>
+                <div class="k-metric-v" id="m-modules-2">—</div>
+              </div>
+              <div class="k-metric">
+                <div class="k-metric-k">линковка</div>
+                <div class="k-metric-v" id="m-link">—</div>
+              </div>
+              <div class="k-metric k-metric--green">
+                <div class="k-metric-k">исполнение</div>
+                <div class="k-metric-v" id="m-exec">—</div>
+              </div>
+              <div class="k-metric k-metric--violet">
+                <div class="k-metric-k">wasm</div>
+                <div class="k-metric-v" id="m-bytes-out">—</div>
+              </div>
+            </div>
+            <p class="k-hint" style="margin-top:10px">Линковка — JS-линкер движка №1; WASM-путь включается автоматически, если в <code>compiler.wasm</code> появится <code>latent_compile_files</code>.</p>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head" style="margin-bottom:8px">
+              <h2 class="k-panel-title">Модульный ABI</h2>
+            </div>
+            <p class="k-small k-muted" id="abi-detail">проверяем compiler.wasm…</p>
+            <div class="k-hash" style="margin-top:8px">manifest: "LPF1" · u32 count · {path,src} × N · u32 entry</div>
+            <p class="k-hint" style="margin-top:8px">Если ABI появится, страница соберёт manifest и запустит результат как WASM. Сейчас проект исполняется движком №1.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="k-wrap k-section">
+      <div class="k-section-head">
+        <div>
+          <h2 class="k-section-title">Почему это killer feature</h2>
+          <p class="k-sub">Модули — часть языка и линкера, а не «сборщик сбоку».</p>
+        </div>
+        <span class="k-badge k-badge--violet">modules v1</span>
+      </div>
+      <div class="k-grid k-grid--4">
+        <div class="k-card">
+          <div class="k-card-icon">⌘</div>
+          <h3 class="k-card-title">Именованные импорты</h3>
+          <p class="k-card-text"><code>import { square, mean } from "./math.lat"</code> — синтаксис языка. Только <code>export</code>-имена видны снаружи, алиасы и относительные пути поддерживаются.</p>
+        </div>
+        <div class="k-card">
+          <div class="k-card-icon">◈</div>
+          <h3 class="k-card-title">Двухфазная линковка</h3>
+          <p class="k-card-text">Сначала строится таблица <code>(module, name) → mangled</code>, затем AST переписывается. Поэтому межмодульная рекурсия и циклы импорта работают.</p>
+        </div>
+        <div class="k-card">
+          <div class="k-card-icon">⟳</div>
+          <h3 class="k-card-title">Циклы разрешены</h3>
+          <p class="k-card-text"><code>a.lat ↔ b.lat</code> — валидный проект: резолвер фиксирует цикл для диагностики, а линковка его разрешает. Это видно на графе.</p>
+        </div>
+        <div class="k-card">
+          <div class="k-card-icon">⌂</div>
+          <h3 class="k-card-title">Браузер как IDE</h3>
+          <p class="k-card-text">Дерево, редактор, граф и запуск живут на статической странице. Ни сервера, ни ФС: проект — это <code>{name, code}</code> в памяти вкладки.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="k-wrap k-section">
+      <div class="k-panel">
+        <div class="k-panel-head">
+          <div>
+            <h2 class="k-panel-title">Честные ограничения</h2>
+            <p class="k-sub">Модули v1 — намеренно маленький, но настоящий механизм.</p>
+          </div>
+          <span class="k-badge k-badge--amber">важно</span>
+        </div>
+        <div class="k-grid k-grid--2">
+          <div class="k-stack-sm">
+            <p class="k-small"><b>ABI зависит от сборки.</b> Страница проверяет <code>compiler.wasm</code> через <code>WebAssembly.Module.exports</code>. В текущей сборке есть <code>latent_compile_files</code>, поэтому проект реально компилируется в WASM; если ABI нет — исполняется движком №1. Обе ветки настоящие, без подделки.</p>
+            <p class="k-small"><b>v1-синтаксис.</b> Только именованные импорты, только относительные пути с <code>.lat</code>, без <code>export *</code>, <code>import * as ns</code> и пакетного менеджера.</p>
+            <p class="k-small"><b>Нет top-level кода.</b> Модуль — это объявления; побочных эффектов при импорте нет по определению.</p>
+          </div>
+          <div class="k-stack-sm">
+            <p class="k-small"><b>Редактор в памяти.</b> Перезагрузка страницы сбрасывает правки: localStorage и ФС здесь нет.</p>
+            <p class="k-small"><b>Две линковки.</b> WASM-модуль собирает компилятор из manifest; JS-линкер движка №1 всё равно строит граф и показывает мангленные имена — это разные реализации одного контракта.</p>
+            <p class="k-small"><b>Циклы — не «бесплатно».</b> Они разрешены на уровне линковки, но рекурсивные циклы могут уйти в бесконечность, как и любой рекурсивный код.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="k-foot">
+    <div class="k-wrap k-foot-inner">
+      <span>Latent · killer demos · модули, линковка и запуск в браузере</span>
+      <div class="k-foot-links">
+        <a href="../">Все демо</a>
+        <a href="../../examples/frontend-showcase">Frontend showcase</a>
+        <a href="../../guide/modules">Гайд по модулям</a>
+        <a href="../../examples/modules">Пример проекта</a>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module" src="./killer-modules.js"></script>
+</body>
+</html>

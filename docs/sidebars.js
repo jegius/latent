@@ -63,6 +63,10 @@ const guideItems = existing([
   'guide/wasm-and-execution',
   // Новые веб/фронтенд-темы (файлы пишет frontend-content).
   'guide/web-and-frontend',
+  // Файловые модули: import/export, линковка, bundle (v1).
+  'guide/modules',
+  // Killer-фичи: обзор того, за счёт чего язык выигрывает у JS/TS.
+  'guide/killer-features',
 ]);
 
 // numberPrefixParser: false (docusaurus.config.js) — id сохраняют числовые

@@ -80,7 +80,7 @@ seed once. See [specs/selfhost](../specs/selfhost.md).
 
 | Decision | What we get | Status |
 |---|---|---|
-| No modules/imports | A simple parser, one file — one program | **Remains** (roadmap: modules + chunks; lazy chunks for WASM bundles already exist) |
+| No packages/dependency manager | A simple linker, no external ecosystem | **Partly removed**: file modules v1 (`import`/`export`, linking, bundle) and lazy chunks for WASM bundles exist; there are no packages and no npm |
 | No GC, bump allocator | Predictability, minimal runtime | **Remains** (roadmap) |
 | Classes without inheritance | A simple object model | **Remains** |
 | `int`/`float` unify | Fewer annotations | **Remains**; partially compensated by the type checker |
@@ -107,8 +107,10 @@ Two limitations that used to be visible to users are no longer trade-offs:
 
 ### Roadmap
 
-- **Modules and chunks.** Modules/imports (today one file is one program); lazy
-  chunks for WASM bundles already work in the playground: dynamic import +
+- **Modules and chunks.** File modules v1 (`import`/`export`, linking, `bundle`)
+  are already in the compiler — see [guide/modules](../guide/modules.md); next
+  come v1 extensions (`export *`, namespace imports) and packages. Lazy chunks
+  for WASM bundles already work in the playground: dynamic import +
   `manualChunks` (`engine2` / `ai` / `editor` / `examples` / `core`), a Vite
   production build — see [tooling/web-ide](../tooling/web-ide.md).
 - **Memory.** GC/freeing or arena strategies on top of the bump allocator.

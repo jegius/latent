@@ -1,6 +1,6 @@
 ---
 title: "Матрица паритета: Rust-компилятор vs self-hosted vs JS-интерпретатор"
-description: "Сравнение трёх реализаций Latent по фактам кода и проверкам: лексика, типы, инструкции, выражения, классы, enum, builtins, host-фичи, ABI; финальный паритет selfhost 64/65 и 166 тестов."
+description: "Сравнение трёх реализаций Latent по фактам кода и проверкам: лексика, типы, инструкции, выражения, классы, enum, builtins, модули, host-фичи, ABI; финальный паритет selfhost 64/65 и 173 теста."
 sidebar_position: 2
 ---
 
@@ -21,7 +21,7 @@ sidebar_position: 2
   Артефакт актуален: собран из текущего `src/`, memory-builtins в нём есть.
 - **JS**: программы запускались через `runLatent(src, withAI)` из
   `web-ide/compiler-loader.js`.
-- **selfhost**: `node --test "selfhost/test/*.test.mjs"` — **166 тестов, 0
+- **selfhost**: `node --test "selfhost/test/*.test.mjs"` — **173 теста, 0
   падений**; `bootstrap.mjs` — `stage2 === stage3`; `latent-work/gap-matrix.mjs`
   — **64/65** кейсов совпадают с Rust-эталоном (единственное расхождение —
   float-литералы, где selfhost сильнее). Подробности —
@@ -97,10 +97,23 @@ sidebar_position: 2
 | `this` | ✅ | ✅ | ✅ |
 | методы класса | ⚠️ только на переменной с классом | ✅ | ✅ |
 | наследование | ❌ | ❌ | ❌ |
-| `enum` | ✅ (float-payload ⚠️) | ✅ | ❌ |
+| `enum` | ✅ (float-payload ⚠️) | ✅ | ✅ (v1: варианты с payload, `match`) |
 | встроенные `Ok/Err/Some/None` | ✅ | ✅ | ✅ |
 | `match` по конструкторам | ✅ | ✅ | ✅ |
 | float-поля/float-payload | ⚠️ дефекты кодогена | ⚠️ | ✅ |
+| файловые модули (`import`/`export`) | ✅ `compile_files` | ❌ (получает `bundle`) | ✅ нативный линкер |
+
+## Модули и линковка
+
+| Возможность | Rust | selfhost | JS |
+|---|---|---|---|
+| `import { a, b as c } from "./x.lat"` | ✅ | ❌ (нет ФС) | ✅ |
+| `import "./x.lat"` (подключение) | ✅ | ❌ | ✅ |
+| `export fn`/`class`/`enum` | ✅ | ❌ | ✅ |
+| циклы импорта | ✅ | ❌ | ✅ |
+| манглинг `m<idx>$<name>` | ✅ | получает готовый (`m1__name`) | ✅ (`m1$name`) |
+| `latentc bundle` (плоский исходник) | ✅ | вход, а не выход | ❌ |
+| многофайловый ABI `latent_compile_files` | ✅ | ❌ (свой ABI INPUT/OUTPUT) | ❌ |
 ## Массивы, строки, builtins
 
 | Возможность | Rust | selfhost | JS |
@@ -158,11 +171,12 @@ sidebar_position: 2
 - `new Class(...)` без `init` в достижимом коде;
 - `print` строк из `.to_str()` иногда печатает указатель.
 
-Поставляемый `web-ide/compiler.wasm` (465 435 байт) **собран из текущего
+Поставляемый `web-ide/compiler.wasm` (630 340 байт) **собран из текущего
 `src/`**: memory-builtins (`alloc`, `load8`, `store8`, `load32`, `store32`,
-`memcopy`) в нём есть, поэтому этот пункт из прежнего списка дефектов снят.
-Единственная известная старая копия — в ресурсах IDEA-плагина (см.
-[IDEA](../tooling/idea.md#ограничения)).
+`memcopy`) и модульный ABI (`latent_compile_files`, `latent_bundle_files`) в нём
+есть, поэтому этот пункт из прежнего списка дефектов снят. Встроенная копия в
+ресурсах IDEA-плагина синхронизирована с этим же артефактом
+(`node scripts/check-embedded-wasm.mjs`), отдельных старых копий нет.
 
 При этом **selfhost — строгое надмножество эталона по float**: по
 `selfhost/README.md`, случаи `int(2.5 * 2.0)`, `int(sqrt(16.0))`,
@@ -178,7 +192,7 @@ WASM и верный результат, тогда как `latentc` на них
 
 | Источник | Утверждение | Фактически |
 |---|---|---|
-| `web-ide/README.md` | «движок №1 реализует все конструкции языка» | нет `enum`, побитовых операторов, `str/int/float/sqrt`, блочных комментариев, `Name<...>` |
+| `web-ide/README.md` | «движок №1 реализует все конструкции языка» | нет побитовых операторов, `str/int/float/sqrt`, блочных комментариев, `Name<...>`; `enum` и модули уже поддержаны |
 | `web-ide/README.md` | движок №2 поддерживает `ttest/assert_eq` | `test`-блоки компилируются, но не исполняются; исполняются только `assert`/`assert_eq` |
 | `tooling/language-data/language.json` | `str/int/float/sqrt` — `engine: both` | только движок №2 |
 | `tooling/language-data/language.json` | `alloc/load8/store8/load32/store32/memcopy` — `engine: both` | только движок №2 (в JS-интерпретаторе этих builtin'ов нет) |
@@ -194,8 +208,9 @@ memory-builtins») из документации **удалены**: артеф�
 ## Связанные разделы
 
 - [Движки web IDE](./engines.md) — как эти реализации используются в IDE.
-- [Self-hosted компилятор](./selfhost.md) — финальный статус, 166 тестов, бюджет
-  памяти.
+- [Self-hosted компилятор](./selfhost.md) — финальный статус, 173 теста, бюджет
+  памяти, [модули и bundle](./selfhost.md#модули-и-bundle).
+- [Модули](../guide/modules.md) — `import`/`export` и линковка.
 - [Интерналы кодогена](./internals-codegen.md).
 - [Архитектура Rust-компилятора](./rust-architecture.md).
 - [Архитектура web IDE](./webide-architecture.md).

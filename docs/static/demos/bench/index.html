@@ -4,13 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Latent vs JavaScript — интерактивный бенчмарк</title>
-  <meta name="description" content="Пять алгоритмов на JS и на Latent→WASM: живые миллисекунды, проверка контрольных сумм, компиляция исходника в браузере." />
+  <meta name="description" content="Пять алгоритмов на JS и на Latent→WASM: живые миллисекунды, гонка баров, история прогонов, проверка контрольных сумм и компиляция исходника в браузере." />
+  <meta name="theme-color" content="#04070d" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23070b12'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%235eead4'%3E%CE%BB%3C/text%3E%3C/svg%3E" />
   <script>
     // Keep relative URLs stable whether the host serves /demos/bench or
     // /demos/bench/ (Docusaurus serve drops the trailing slash).
     (() => {
-      const m = location.pathname.match(/^(.*\/demos)(?:\/(bench|image|physics))?\/?$/);
+      const m = location.pathname.match(/^(.*\/demos)(?:\/(bench|image|physics|concurrency|ai|selfhost|sandbox|modules))?\/?$/);
       if (!m) return;
       const base = document.createElement('base');
       base.href = `${m[1]}/${m[2] ? `${m[2]}/` : ''}`;
@@ -19,119 +20,240 @@
   </script>
   <link rel="stylesheet" href="/latent/demos/assets/demo.css"
         onerror="this.onerror=null;this.href='../assets/demo.css'" />
+  <style>
+    .arena-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+    .arena-title { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .arena-title .task-kicker { font-family: var(--mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+    .arena-title h2 { font-size: clamp(20px, 2.4vw, 26px); }
+    .arena-title .sub { margin: 0; }
+    .ratio-box { padding: 20px 10px 16px; border-radius: 18px; background: radial-gradient(420px 160px at 50% 0%, rgba(94,234,212,.09), transparent 70%); border: 1px solid var(--line); }
+    .ratio-mid .big-ratio { transition: filter .3s; }
+    .ratio-side .ratio-value { transition: color .25s; }
+    .ratio-value.win { color: var(--teal); }
+    .ratio-value.lose { color: var(--pink); }
+    .race-block { margin: 16px 0 4px; }
+    .sample-groups { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+    .sample-group { display: grid; grid-template-columns: 106px minmax(0, 1fr); gap: 12px; align-items: center; }
+    .sample-group .sg-label { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; color: var(--dim); }
+    .samples { padding-left: 0; margin: 0; }
+    .samples i { max-width: none; height: 5px; }
+    .samples i.js { background: rgba(251,113,133,.45); }
+    .samples i.wasm { background: rgba(94,234,212,.55); }
+    .samples i.best { box-shadow: 0 0 10px rgba(94,234,212,.5); }
+    .chart-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 12px; align-items: stretch; margin-top: 14px; }
+    .chart-mini-stats { display: flex; flex-direction: column; justify-content: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; background: rgba(4,7,13,.45); }
+    .chart-mini-stats .k { font-family: var(--mono); font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+    .chart-mini-stats .v { font-family: var(--mono); font-size: 17px; color: var(--text); font-variant-numeric: tabular-nums; }
+    .aside-progress { margin: 14px 0 4px; }
+    .run-chip { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--dim); min-height: 16px; }
+    .run-chip .bar { flex: 1; height: 3px; border-radius: 99px; background: rgba(146,178,219,.14); overflow: hidden; }
+    .run-chip .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--teal), var(--sky)); transition: width .3s; }
+    .summary-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .compile-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: 16px; align-items: start; }
+    .compile-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+    .compile-log { font-family: var(--mono); font-size: 10.5px; color: var(--dim); line-height: 1.7; margin-top: 8px; min-height: 18px; }
+    .compile-log b { color: var(--text); font-weight: 500; }
+    @media (max-width: 960px) {
+      .chart-row { grid-template-columns: minmax(0, 1fr); }
+      .chart-mini-stats { flex-direction: row; justify-content: space-between; }
+      .compile-grid { grid-template-columns: minmax(0, 1fr); }
+    }
+    @media (max-width: 560px) { .summary-stats { grid-template-columns: minmax(0, 1fr); } }
+  </style>
 </head>
 <body>
+  <a class="skip-link" href="#main">Перейти к содержимому</a>
+
   <header class="topbar">
     <div class="wrap topbar-inner">
-      <a class="brand" href="../"><span class="brand-mark">λ</span> Latent demos</a>
-      <nav class="topnav">
+      <a class="brand" href="../"><span class="brand-mark">λ</span><span>Latent demos<small>бенчмарк</small></span></a>
+      <button class="btn btn-icon btn-ghost nav-toggle" type="button" data-nav-toggle
+              aria-label="Меню" aria-expanded="false" aria-controls="topnav">☰</button>
+      <nav class="topnav" id="topnav" aria-label="Основная навигация">
         <a href="../">Обзор</a>
-        <a class="active" href="./">Бенчмарк</a>
+        <a class="active" href="./" aria-current="page">Бенчмарк</a>
         <a href="../image/">Изображения</a>
         <a href="../physics/">Физика</a>
+        <a href="../#killer">Killer-демо</a>
         <a class="keep" href="../../examples/frontend-showcase">Документация</a>
         <span class="tag">WASM</span>
       </nav>
     </div>
   </header>
 
-  <main>
-    <section class="wrap hero">
+  <main id="main">
+    <section class="wrap hero" style="padding-bottom:16px">
+      <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
       <p class="eyebrow">performance.now() · медиана 3 прогонов · одинаковые алгоритмы</p>
-      <h1>JS против Latent→WASM.<br /><span class="grad">Ваши числа, не наши.</span></h1>
+      <h1 class="compact">JS против <span class="grad">Latent→WASM.</span><br /><span style="font-size:.6em;color:var(--muted);font-weight:700;letter-spacing:-.03em">Ваши числа, не наши.</span></h1>
       <p class="lead">
         Пять задач: хеширование байтов, решето Эратосфена, умножение матриц, quicksort и
         разбор UTF-8. Код на JS и на Latent делает <strong>одну и ту же работу</strong> с
         одинаковыми входными данными, а контрольные суммы должны совпасть. Считает ваш браузер —
-        цифры будут зависеть от машины и версии движка.
+        цифры зависят от машины и версии движка.
       </p>
       <div class="hero-actions">
-        <button class="btn btn-primary" id="run-all" type="button">Прогнать все 5</button>
+        <button class="btn btn-primary" id="run-all" type="button">Прогнать все 5 <span aria-hidden="true">→</span></button>
         <button class="btn" id="run-one" type="button">Только выбранную</button>
-        <span class="badge" id="load-status"><span class="spinner"></span> загрузка wasm…</span>
+        <span class="badge" id="load-status" aria-live="polite"><span class="spinner"></span> загрузка wasm…</span>
+      </div>
+      <div class="run-chip" style="margin-top:12px;max-width:460px">
+        <span id="run-caption">готово</span>
+        <span class="bar"><i id="run-progress"></i></span>
       </div>
       <div class="hero-meta">
         <span><b>5</b> задач</span>
+        <span class="dot" aria-hidden="true"></span>
         <span><b>~12 KiB</b> суммарный wasm</span>
-        <span><b>compiler.wasm</b> компилирует .lat прямо здесь</span>
+        <span class="dot" aria-hidden="true"></span>
+        <span><b>0</b> зависимостей</span>
+        <span class="dot" aria-hidden="true"></span>
+        <span><b id="hero-parity">0/5</b> parity</span>
       </div>
     </section>
 
-    <section class="wrap section embed-keep">
-      <div class="grid grid-hero">
-        <div class="panel">
-          <div class="spread" style="margin-bottom: 12px">
-            <div>
-              <h2 style="font-size:20px" id="task-title">FNV-1a hash</h2>
+    <!-- ================= ARENA ================= -->
+    <section class="wrap section embed-keep" style="padding-top:20px">
+      <div class="grid grid-arena">
+        <div class="panel" style="padding:24px">
+          <div class="arena-head">
+            <div class="arena-title">
+              <span class="task-kicker" id="task-index">01 / 05 · selected</span>
+              <h2 id="task-title">FNV-1a hash</h2>
               <p class="sub" id="task-desc">1 MiB байтов × 4 прохода</p>
             </div>
-            <span class="badge" id="task-parity">—</span>
-          </div>
-
-          <div class="metrics" style="margin-bottom: 14px">
-            <div class="metric">
-              <div class="k">JavaScript</div>
-              <div class="v" id="js-time">—</div>
-            </div>
-            <div class="metric accent">
-              <div class="k">Latent → WASM</div>
-              <div class="v" id="wasm-time">—</div>
-            </div>
-            <div class="metric blue">
-              <div class="k">разница</div>
-              <div class="v" id="speedup">—</div>
-            </div>
-            <div class="metric">
-              <div class="k">было / стало</div>
-              <div class="v" id="ratio" style="font-size:16px">—</div>
+            <div class="row">
+              <span class="badge" id="task-parity">—</span>
+              <button class="btn btn-ghost btn-sm" id="show-source" type="button">код</button>
             </div>
           </div>
 
-          <div class="stack-sm" style="margin-bottom: 14px">
-            <div>
-              <div class="field-row"><span>JavaScript</span><output id="js-ms-label">—</output></div>
-              <div class="progress"><i id="js-bar"></i></div>
+          <div class="ratio-box">
+            <div class="ratio-wrap">
+              <div class="ratio-side">
+                <div class="ratio-label">JavaScript</div>
+                <div class="ratio-value" id="js-time">—</div>
+              </div>
+              <div class="ratio-mid">
+                <div class="big-ratio" id="speedup">×—</div>
+                <div class="cap" id="speedup-cap">запустите задачу</div>
+              </div>
+              <div class="ratio-side" style="text-align:right">
+                <div class="ratio-label" style="justify-content:flex-end">Latent → WASM</div>
+                <div class="ratio-value" id="wasm-time">—</div>
+              </div>
             </div>
-            <div>
-              <div class="field-row"><span>Latent → WASM</span><output id="wasm-ms-label">—</output></div>
-              <div class="progress"><i id="wasm-bar"></i></div>
+            <div class="small dim mono" id="ratio" style="text-align:center;margin-top:12px">—</div>
+          </div>
+
+          <div class="race-block" aria-label="Гонка времени выполнения">
+            <div class="race">
+              <div class="race-row js" id="js-race">
+                <span class="race-name"><i></i>JavaScript</span>
+                <span class="race-track"><i class="race-fill" id="js-bar"></i></span>
+                <span class="race-ms" id="js-ms-label">—</span>
+              </div>
+              <div class="race-row wasm" id="wasm-race">
+                <span class="race-name"><i></i>Latent → WASM</span>
+                <span class="race-track"><i class="race-fill" id="wasm-bar"></i></span>
+                <span class="race-ms" id="wasm-ms-label">—</span>
+              </div>
+            </div>
+            <div class="sample-groups">
+              <div class="sample-group">
+                <span class="sg-label">JS · 3 samples</span>
+                <div class="samples" id="js-samples"></div>
+              </div>
+              <div class="sample-group">
+                <span class="sg-label">WASM · 3 samples</span>
+                <div class="samples" id="wasm-samples"></div>
+              </div>
             </div>
           </div>
 
-          <div class="row">
+          <div class="chart-row">
+            <div class="chart short">
+              <div class="chart-head">
+                <span>история ×</span>
+                <b id="history-meta">нет прогонов</b>
+                <span class="spacer"></span>
+                <span class="chart-legend"><span><i class="teal"></i>эта задача</span><span><i class="dim"></i>паритет ×1</span></span>
+              </div>
+              <canvas id="history-chart" aria-label="История отношения JS к WASM по прогонам"></canvas>
+            </div>
+            <div class="chart-mini-stats">
+              <div>
+                <div class="k">лучший ×</div>
+                <div class="v" id="history-best">—</div>
+              </div>
+              <div>
+                <div class="k">прогонов</div>
+                <div class="v" id="history-runs">0</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:16px">
             <button class="btn btn-primary" id="run-current" type="button">Запустить задачу</button>
-            <button class="btn btn-ghost btn-sm" id="show-source" type="button">Показать .lat</button>
-            <span class="small dim" id="run-status">выберите задачу слева</span>
+            <span class="small dim" id="run-status" aria-live="polite">выберите задачу слева</span>
           </div>
         </div>
 
         <aside class="panel panel-flat">
-          <div class="spread" style="margin-bottom: 10px">
-            <h3>Задачи</h3>
-            <span class="small dim">WASM · размер</span>
+          <div class="spread" style="margin-bottom:10px">
+            <div>
+              <h3>Задачи</h3>
+              <span class="small dim">WASM · размер</span>
+            </div>
+            <span class="badge no-dot" id="done-badge">0 / 5</span>
           </div>
           <div class="task-list" id="task-list"></div>
-          <hr class="hr" />
+          <div class="aside-progress">
+            <div class="progress thin"><i id="aside-progress"></i></div>
+          </div>
+          <hr class="hr" style="margin:14px 0" />
           <div class="stack-sm small muted">
             <div class="spread"><span>Прогрев</span><b class="mono" style="color:var(--text)">1 вызов</b></div>
             <div class="spread"><span>Измерения</span><b class="mono" style="color:var(--text)">медиана 3</b></div>
             <div class="spread"><span>Порядок</span><b class="mono" style="color:var(--text)">чередуется</b></div>
             <div class="spread"><span>GC в WASM</span><b class="mono" style="color:var(--ok)">нет</b></div>
+            <div class="spread"><span>Parity</span><b class="mono" id="aside-parity" style="color:var(--text)">—</b></div>
           </div>
+          <p class="small dim" style="margin:14px 0 0">
+            <b style="color:var(--muted)">Честно:</b> на коротких вызовах (&lt; 1 мс) накладные
+            расходы JS↔WASM заметны, а хорошо оптимизируемый JIT-код может идти вплотную.
+          </p>
         </aside>
       </div>
     </section>
 
-    <section class="wrap section embed-keep">
+    <!-- ================= SUMMARY ================= -->
+    <section class="wrap section embed-keep" style="padding-top:8px">
       <div class="panel">
-        <div class="spread" style="margin-bottom: 12px">
+        <div class="panel-head">
           <div>
-            <h2 style="font-size:20px">Сводка</h2>
+            <h2 style="font-size:22px">Сводка</h2>
             <p class="sub">Обновляется по мере прогонов. «×» — во сколько раз быстрее медианный вызов.</p>
           </div>
           <span class="badge" id="summary-badge">0 / 5</span>
         </div>
-        <div class="progress" style="margin-bottom: 14px"><i id="progress"></i></div>
+
+        <div class="summary-stats">
+          <div class="metric blue">
+            <div class="k">медиана × по задачам</div>
+            <div class="v" id="summary-ratio">—</div>
+          </div>
+          <div class="metric accent">
+            <div class="k">лучший результат</div>
+            <div class="v" id="best-task" style="font-size:15px">—</div>
+          </div>
+          <div class="metric">
+            <div class="k">parity</div>
+            <div class="v" id="parity-count">—</div>
+          </div>
+        </div>
+
+        <div class="progress" style="margin-bottom:14px"><i id="progress"></i></div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -139,58 +261,180 @@
                 <th>Задача</th>
                 <th class="num">JS</th>
                 <th class="num">Latent → WASM</th>
-                <th class="num">Разница</th>
+                <th class="num">×</th>
+                <th class="num">экономия</th>
                 <th>Parity</th>
               </tr>
             </thead>
             <tbody id="results-body">
-              <tr><td colspan="5" class="dim">Запустите бенчмарк, чтобы увидеть результаты.</td></tr>
+              <tr><td colspan="6" class="dim" style="text-align:center;padding:22px">Запустите бенчмарк, чтобы увидеть результаты.</td></tr>
             </tbody>
           </table>
         </div>
+        <p class="small dim" style="margin:12px 0 0">
+          Строка таблицы открывает задачу. «Экономия» — доля времени JS, которую не тратит
+          WASM; отрицательное значение означает, что быстрее оказался JS.
+        </p>
       </div>
     </section>
 
+    <!-- ================= CODE ================= -->
+    <section class="wrap section">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">один алгоритм · два рантайма</p>
+          <h2>Код рядом: Latent и JS</h2>
+          <p class="sub">Полные исходники лежат в <code class="mono">bench/*.lat</code> и <code class="mono">assets/bench.js</code>.</p>
+        </div>
+        <span class="badge info no-dot" id="code-badge">—</span>
+      </div>
+      <div class="code-grid">
+        <div class="code">
+          <div class="code-head">
+            <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span id="code-file">bench/hash.lat</span>
+            <span class="spacer"></span>
+            <span>Latent</span>
+          </div>
+          <pre><code id="code" class="lines">// выберите задачу — исходник подгрузится с сервера</code></pre>
+          <div class="code-foot">
+            <span id="code-meta">—</span>
+            <span class="spacer"></span>
+            <span>compiled → .wasm</span>
+          </div>
+        </div>
+        <div class="code">
+          <div class="code-head">
+            <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span id="code-js-file">assets/bench.js</span>
+            <span class="spacer"></span>
+            <span>JavaScript</span>
+          </div>
+          <pre><code id="code-js" class="lines">// JS-двойник</code></pre>
+          <div class="code-foot">
+            <span id="code-js-meta">—</span>
+            <span class="spacer"></span>
+            <span>same input · same checksum</span>
+          </div>
+        </div>
+      </div>
+      <p class="note" style="margin-top:14px">
+        <b>Почему это честно.</b> JS-функции — не «специально медленные»: это те же циклы,
+        те же буферы и та же арифметика, что в <code class="mono">.lat</code>. Разница —
+        в том, что WASM не проверяет типы на каждой итерации и не имеет GC в горячем пути.
+      </p>
+    </section>
+
+    <!-- ================= COMPILE ================= -->
     <section class="wrap section" id="compile">
-      <div class="grid grid-2">
-        <div class="panel">
-          <div class="row" style="margin-bottom: 8px"><span class="tag">compile in browser</span></div>
-          <h2 style="font-size:20px">Исходник → WASM без сервера</h2>
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">compile in browser · compiler.wasm</p>
+          <h2>Исходник → WASM без сервера</h2>
           <p class="sub">
-            Тот же <code class="mono">compiler.wasm</code>, что в playground: C-ABI
+            Тот же компилятор, что в playground: C-ABI
             <code class="mono">latent_alloc</code> / <code class="mono">latent_compile</code>.
-            Нажмите — страница скачает <code class="mono">sieve.lat</code>, скомпилирует и сразу
-            выполнит результат.
+            Нажмите — страница скачает <code class="mono">sieve.lat</code>, скомпилирует и
+            сразу выполнит результат.
           </p>
-          <div class="row" style="margin: 14px 0">
+        </div>
+        <span class="badge" id="compiler-badge">compiler не загружен</span>
+      </div>
+
+      <div class="compile-grid">
+        <div class="panel">
+          <div class="row" style="margin-bottom:14px">
             <button class="btn btn-primary" id="compile-btn" type="button">Скомпилировать sieve.lat</button>
-            <span class="badge" id="compiler-badge">compiler не загружен</span>
+            <span class="small dim">2 000 000 → 148 933 простых</span>
           </div>
-          <div class="stack-sm small mono" id="compile-log">
-            <div class="dim">Здесь появятся версия компилятора, время компиляции, размер wasm и результат.</div>
+
+          <div class="pipeline" id="compile-pipeline">
+            <div class="stage" data-stage="load">
+              <span class="st-mark">1</span>
+              <span class="st-name">compiler.wasm</span>
+              <span class="st-val">ожидание</span>
+            </div>
+            <div class="stage" data-stage="read">
+              <span class="st-mark">2</span>
+              <span class="st-name">sieve.lat</span>
+              <span class="st-val">ожидание</span>
+            </div>
+            <div class="stage" data-stage="compile">
+              <span class="st-mark">3</span>
+              <span class="st-name">latent_compile()</span>
+              <span class="st-val">ожидание</span>
+            </div>
+            <div class="stage" data-stage="run">
+              <span class="st-mark">4</span>
+              <span class="st-name">instantiate + main()</span>
+              <span class="st-val">ожидание</span>
+            </div>
+            <div class="stage" data-stage="check">
+              <span class="st-mark">5</span>
+              <span class="st-name">checksum === 148933</span>
+              <span class="st-val">ожидание</span>
+            </div>
           </div>
+
+          <div class="compile-facts">
+            <div class="metric accent">
+              <div class="k">compile time</div>
+              <div class="v" id="compile-time">—</div>
+            </div>
+            <div class="metric blue">
+              <div class="k">wasm size</div>
+              <div class="v" id="compile-size">—</div>
+            </div>
+            <div class="metric">
+              <div class="k">run result</div>
+              <div class="v" id="compile-result">—</div>
+            </div>
+            <div class="metric">
+              <div class="k">run time</div>
+              <div class="v" id="compile-run">—</div>
+            </div>
+          </div>
+          <div class="compile-log" id="compile-log">Здесь появятся версия компилятора, время компиляции, размер wasm и результат.</div>
         </div>
 
         <div class="code">
           <div class="code-head">
-            <span class="dots"><i></i><i></i><i></i></span>
-            <span id="code-file">bench/sieve.lat</span>
-            <span style="margin-left:auto" id="code-meta">—</span>
+            <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span>host · compiler ABI</span>
+            <span class="spacer"></span>
+            <span>JavaScript</span>
           </div>
-          <pre><code id="code">// выберите задачу — исходник подгрузится с сервера</code></pre>
+          <pre><code id="compile-abi" class="lines"></code></pre>
+          <div class="code-foot">
+            <span>9 строк · ABI</span>
+            <span class="spacer"></span>
+            <span>без сервера</span>
+          </div>
+          <div style="padding:0 16px 14px">
+            <p class="small dim" style="margin:0 0 10px">
+              Компилятор — обычный WASM-модуль: <code class="mono">latent_alloc</code> кладёт
+              исходник в память, <code class="mono">latent_compile</code> возвращает
+              <code class="mono">[status][len][wasm]</code>. Модуль результата сразу
+              инстанцируется с <code class="mono">env.print</code>.
+            </p>
+            <span class="badge warn no-dot">локально нужен scripts/sync-playground.mjs</span>
+          </div>
         </div>
       </div>
     </section>
 
+    <!-- ================= HONEST ================= -->
     <section class="wrap section">
       <div class="section-head">
         <div>
+          <p class="eyebrow">границы применимости</p>
           <h2>Где именно выигрывает WASM</h2>
           <p class="sub">И где не выигрывает — тоже честно.</p>
         </div>
       </div>
       <div class="grid grid-3">
-        <div class="panel panel-flat">
+        <div class="panel panel-flat reveal">
+          <div class="tag" style="display:inline-block;margin-bottom:10px">01</div>
           <h3>Плотные целочисленные циклы</h3>
           <p class="muted small">
             Решето, quicksort, умножение матриц и побайтовый хеш — это миллионы
@@ -198,14 +442,16 @@
             проверяет типы на каждой итерации и не боится деоптимизации.
           </p>
         </div>
-        <div class="panel panel-flat">
+        <div class="panel panel-flat reveal">
+          <div class="tag" style="display:inline-block;margin-bottom:10px">02</div>
           <h3>Ноль аллокаций в горячем пути</h3>
           <p class="muted small">
             Буферы выделяются один раз через <code class="mono">alloc</code> и переиспользуются.
             Нет объектов, нет GC, нет «повезёт/не повезёт» с молодым поколением.
           </p>
         </div>
-        <div class="panel panel-flat">
+        <div class="panel panel-flat reveal">
+          <div class="tag" style="display:inline-block;margin-bottom:10px">03</div>
           <h3>Одинаковые числа на всех машинах</h3>
           <p class="muted small">
             <code class="mono">int</code> — ровно i32, переполнение и сдвиги определены.
@@ -214,19 +460,19 @@
           </p>
         </div>
       </div>
-      <p class="note warn" style="margin-top: 16px">
+      <p class="note warn" style="margin-top:16px">
         <b>Не всегда.</b> На коротких вызовах (меньше ~1 мс) накладные расходы на переход
         JS↔WASM заметны. На коде, который отлично оптимизируется JIT, JS может быть
-        вплотную. И наоборот: этот бенчмарк не измеряет GC-паузы и стабильность кадров —
-        для этого смотрите <a href="../image/">изображения</a> и
-        <a href="../physics/">физику</a>, где важна предсказуемость.
+        вплотную. Этот бенчмарк не измеряет GC-паузы и стабильность кадров — для этого
+        смотрите <a href="../image/">изображения</a> и <a href="../physics/">физику</a>,
+        где важна предсказуемость.
       </p>
     </section>
 
     <section class="wrap section">
       <div class="panel">
         <h2 style="font-size:20px">Что происходит под капотом</h2>
-        <div class="grid grid-3" style="margin-top: 12px">
+        <div class="grid grid-3" style="margin-top:14px">
           <div>
             <div class="tag" style="display:inline-block;margin-bottom:8px">1 · compiled</div>
             <p class="muted small" style="margin:0">
@@ -271,13 +517,102 @@
       hashJS, sieveJS, matmulJS, sortJS, utf8JS, utf8Stats,
     } from '../assets/bench.js';
     import {
-      instantiateLatent, loadCompiler, formatBytes, formatMs, median, nextFrame, sleep,
+      instantiateLatent, loadCompiler, formatBytes, formatMs, median, p95, nextFrame, sleep,
     } from '../assets/wasm.js';
-    import {highlightLatent} from '../assets/highlight.js';
+    import {highlightLatent, highlightJS} from '../assets/highlight.js';
+    import {
+      initHeader, initReveal, initSpotlight, codeLines, countLines,
+      drawSparkline, animateNumber, reduceMotion,
+    } from '../assets/ui.js';
+
+    initHeader();
+    initReveal();
+    initSpotlight();
 
     if (new URLSearchParams(location.search).has('embed')) {
       document.body.classList.add('embed');
     }
+    const embedded = document.body.classList.contains('embed');
+
+    const JS_SNIPPETS = {
+      hash: `// assets/bench.js — тот же цикл, что в hash.lat
+function hashJS(n, rounds) {
+  hashPrepare(n);            // буфер 1 MiB, один раз
+  let h = -2128831035;       // 0x811c9dc5 как signed i32
+  for (let r = 0; r < rounds; r++) {
+    for (let i = 0; i < n; i++) {
+      h = Math.imul(h ^ hashBuf[i], 16777619);
+    }
+  }
+  return h | 0;
+}`,
+      sieve: `// assets/bench.js — тот же алгоритм, что в sieve.lat
+function sieveJS(n) {
+  if (!sieveBuf || sieveBuf.length !== n + 1) {
+    sieveBuf = new Uint8Array(n + 1);
+  }
+  const a = sieveBuf;
+  for (let i = 0; i <= n; i++) a[i] = 1;
+  a[0] = 0;
+  for (let p = 2; p * p <= n; p++) {
+    if (a[p] !== 0) {
+      for (let j = p * p; j <= n; j += p) a[j] = 0;
+    }
+  }
+  let count = 0;
+  for (let i = 2; i <= n; i++) count += a[i];
+  return count;
+}`,
+      matmul: `// assets/bench.js — тот же i-k-j порядок, что в matmul.lat
+function matmulJS(n) {
+  matPrepare(n);             // A, B, C — Int32Array(n * n)
+  const a = matA, b = matB, c = matC;
+  for (let i = 0; i < n * n; i++) c[i] = 0;
+  for (let i = 0; i < n; i++) {
+    for (let k = 0; k < n; k++) {
+      const aik = a[i * n + k];
+      for (let j = 0; j < n; j++) {
+        c[i * n + j] = (c[i * n + j] + aik * b[k * n + j]) | 0;
+      }
+    }
+  }
+  let sum = 0;
+  for (let i = 0; i < n * n; i++) sum = (sum * 31 + c[i]) & 0x7fffffff;
+  return sum | 0;
+}`,
+      sort: `// assets/bench.js — та же схема partition, что в sort.lat
+function qsort(a, lo, hi) {
+  if (lo >= hi) return;
+  const p = partition(a, lo, hi);
+  qsort(a, lo, p - 1);
+  qsort(a, p + 1, hi);
+}
+
+function sortJS(n) {
+  const a = sortBuf;         // данные LCG — на каждом вызове
+  let s = 42424242;
+  for (let i = 0; i < n; i++) {
+    s = lcgStep(s);
+    a[i] = s;
+  }
+  qsort(a, 0, n - 1);
+  let sum = 0;
+  for (let k = 0; k < n; k++) sum = (sum * 33 + a[k]) & 0x7fffffff;
+  return sum | 0;
+}`,
+      utf8: `// assets/bench.js — тот же побайтовый проход, что в utf8.lat
+const utf8Bytes = new TextEncoder().encode(UTF8_TEXT);
+
+function utf8JS(rounds) {
+  let acc = 0;
+  for (let r = 0; r < rounds; r++) {
+    for (let i = 0; i < utf8Bytes.length; i++) {
+      acc = (acc * 33 + utf8Bytes[i]) & 0x7fffffff;
+    }
+  }
+  return acc | 0;
+}`,
+    };
 
     const TASKS = [
       {
@@ -309,6 +644,7 @@
 
     const $ = (id) => document.getElementById(id);
     const state = new Map();
+    const history = new Map();
     const sources = new Map();
     let current = TASKS[0];
     let busy = false;
@@ -320,6 +656,39 @@
       return (a >>> 0) === (b >>> 0);
     }
 
+    function pct(part, whole) {
+      return whole > 0 ? Math.max(0, Math.min(100, (part / whole) * 100)) : 0;
+    }
+
+    function setRaceWidths(jsMs, wasmMs) {
+      const max = Math.max(jsMs, wasmMs, 0.001);
+      $('js-bar').style.width = '0%';
+      $('wasm-bar').style.width = '0%';
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          $('js-bar').style.width = `${pct(jsMs, max).toFixed(2)}%`;
+          $('wasm-bar').style.width = `${pct(wasmMs, max).toFixed(2)}%`;
+        });
+      });
+      $('js-race').classList.toggle('win', jsMs <= wasmMs);
+      $('wasm-race').classList.toggle('win', wasmMs < jsMs);
+    }
+
+    function renderSamples(id, samples, max, cls) {
+      const box = $(id);
+      box.innerHTML = '';
+      if (!samples || !samples.length) return;
+      for (const ms of samples) {
+        const bar = document.createElement('i');
+        bar.className = cls;
+        const height = 4 + Math.round(pct(ms, max) * 0.08);
+        bar.style.height = `${height}px`;
+        bar.style.opacity = String(0.45 + (ms / max) * 0.55);
+        bar.title = formatMs(ms);
+        box.appendChild(bar);
+      }
+    }
+
     function renderTaskList() {
       const list = $('task-list');
       list.innerHTML = '';
@@ -329,17 +698,33 @@
         btn.className = 'task-item' + (task.id === current.id ? ' active' : '');
         btn.dataset.task = task.id;
         const mod = wasm.get(task.id);
+        const done = state.has(task.id);
+        if (done) btn.classList.add('is-done');
         btn.innerHTML = `
+          <span class="done" aria-hidden="true">✓</span>
           <span class="idx">${String(TASKS.indexOf(task) + 1).padStart(2, '0')}</span>
-          <span>
+          <span style="min-width:0">
             <span class="name">${task.name}</span>
             <span class="meta" style="display:block;margin-left:0">${task.why}</span>
           </span>
-          <span class="meta">${mod ? formatBytes(mod.bytes) : '…'}</span>
+          <span class="task-size">${mod ? formatBytes(mod.bytes) : '…'}</span>
         `;
         btn.addEventListener('click', () => selectTask(task));
         list.appendChild(btn);
       }
+    }
+
+    function updateCodePane(task) {
+      const text = sources.get(task.id);
+      if (text) {
+        $('code').innerHTML = codeLines(text, highlightLatent);
+        $('code-meta').textContent = `${countLines(text)} строк · ${formatBytes(new Blob([text]).size)}`;
+      }
+      const js = JS_SNIPPETS[task.id] || '// —';
+      $('code-js').innerHTML = codeLines(js, highlightJS);
+      $('code-js-file').textContent = `assets/bench.js · ${task.id}`;
+      $('code-js-meta').textContent = `${countLines(js)} строк · фрагмент`;
+      $('code-badge').textContent = `${task.name} · ${task.why}`;
     }
 
     async function selectTask(task) {
@@ -349,23 +734,33 @@
       });
       $('task-title').textContent = task.name;
       $('task-desc').textContent = task.desc;
+      $('task-index').textContent =
+        `${String(TASKS.indexOf(task) + 1).padStart(2, '0')} / ${String(TASKS.length).padStart(2, '0')} · selected`;
       await showSource(task);
+      updateCodePane(task);
       const s = state.get(task.id);
       if (s) {
         updateResultPanel(s);
       } else {
         $('js-time').textContent = '—';
         $('wasm-time').textContent = '—';
-        $('speedup').textContent = '—';
+        $('speedup').textContent = '×—';
+        $('speedup-cap').textContent = 'запустите задачу';
         $('ratio').textContent = '—';
         $('js-ms-label').textContent = '—';
         $('wasm-ms-label').textContent = '—';
         $('js-bar').style.width = '0';
         $('wasm-bar').style.width = '0';
+        $('js-race').classList.remove('win');
+        $('wasm-race').classList.remove('win');
+        $('js-samples').innerHTML = '';
+        $('wasm-samples').innerHTML = '';
         $('task-parity').textContent = '—';
         $('task-parity').className = 'badge';
         $('run-status').textContent = 'ещё не запускалась';
       }
+      updateHistory(task);
+      updateSummary();
     }
 
     async function showSource(task) {
@@ -379,8 +774,10 @@
         }
       }
       const text = sources.get(task.id);
-      $('code').innerHTML = highlightLatent(text);
-      $('code-meta').textContent = `${text.split('\n').length} строк · ${formatBytes(new Blob([text]).size)}`;
+      if (text) {
+        $('code').innerHTML = codeLines(text, highlightLatent);
+        $('code-meta').textContent = `${countLines(text)} строк · ${formatBytes(new Blob([text]).size)}`;
+      }
     }
 
     async function loadModules() {
@@ -403,30 +800,39 @@
       updateSummary();
     }
 
+    function setBigRatio(ratio) {
+      const el = $('speedup');
+      const win = ratio >= 1;
+      el.classList.toggle('lose', !win);
+      const value = win ? ratio : 1 / ratio;
+      if (!el.dataset.fromValue) el.dataset.fromValue = '1';
+      animateNumber(el, value, {decimals: 2, prefix: '×', duration: embedded || reduceMotion() ? 0 : 650});
+      $('speedup-cap').textContent = win
+        ? 'WASM быстрее, чем JS'
+        : 'JS быстрее, чем WASM';
+    }
+
     function updateResultPanel(s) {
       $('js-time').textContent = formatMs(s.jsMs);
       $('wasm-time').textContent = formatMs(s.wasmMs);
       $('js-ms-label').textContent = formatMs(s.jsMs);
       $('wasm-ms-label').textContent = formatMs(s.wasmMs);
-      const max = Math.max(s.jsMs, s.wasmMs);
-      $('js-bar').style.width = `${Math.max(3, (s.jsMs / max) * 100)}%`;
-      $('wasm-bar').style.width = `${Math.max(3, (s.wasmMs / max) * 100)}%`;
+      $('js-time').className = 'ratio-value ' + (s.jsMs <= s.wasmMs ? 'win' : 'lose');
+      $('wasm-time').className = 'ratio-value ' + (s.wasmMs < s.jsMs ? 'win' : 'lose');
+      setRaceWidths(s.jsMs, s.wasmMs);
 
       const ratio = s.jsMs / s.wasmMs;
-      if (ratio >= 1) {
-        $('speedup').textContent = `×${ratio.toFixed(2)}`;
-        $('speedup').style.color = 'var(--teal)';
-        $('ratio').textContent = `${formatMs(s.jsMs)} → ${formatMs(s.wasmMs)}`;
-      } else {
-        $('speedup').textContent = `×${(1 / ratio).toFixed(2)}`;
-        $('speedup').style.color = 'var(--pink)';
-        $('ratio').textContent = `JS быстрее`;
-      }
+      setBigRatio(ratio);
+      $('ratio').textContent = `${formatMs(s.jsMs)} → ${formatMs(s.wasmMs)}`;
+
+      const maxSample = Math.max(...s.jsSamples, ...s.wasmSamples, 0.001);
+      renderSamples('js-samples', s.jsSamples, maxSample, 'js');
+      renderSamples('wasm-samples', s.wasmSamples, maxSample, 'wasm');
 
       const ok = resultEqual(s.jsResult, s.wasmResult);
-      $('task-parity').textContent = ok ? '✓ суммы совпали' : '✗ суммы разошлись';
+      $('task-parity').textContent = ok ? '✓ parity: суммы совпали' : '✗ parity: суммы разошлись';
       $('task-parity').className = 'badge ' + (ok ? 'ok' : 'bad');
-      $('run-status').textContent = `checksum ${(s.wasmResult >>> 0)}`;
+      $('run-status').textContent = `checksum ${(s.wasmResult >>> 0)} · p95 JS ${formatMs(p95(s.jsSamples))}`;
     }
 
     async function measure(task) {
@@ -474,15 +880,43 @@
       };
     }
 
+    function updateHistory(task) {
+      const values = history.get(task.id) || [];
+      $('history-runs').textContent = String(values.length);
+      $('history-best').textContent = values.length
+        ? `×${Math.max(...values).toFixed(2)}`
+        : '—';
+      $('history-meta').textContent = values.length
+        ? (values.length === 1
+          ? 'прогон 1 · запустите ещё раз'
+          : `прогон ${values.length} · последний ×${values[values.length - 1].toFixed(2)}`)
+        : 'нет прогонов';
+      drawSparkline($('history-chart'), values, {
+        min: 0, max: Math.max(1.35, ...values, 1.2), threshold: 1,
+        thresholdColor: 'rgba(146, 178, 219, 0.35)', fill: true,
+      });
+    }
+
     async function runTask(task, {quiet = false} = {}) {
       if (busy) return;
       busy = true;
       $('run-status').textContent = 'прогрев и замер…';
-      if (!quiet) $('load-status').innerHTML = '<span class="spinner"></span> считаем…';
+      $('task-parity').className = 'badge';
+      $('task-parity').textContent = 'измеряем…';
+      if (!quiet) {
+        $('load-status').className = 'badge';
+        $('load-status').innerHTML = '<span class="spinner"></span> считаем…';
+      }
       try {
         const s = await measure(task);
         state.set(task.id, s);
-        if (current.id === task.id) updateResultPanel(s);
+        const list = history.get(task.id) || [];
+        list.push(s.wasmMs > 0 ? s.jsMs / s.wasmMs : 1);
+        history.set(task.id, list);
+        if (current.id === task.id) {
+          updateResultPanel(s);
+          updateHistory(task);
+        }
         renderTaskList();
         updateSummary();
         if (!quiet) {
@@ -496,17 +930,48 @@
       } finally {
         busy = false;
         $('load-status').textContent = `${wasm.size}/${TASKS.length} wasm загружено`;
-        $('load-status').className = 'badge ok';
+        $('load-status').className = wasm.size === TASKS.length ? 'badge ok' : 'badge bad';
       }
     }
 
     function updateSummary() {
       const done = TASKS.filter((t) => state.has(t.id));
-      $('summary-badge').textContent = `${done.length} / ${TASKS.length}`;
-      $('progress').style.width = `${(done.length / TASKS.length) * 100}%`;
+      const count = done.length;
+      $('summary-badge').textContent = `${count} / ${TASKS.length}`;
+      $('done-badge').textContent = `${count} / ${TASKS.length}`;
+      $('progress').style.width = `${(count / TASKS.length) * 100}%`;
+      $('aside-progress').style.width = `${(count / TASKS.length) * 100}%`;
+
+      const ratios = done.map((t) => {
+        const s = state.get(t.id);
+        return s.jsMs / s.wasmMs;
+      });
+      const parityOk = done.filter((t) => {
+        const s = state.get(t.id);
+        return resultEqual(s.jsResult, s.wasmResult);
+      }).length;
+      $('hero-parity').textContent = `${parityOk}/${TASKS.length}`;
+      $('parity-count').textContent = count ? `${parityOk} / ${count}` : '—';
+      $('aside-parity').textContent = count ? `${parityOk} / ${count}` : '—';
+
+      if (ratios.length) {
+        const med = median(ratios);
+        $('summary-ratio').textContent = `×${med.toFixed(2)}`;
+        let best = null;
+        for (const t of done) {
+          const s = state.get(t.id);
+          const r = s.jsMs / s.wasmMs;
+          if (!best || r > best.r) best = {t, r};
+        }
+        $('best-task').textContent = `${best.t.name} · ×${best.r.toFixed(2)}`;
+      } else {
+        $('summary-ratio').textContent = '—';
+        $('best-task').textContent = '—';
+      }
+
       const body = $('results-body');
       if (!done.length) {
-        body.innerHTML = '<tr><td colspan="5" class="dim">Запустите бенчмарк, чтобы увидеть результаты.</td></tr>';
+        body.innerHTML = '<tr><td colspan="6" class="dim" style="text-align:center;padding:22px">Запустите бенчмарк, чтобы увидеть результаты.</td></tr>';
         return;
       }
       body.innerHTML = '';
@@ -514,18 +979,24 @@
         const s = state.get(task.id);
         const tr = document.createElement('tr');
         if (task.id === current.id) tr.className = 'active';
+        tr.dataset.task = task.id;
+        tr.tabIndex = 0;
         if (!s) {
-          tr.innerHTML = `<td>${task.name}</td><td class="num dim">—</td><td class="num dim">—</td><td class="num dim">—</td><td class="dim">—</td>`;
+          tr.innerHTML = `<td>${task.name}</td><td class="num dim">—</td><td class="num dim">—</td><td class="num dim">—</td><td class="num dim">—</td><td class="dim">—</td>`;
         } else {
           const ratio = s.jsMs / s.wasmMs;
-          const label = ratio >= 1 ? `Latent ×${ratio.toFixed(2)}` : `JS ×${(1 / ratio).toFixed(2)}`;
-          const color = ratio >= 1 ? 'var(--teal)' : 'var(--pink)';
+          const wasmWins = ratio >= 1;
+          const label = wasmWins ? `×${ratio.toFixed(2)}` : `JS ×${(1 / ratio).toFixed(2)}`;
+          const color = wasmWins ? 'var(--teal)' : 'var(--pink)';
+          const savingPct = Math.round((1 - s.wasmMs / s.jsMs) * 100);
+          const saving = `${savingPct > 0 ? '+' : ''}${savingPct}%`;
           const ok = resultEqual(s.jsResult, s.wasmResult);
           tr.innerHTML = `
             <td>${task.name}</td>
             <td class="num">${formatMs(s.jsMs)}</td>
             <td class="num" style="color:var(--teal)">${formatMs(s.wasmMs)}</td>
-            <td class="num" style="color:${color}">${label}</td>
+            <td class="num" style="color:${color};font-weight:700">${label}</td>
+            <td class="num" style="color:${wasmWins ? 'var(--muted)' : 'var(--dim)'}">${saving}</td>
             <td><span class="badge ${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'}</span></td>
           `;
         }
@@ -538,12 +1009,18 @@
       $('run-all').disabled = true;
       $('run-one').disabled = true;
       $('run-current').disabled = true;
+      $('run-caption').textContent = '0 / 5';
       try {
-        for (const task of TASKS) {
+        for (let i = 0; i < TASKS.length; i++) {
+          const task = TASKS[i];
+          $('run-caption').textContent = `${i + 1} / ${TASKS.length} · ${task.name}`;
+          $('run-progress').style.width = `${((i + 0.5) / TASKS.length) * 100}%`;
           await selectTask(task);
           await runTask(task, {quiet: true});
-          await sleep(40);
+          $('run-progress').style.width = `${((i + 1) / TASKS.length) * 100}%`;
+          await sleep(60);
         }
+        $('run-caption').textContent = 'готово · 5 / 5';
       } finally {
         $('run-all').disabled = false;
         $('run-one').disabled = false;
@@ -553,54 +1030,130 @@
       }
     }
 
+    function setStage(name, state, value) {
+      const el = document.querySelector(`#compile-pipeline [data-stage="${name}"]`);
+      if (!el) return;
+      el.classList.remove('active', 'done', 'fail');
+      if (state) el.classList.add(state);
+      if (value != null) el.querySelector('.st-val').textContent = value;
+    }
+
     async function compileInBrowser() {
       const btn = $('compile-btn');
       btn.disabled = true;
       const log = $('compile-log');
-      log.innerHTML = '<div class="dim">Загружаем compiler.wasm…</div>';
+      log.textContent = 'Загружаем compiler.wasm…';
+      for (const name of ['load', 'read', 'compile', 'run', 'check']) setStage(name, '', 'ожидание');
       try {
+        setStage('load', 'active', 'загрузка…');
         if (!compilerClient) {
           const loaded = await loadCompiler();
           compilerClient = loaded.compiler;
           $('compiler-badge').textContent = loaded.compiler.version || 'compiler.wasm';
           $('compiler-badge').className = 'badge ok';
+          setStage('load', 'done', `${formatBytes(loaded.bytes.length)} · ${loaded.compiler.version || 'ok'}`);
+        } else {
+          setStage('load', 'done', 'cached');
         }
-        log.innerHTML = '<div>1. compiler.wasm загружен</div>';
+
+        setStage('read', 'active', 'чтение…');
         const res = await fetch('./sieve.lat');
+        if (!res.ok) throw new Error(`sieve.lat: HTTP ${res.status}`);
         const source = await res.text();
-        log.innerHTML += `<div>2. sieve.lat прочитан (${formatBytes(new Blob([source]).size)})</div>`;
+        setStage('read', 'done', formatBytes(new Blob([source]).size));
+
+        setStage('compile', 'active', 'сборка…');
         const {wasm: compiled, compileMs} = compilerClient.compile(source);
-        log.innerHTML += `<div>3. скомпилирован за <b style="color:var(--teal)">${compileMs.toFixed(2)} ms</b> → ${formatBytes(compiled.length)}</div>`;
+        $('compile-time').textContent = formatMs(compileMs);
+        $('compile-size').textContent = formatBytes(compiled.length);
+        setStage('compile', 'done', `${formatMs(compileMs)} → ${formatBytes(compiled.length)}`);
+
+        setStage('run', 'active', 'запуск…');
         const instance = await instantiateLatent(compiled);
         const t0 = performance.now();
         const checksum = instance.exports.main(2000000);
         const runMs = performance.now() - t0;
-        log.innerHTML += `<div>4. main(2 000 000) = <b style="color:var(--teal)">${checksum}</b> за ${runMs.toFixed(2)} ms</div>`;
+        $('compile-result').textContent = String(checksum);
+        $('compile-run').textContent = formatMs(runMs);
+        setStage('run', 'done', `${formatMs(runMs)}`);
+
+        setStage('check', 'active');
         const ok = checksum === 148933;
-        log.innerHTML += `<div class="${ok ? '' : 'badge bad'}">${ok ? '✓ 148 933 простых числа — сходится' : '✗ неожиданный результат'}</div>`;
+        setStage('check', ok ? 'done' : 'fail', ok ? '✓ сходится' : '✗ не сходится');
+        log.innerHTML = `compiler.wasm загружен · sieve.lat ${formatBytes(new Blob([source]).size)} · `
+          + `latent_compile <b>${formatMs(compileMs)}</b> · wasm <b>${formatBytes(compiled.length)}</b> · `
+          + `main(2 000 000) = <b>${checksum}</b> за ${formatMs(runMs)}`;
         $('compiler-badge').textContent = `OK · ${formatBytes(compiled.length)}`;
         $('compiler-badge').className = 'badge ok';
       } catch (err) {
         console.error(err);
-        log.innerHTML += `<div class="badge bad">ошибка: ${err.message}</div>`;
-        log.innerHTML += '<div class="dim">Локально: <code class="mono">node scripts/sync-playground.mjs</code>, затем обновите страницу.</div>';
+        for (const stage of document.querySelectorAll('#compile-pipeline .stage.active')) {
+          stage.classList.remove('active');
+          stage.classList.add('fail');
+        }
+        log.innerHTML = `<span style="color:var(--bad)">ошибка: ${err.message}</span>`
+          + '<br>Локально: <code class="mono">node scripts/sync-playground.mjs</code>, затем обновите страницу.';
+        $('compiler-badge').textContent = 'ошибка';
+        $('compiler-badge').className = 'badge bad';
       } finally {
         btn.disabled = false;
       }
     }
 
+    // The compile pane uses the same highlighter as the code viewer.
+    const abi = `const {compiler} = await loadCompiler();
+const source = await (await fetch('./sieve.lat')).text();
+const {wasm, compileMs} = compiler.compile(source);
+
+const {instance} = await WebAssembly.instantiate(wasm, {
+  env: {print(ptr) { console.log(readString(ptr)); }}
+});
+
+instance.exports.main(2_000_000); // 148933`;
+    $('compile-abi').innerHTML = codeLines(abi, highlightJS);
+
     $('run-all').addEventListener('click', runAll);
     $('run-one').addEventListener('click', () => runTask(current));
     $('run-current').addEventListener('click', () => runTask(current));
-    $('show-source').addEventListener('click', () => showSource(current));
+    $('show-source').addEventListener('click', () => {
+      showSource(current);
+      updateCodePane(current);
+    });
     $('compile-btn').addEventListener('click', compileInBrowser);
+    $('results-body').addEventListener('click', (event) => {
+      const tr = event.target.closest('tr[data-task]');
+      if (!tr) return;
+      const task = TASKS.find((t) => t.id === tr.dataset.task);
+      if (task) {
+        selectTask(task);
+        $('task-title').scrollIntoView({behavior: reduceMotion() ? 'auto' : 'smooth', block: 'center'});
+      }
+    });
+    $('results-body').addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const tr = event.target.closest('tr[data-task]');
+      if (!tr) return;
+      event.preventDefault();
+      const task = TASKS.find((t) => t.id === tr.dataset.task);
+      if (task) {
+        selectTask(task);
+        $('task-title').scrollIntoView({behavior: reduceMotion() ? 'auto' : 'smooth', block: 'center'});
+      }
+    });
 
     renderTaskList();
+    updateHistory(TASKS[0]);
     await loadModules();
     await selectTask(TASKS[0]);
     $('run-status').textContent = 'готово к запуску';
     $('load-status').textContent = `${wasm.size}/${TASKS.length} wasm загружено`;
     $('load-status').className = wasm.size === TASKS.length ? 'badge ok' : 'badge bad';
+
+    // In the docs iframe the page has no hero with the run buttons: run once so
+    // the embedded demo shows real numbers instead of empty dashes.
+    if (embedded && wasm.size === TASKS.length) {
+      setTimeout(() => { runAll(); }, 420);
+    }
   </script>
 </body>
 </html>

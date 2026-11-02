@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Безопасное исполнение недоверенного кода — Latent killer demo</title>
+  <meta name="description" content="Редактор Latent → compiler.wasm → Web Worker с единственным импортом env.print. Бесконечный цикл, OOB, memory.grow и попытки достучаться до DOM — всё реально, всё изолировано." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23070b12'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%235eead4'%3E%CE%BB%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="../assets/killer.css" />
+  <style>
+    #presets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+    @media (max-width: 760px) { #presets { grid-template-columns: minmax(0, 1fr); } }
+    .k-sandbox-diagram { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: stretch; gap: 8px; }
+    .k-sandbox-diagram .k-arrow { align-self: center; color: var(--k-cyan); font-size: 15px; }
+    @media (max-width: 760px) {
+      .k-sandbox-diagram { grid-template-columns: minmax(0, 1fr); }
+      .k-sandbox-diagram .k-arrow { transform: rotate(90deg); justify-self: center; }
+    }
+    #log { max-height: 300px; }
+    .k-mem-legend { display: flex; justify-content: space-between; font-family: var(--k-mono); font-size: 10px; color: var(--k-dim); margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <header class="k-top">
+    <div class="k-wrap k-top-inner">
+      <a class="k-brand" href="../"><span class="k-mark">λ</span> Latent · killer demos</a>
+      <nav class="k-nav" aria-label="Демо">
+        <a href="../concurrency/">Конкурентность</a>
+        <a href="../ai/">AI-native</a>
+        <a href="../selfhost/">Self-host</a>
+        <a class="is-active" href="./">Песочница</a>
+        <a href="../modules/">Модули</a>
+        <a href="../../examples/frontend-showcase">Документация</a>
+        <span class="k-pill k-pill--live"><span class="k-dot"></span>worker</span>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="k-wrap k-hero">
+      <p class="k-eyebrow">compiler.wasm · web worker · один импорт</p>
+      <h1 class="k-title">Недоверенный код.<br /><span class="k-grad">Безопасно по конструкции.</span></h1>
+      <p class="k-lead">
+        Напишите Latent-программу (или выберите «атаку»), скомпилируйте её
+        <code>compiler.wasm</code> и запустите в Web Worker. У wasm-модуля есть
+        <strong>единственный импорт — <code>env.print</code></strong>: ни DOM, ни сети,
+        ни cookie, ни файлов. Страница показывает реальный список импортов из
+        <code>WebAssembly.Module.imports()</code>, реальные traps и настоящее
+        терминирование бесконечного цикла.
+      </p>
+      <div class="k-actions">
+        <button class="k-btn k-btn--primary" id="run-code" type="button">Выполнить</button>
+        <span class="k-pill" id="loader-status">загрузка compiler.wasm…</span>
+        <label class="k-small k-dim" for="timeout">таймаут</label>
+        <select class="k-select" id="timeout" style="width:auto">
+          <option value="600">600 ms</option>
+          <option value="1200" selected>1200 ms</option>
+          <option value="3000">3000 ms</option>
+        </select>
+      </div>
+      <div class="k-meta">
+        <span><b>1</b> импорт: env.print</span>
+        <span><b>0</b> DOM / сети / storage</span>
+        <span><b>Worker</b> отдельный поток</span>
+        <span><b>trap</b> вместо порчи страницы</span>
+      </div>
+    </section>
+
+    <section class="k-wrap k-section">
+      <div class="k-grid k-grid--main">
+        <div class="k-stack">
+          <div class="k-panel">
+            <div class="k-panel-head">
+              <div>
+                <h2 class="k-panel-title">Редактор Latent</h2>
+                <p class="k-sub" id="preset-desc">Обычная программа: print и main()</p>
+              </div>
+              <span class="k-badge k-badge--green" id="preset-name">hello</span>
+            </div>
+            <div class="k-samples" id="presets" style="margin-bottom:12px"></div>
+            <div id="editor"></div>
+            <div class="k-row" style="margin-top:10px; justify-content:space-between">
+              <span class="k-small k-dim" id="run-status">готово</span>
+              <span class="k-kbd">Ctrl/⌘ + Enter</span>
+            </div>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head">
+              <div>
+                <h2 class="k-panel-title">Журнал событий</h2>
+                <p class="k-sub">compile → imports → instantiate → print/trap/terminate</p>
+              </div>
+              <span class="k-badge" id="caps-badge">ожидание</span>
+            </div>
+            <div class="k-log" id="log" role="log" aria-live="polite"></div>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head">
+              <div>
+                <h2 class="k-panel-title">Что можно попробовать</h2>
+                <p class="k-sub">Все кнопки выше — настоящие программы, не имитация.</p>
+              </div>
+            </div>
+            <div class="k-grid k-grid--2">
+              <div class="k-card">
+                <div class="k-card-icon">⏱</div>
+                <h3 class="k-card-title">Бесконечный цикл</h3>
+                <p class="k-card-text">WASM исполняется в Worker; host ждёт таймаут и вызывает <code>worker.terminate()</code>. Страница остаётся отзывчивой.</p>
+              </div>
+              <div class="k-card">
+                <div class="k-card-icon">⛔</div>
+                <h3 class="k-card-title">OOB и trap</h3>
+                <p class="k-card-text">Выход за границу массива даёт <code>memory access out of bounds</code>; это ловит wasm-рантайм, а не «доверенный» код.</p>
+              </div>
+              <div class="k-card">
+                <div class="k-card-icon">▤</div>
+                <h3 class="k-card-title">memory.grow</h3>
+                <p class="k-card-text">Легальный <code>alloc(64 MiB)</code> растит линейную память модуля; gauge показывает фактические страницы по 64 KiB.</p>
+              </div>
+              <div class="k-card">
+                <div class="k-card-icon">⌁</div>
+                <h3 class="k-card-title">DOM / fetch</h3>
+                <p class="k-card-text">Даже не компилируется: в языке нет <code>alert</code>/<code>fetch</code>, а у wasm нет импортов, чтобы их получить.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="k-stack">
+          <div class="k-panel">
+            <div class="k-panel-head" style="margin-bottom:10px">
+              <div>
+                <h2 class="k-panel-title">Изоляция</h2>
+                <p class="k-sub">host → worker → wasm</p>
+              </div>
+            </div>
+            <div class="k-sandbox-diagram">
+              <div class="k-sandbox-box"><b>Host page</b>Latent demo</div>
+              <div class="k-arrow">→</div>
+              <div class="k-sandbox-box"><b>Web Worker</b>без DOM<br />terminate</div>
+              <div class="k-arrow">→</div>
+              <div class="k-sandbox-box k-sandbox-box--wasm"><b>WASM</b>main + memory<br /><span id="diagram-imports">env.print</span></div>
+            </div>
+            <p class="k-hint" style="margin-top:10px">Импорты модуля (реальные): <span class="k-mono" id="imports-list">—</span></p>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head" style="margin-bottom:10px">
+              <div>
+                <h2 class="k-panel-title">Capability-список</h2>
+                <p class="k-sub" id="caps-status">что доступно модулю</p>
+              </div>
+            </div>
+            <div class="k-cap-list" id="caps"></div>
+          </div>
+
+          <div class="k-panel">
+            <div class="k-panel-head" style="margin-bottom:10px">
+              <div>
+                <h2 class="k-panel-title">Память модуля</h2>
+                <p class="k-sub">линейная память, страницы по 64 KiB</p>
+              </div>
+              <span class="k-badge" id="m-pages">0</span>
+            </div>
+            <div class="k-gauge"><i id="memory-gauge"></i></div>
+            <div class="k-mem-legend"><span>0</span><span>64 MiB</span></div>
+            <p class="k-hint" id="memory-label" style="margin-top:8px">0 B · 0 стр.</p>
+            <div class="k-metrics" style="margin-top:12px">
+              <div class="k-metric k-metric--accent">
+                <div class="k-metric-k">compile</div>
+                <div class="k-metric-v" id="m-compile">—</div>
+              </div>
+              <div class="k-metric">
+                <div class="k-metric-k">wasm</div>
+                <div class="k-metric-v" id="m-bytes">—</div>
+              </div>
+              <div class="k-metric k-metric--violet">
+                <div class="k-metric-k">run</div>
+                <div class="k-metric-v" id="m-run">—</div>
+              </div>
+              <div class="k-metric k-metric--green">
+                <div class="k-metric-k">memory</div>
+                <div class="k-metric-v" id="m-memory">—</div>
+              </div>
+              <div class="k-metric">
+                <div class="k-metric-k">imports</div>
+                <div class="k-metric-v" id="m-imports">—</div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="k-wrap k-section">
+      <div class="k-section-head">
+        <div>
+          <h2 class="k-section-title">Почему это killer feature</h2>
+          <p class="k-sub">Не «песочница на честном слове», а граница возможностей.</p>
+        </div>
+        <span class="k-badge k-badge--violet">sandbox</span>
+      </div>
+      <div class="k-grid k-grid--4">
+        <div class="k-card">
+          <div class="k-card-icon">⊘</div>
+          <h3 class="k-card-title">Один импорт</h3>
+          <p class="k-card-text">Модуль получает ровно <code>env.print(ptr)</code>; всё остальное — его собственная линейная память. Это проверяется по бинарнику, а не по документации.</p>
+        </div>
+        <div class="k-card">
+          <div class="k-card-icon">⏻</div>
+          <h3 class="k-card-title">Терминирование</h3>
+          <p class="k-card-text">Бесконечный цикл не вешает страницу: worker убивается по таймауту. Никакого «подождите, сейчас зависнет вкладка».</p>
+        </div>
+        <div class="k-card">
+          <div class="k-card-icon">▥</div>
+          <h3 class="k-card-title">Память под контролем</h3>
+          <p class="k-card-text">Лимит памяти — это лимит страниц wasm-модуля. Даже легальный <code>alloc</code> виден на gauge, а выход за границы ловится trap'ом.</p>
+        </div>
+        <div class="k-card">
+          <div class="k-card-icon">✦</div>
+          <h3 class="k-card-title">AI-код можно запускать</h3>
+          <p class="k-card-text">Сгенерированный или присланный код не обязан быть доверенным: его можно скомпилировать и исполнить, не выдавая доступ к приложению.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="k-wrap k-section">
+      <div class="k-panel">
+        <div class="k-panel-head">
+          <div>
+            <h2 class="k-panel-title">Честные ограничения</h2>
+            <p class="k-sub">Что именно защищает песочница, а что — нет.</p>
+          </div>
+          <span class="k-badge k-badge--amber">важно</span>
+        </div>
+        <div class="k-grid k-grid--2">
+          <div class="k-stack-sm">
+            <p class="k-small"><b>Это не OS-песочница.</b> Web Worker + wasm ограничивают <i>возможности модуля</i> (импорты/память), но не изолируют браузер от его багов. Worker разделяет origin и JS-окружение страницы лишь частично.</p>
+            <p class="k-small"><b>Компилятор — доверенный.</b> compiler.wasm исполняется на странице и не изолирован; доверие к нему — предпосылка демо.</p>
+            <p class="k-small"><b>Таймаут — хостовый.</b> WASM не умеет прерывать сам себя; terminate — это остановка worker'а снаружи.</p>
+          </div>
+          <div class="k-stack-sm">
+            <p class="k-small"><b>Подмножество движка №2.</b> Компилятор не принимает host-only AI/каналы/тензоры; это не «любой Latent», а компилируемое подмножество.</p>
+            <p class="k-small"><b>Память не бесконечна.</b> Браузер ограничивает рост; в демо шкала размечена до 64 MiB, а реальный лимит зависит от машины.</p>
+            <p class="k-small"><b>print — единственный выход.</b> Модуль не может вернуть данные иначе, чем через print/память; для реального API понадобился бы явный ABI.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="k-foot">
+    <div class="k-wrap k-foot-inner">
+      <span>Latent · killer demos · compiler.wasm → Web Worker → один импорт</span>
+      <div class="k-foot-links">
+        <a href="../">Все демо</a>
+        <a href="../../examples/frontend-showcase">Frontend showcase</a>
+        <a href="../../reference/wasm-abi">WASM ABI</a>
+        <a href="../../guide/wasm-and-execution">Движки</a>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module" src="./killer-sandbox.js"></script>
+</body>
+</html>

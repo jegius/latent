@@ -1,6 +1,6 @@
 ---
 title: "Self-Hosted Compiler"
-description: "The final status of the Latent compiler written in Latent itself: the stage2===stage3 fixed point, 166 tests, 64/65 parity with the Rust reference, the Rust-free bootstrap (seed + WASM), the src/*.lat parts, the compiler ABI, the memory budget, host constructs, and the remaining divergences."
+description: "The final status of the Latent compiler written in Latent itself: the stage2===stage3 fixed point, 169 tests, 64/65 parity with the Rust reference, the Rust-free bootstrap (seed + WASM), modules via bundle, the src/*.lat parts, the compiler ABI, the memory budget, host constructs, and the remaining divergences."
 sidebar_position: 1
 ---
 
@@ -18,9 +18,10 @@ Sources of truth: `selfhost/README.md`, `selfhost/build.mjs`,
   `bootstrap.test.mjs`); the Rust-free chain `seed → stage-sh-1 → stage-sh-2 →
   stage-sh-3` yields `stage-sh-2 === stage-sh-3` (checked by `bootstrap-wasm.mjs`
   and `bootstrap-wasm.test.mjs`).
-- **Regression suite — 166 tests** (`node --test "selfhost/test/*.test.mjs"`,
-  17 suites, 0 failures): 85 baseline + 56 differential in `parity.test.mjs`
-  + 25 Rust-free in `bootstrap-wasm.test.mjs`.
+- **Regression suite — 173 tests** (`node --test "selfhost/test/*.test.mjs"`,
+  19 suites, 0 failures): the fixed point, parity with the Rust reference, the
+  Rust-free bootstrap, lexer/scoping, float arithmetic, modules via bundle, and
+  the part assembler.
 - **Rust is not required for the build**: the repository ships
   `selfhost/seed.wasm` (a self-hosted compiler, sha256 in `seed.json`) that
   compiles `shc.lat`; the `selfhost/wasm-compiler.mjs` CLI compiles user programs
@@ -43,9 +44,10 @@ node --test "selfhost/test/*.test.mjs"
 
 ## Structure: one file assembled from parts
 
-Latent has no module or import system: a program is compiled as a **single file**.
-Therefore "linking" is a deterministic concatenation of the parts in name order
-(`selfhost/build.mjs`):
+The selfhost compiler itself is **one file**. The language does have file modules
+(v1, `import`/`export`), but selfhost does not parse them: it has no file system,
+and its own source stays single-file. So "linking" of the parts is a
+deterministic concatenation in name order (`selfhost/build.mjs`):
 
 ```text
 selfhost/src/00_abi.lat              linear memory map, state slots
@@ -83,6 +85,67 @@ shc.lat = BANNER + join(sorted(src/*.lat), separator)
 
 The build is idempotent: one set of parts always produces the same `shc.lat`.
 **`shc.lat` must not be edited by hand** — it is generated.
+
+## Modules and bundle
+
+Modules are a **host/linker feature**, not a selfhost one. A user project of
+several `.lat` files never reaches selfhost: the compiler has no file system and
+can read only one source from linear memory. So the host first produces a flat
+equivalent of the project:
+
+```bash
+latentc bundle main.lat bundle.lat                 # all modules merged, names mangled
+node selfhost/wasm-compiler.mjs compile bundle.lat bundle.wasm
+```
+
+What `bundle` does (`src/modules/bundle.rs`):
+
+- links the project exactly like `latentc compile` (export tables, `m<index>$<name>`
+  mangling, cycles allowed);
+- prints the linked `Program` back to Latent: `import`/`export` removed, top-level
+  declarations in canonical-path order — the same deterministic module order used
+  for linking;
+- replaces `$` in names with `__` (`m1$square` → `m1__square`), because the
+  selfhost lexer accepts only `[A-Za-z_][A-Za-z0-9_]*`.
+
+Why this design instead of teaching selfhost imports:
+
+- selfhost has no file I/O, and adding it would drag a host API into the compiler
+  and break the Rust-free bootstrap (seed → stage1′ → …);
+- linking is a single AST pass that already exists in Rust and in the JS engine;
+  duplicating it in Latent for selfhost's sake is unnecessary;
+- a bundle is a **verifiable contract**: it is deterministic and defines the
+  program behavior unambiguously.
+
+### The parity contract is behavioral, not byte-for-byte
+
+The requirement "`selfhost(bundle)` equals `latentc compile_files` byte-for-byte"
+is **not achievable on the current selfhost and is not a goal**. The reason is not
+modules: Rust and selfhost have historically generated different WASM even for the
+simplest single-file program `fn main() -> int { return 42; }` — 1019 bytes
+(selfhost) versus 934 (Rust). This is a known codegen divergence, not a bundle
+defect.
+
+So the modules contract for selfhost is **behavioral parity**:
+
+| Check | Who checks it | Status |
+|---|---|---|
+| `latentc bundle <entry>` → the bundle has no `import`/`export` and no `$` (only `mN__name`) | `selfhost/test/modules.test.mjs` | ✅ |
+| `latentc compile(bundle)` is byte-identical to `latentc compile_files(entry)` | `scripts/check-golden.mjs` + `modules.test.mjs` | ✅ linker invariant |
+| `main()` of Rust and of selfhost equals the fixture's `expect-main` | `modules.test.mjs` | ✅ |
+| project errors (missing file, missing export, bad path, duplicate import, import/export not at top level) are caught by the host, and `latentc bundle` returns them | `modules.test.mjs` (`errors/**`) | ✅ |
+| selfhost rejects **raw** module source (`error: undefined variable: import`) instead of silently accepting it | `modules.test.mjs` | ✅ |
+| byte equality selfhost vs Rust | — | ❌ not required (e.g. 1193 vs 1111 on `basic`) |
+
+The fixtures and their markers (`// entry: true`, `// expect-main: N`,
+`// expect-error: <substring>`) are described in
+`selfhost/test/fixtures/modules/README.md`; the same file has the table of
+observed sizes (`basic`: selfhost 1193 / Rust 1111; `cycle`: 1067 / 987).
+
+The bundle itself is verifiable separately: compiled through the single-file ABI it
+gives the same bytes as the project (the example in the
+[modules walkthrough](../examples/modules.md#4-what-latentc-bundle-prints)).
+
 
 ## Compiler ABI
 
@@ -144,8 +207,9 @@ with the `LATENTC` environment variable (defaults to `target/debug/latentc`).
 ## Bootstrap without Rust (seed + WASM)
 
 `selfhost/seed.wasm` is an already built self-hosted compiler (the latest
-`shc.lat`, 64/65 parity). It compiles `shc.lat`, after which the compiler
-reproduces itself; `cargo`/`latentc` are not involved:
+`shc.lat`, 64/65 parity, **41 482 bytes**, `seedRevision` 2). It compiles
+`shc.lat`, after which the compiler reproduces itself; `cargo`/`latentc` are not
+involved:
 
 ```text
 seed.wasm        -> shc.lat -> stage-sh-1.wasm   (stage1')
@@ -223,6 +287,7 @@ node selfhost/bootstrap-wasm.mjs --verify-seed      # seed.json sha256 + shc.lat
 | `channel`/`tensor`/`ai_*`/`ch <- v`/`ch.send` | ❌ the "requires host runtime" error naming the construct |
 | `float` parameters `fn f(r: float)` | ❌ (invalid in the reference too) |
 | `@` decorators | ❌ (see "Remaining divergences") |
+| `import`/`export` (file modules) | ❌ not parsed: a project arrives as a flat `bundle` from the host (see ["Modules and bundle"](#modules-and-bundle)) |
 
 **Float without IEEE754 bits.** A literal is assembled as f64 arithmetic
 (`mant / 10^k * 10^exp`, i32→f64 via `f64.convert_i32_s`) — the compiler does not need
@@ -364,8 +429,8 @@ The parity matrix is 64/65; the divergences below are recorded deliberately:
 node --test "selfhost/test/*.test.mjs"
 ```
 
-166 tests in 17 suites (coverage: **94.56% functions / 96.68% lines**,
-`node tooling/selfhost-coverage/run.mjs`):
+173 tests in 19 suites (coverage: **100% functions / 97.94% lines**,
+`node tooling/selfhost-coverage/run.mjs --lines --min 90`):
 
 - `bootstrap.test.mjs` — the validity of stage1/2/3 and the fixed point (Rust path);
 - `bootstrap-wasm.test.mjs` — the Rust-free bootstrap: `seed → stage-sh-1 →
@@ -377,11 +442,18 @@ node --test "selfhost/test/*.test.mjs"
 - `scoping.test.mjs` — the scope of locals (`find_local`);
 - `features.test.mjs` — differential tests of oracle (Rust) vs stage1 vs stage2;
 - `coverage.test.mjs` — differential coverage of constructs from `shc.lat`;
+- `float-arithmetic.test.mjs` — float arithmetic (`-`, `/`, `<=`, `>=`) on
+  expressions where the oracle emits invalid WASM; the test is selfhost-only;
 - `parity.test.mjs` — 56 parity cases: spawn/yield/async-await/select/test,
   match over strings, to_str/to_int, top-level let, host errors
   (channel/tensor/ai_*/channels/methods), print, null, string parameters,
   `float("…")`, exponential literals, escape strings, nested comments; for error cases
   the stage1/stage2 texts must match;
+- `modules.test.mjs` — the differential modules test: `latentc bundle` → the
+  flat-source property, `compile(bundle) == compile_files` (Rust), selfhost
+  compiles the bundle and returns the same `main()`, project errors are caught by
+  the host, and selfhost rejects raw module source
+  (`selfhost/test/fixtures/modules/`);
 - `build.test.mjs` — determinism and idempotence of the part assembler.
 
 The parity matrix (outside `selfhost/`, in the agent's working folder):

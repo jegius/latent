@@ -9,8 +9,9 @@ Latent — язык программирования, компилируемый
 | Компонент | Путь | Язык | Роль |
 |---|---|---|---|
 | Rust-компилятор («движок №2») | `src/` | Rust | `lexer → parser → typechecker → codegen` в WASM-модуль; C-ABI для браузера |
-| CLI компилятора | `src/bin/latentc.rs` | Rust | `latentc compile/check/version` |
-| Self-hosted компилятор | `selfhost/` | Latent | `selfhost/src/*.lat` → `shc.lat` → stage1/2/3, фиксированная точка |
+| Файловые модули | `src/modules/` | Rust | загрузка дерева `import`, двухфазная линковка и манглинг, `bundle` (плоский исходник), манифест `LPF1` для браузера |
+| CLI компилятора | `src/bin/latentc.rs` | Rust | `latentc compile/check/bundle/version` |
+| Self-hosted компилятор | `selfhost/` | Latent | `selfhost/src/*.lat` → `shc.lat` → stage1/2/3, фиксированная точка; потребляет `bundle`, а не дерево модулей |
 | JS-интерпретатор («движок №1») | `web-ide/compiler/` | JS | исполнение Latent в браузере напрямую (AST-walker) |
 | Web IDE | `web-ide/` | HTML/JS | playground: редактор, движки №1/№2, примеры, форматтер |
 | Документация | `docs/` | Markdown + Docusaurus | руководство, справочник, спецификации, туториал |
@@ -34,6 +35,11 @@ Latent — язык программирования, компилируемый
 [`docs/docs/specs/rust-architecture.md`](docs/docs/specs/rust-architecture.md)
 и документации `reference/`.
 
+Файловые модули (`import`/`export`) понимают оба движка: №1 линкует их нативно
+(`web-ide/compiler/modules*.js`), №2 получает проект одним манифестом `LPF1`
+через `latent_compile_files`. Семантика общая — её задаёт Rust-линкер
+(`src/modules/`), см. [guide/modules](docs/docs/guide/modules.md).
+
 ## 3. Потоки данных
 
 ```
@@ -53,6 +59,17 @@ Latent — язык программирования, компилируемый
 ```
 
 ```
+ project/*.lat ──import──► src/modules/loader (canonical path, DFS)
+                            │
+                    linker (таблицы экспортов, манглинг m<idx>$<name>)
+                            │
+              ┌─────────────┴──────────────┐
+       compile_files → WASM        bundle_files → плоский .lat
+       (latentc compile/check,     (latentc bundle → selfhost;
+        latent_compile_files)       m1__name вместо m1$name)
+```
+
+```
  tooling/language-data/language.json ──► tooling/latent-lsp ──► editors/{vscode,idea}
                                       └─► docs (справочники генерируются/сверяются)
  docs/docs/**.md ──► mcp/docs-mcp (индекс + поиск) ──► AI-клиенты
@@ -62,12 +79,17 @@ Latent — язык программирования, компилируемый
 
 1. **`latent::compile_source` и C-ABI** (`latent_alloc`, `latent_free`,
    `latent_compile`, `latent_version`) — стабильный контракт для web-ide и
-   `scripts/build-wasm.sh`. Менять имена/формат буфера нельзя.
+   `scripts/build-wasm.sh`. Менять имена/формат буфера нельзя. Многофайловый
+   контракт (`latent_compile_files`, `latent_bundle_files`, манифест `LPF1`)
+   аддитивен: однофайловый ABI и его байты не меняются.
 2. **Golden-WASM**: декомпозиция и рефакторинг Rust-компилятора не меняют ни
    одного байта выходного модуля на golden-наборе
-   (`node scripts/check-golden.mjs`).
+   (`node scripts/check-golden.mjs`); проекты без `import` компилируются тем же
+   однофайловым путём.
 3. **Self-hosted фиксированная точка**: `stage2.wasm === stage3.wasm`,
-   `node selfhost/bootstrap.mjs` печатает `FIXED POINT`.
+   `node selfhost/bootstrap.mjs` печатает `FIXED POINT`. Модули в selfhost
+   приходят только как `latentc bundle` — плоский исходник, который обязан
+   компилироваться в те же байты, что и проект.
 4. **Стиль**: комментарии/документация — русский, идентификаторы — английский,
    UTF-8 без BOM; исходные файлы Rust — < 350 строк (данные и тесты-наборы —
    осознанные исключения).
@@ -80,20 +102,26 @@ Latent — язык программирования, компилируемый
 # Rust-компилятор
 cargo +stable-x86_64-pc-windows-gnu test
 cargo +stable-x86_64-pc-windows-gnu build --release --target wasm32-unknown-unknown
-node scripts/check-golden.mjs           # байт-в-байт + поведение
+node scripts/check-golden.mjs           # байт-в-байт + поведение (вкл. модульные fixtures)
 pwsh scripts/coverage-rust.ps1          # покрытие строк (llvm-cov)
 
-# Self-hosted компилятор (в копии каталога, чтобы не мешать параллельным работам)
+# Модули вручную (проект из нескольких файлов)
+latentc check main.lat                  # линковка + типы + кодоген
+latentc compile main.lat app.wasm
+latentc bundle main.lat bundle.lat      # плоский исходник для selfhost
+
+# Self-hosted компилятор
 node selfhost/build.mjs && node selfhost/bootstrap.mjs
 node --test "selfhost/test/*.test.mjs"
 
 # Web IDE и инструменты
-node --test "web-ide/test/*.test.js"
+node --test "web-ide/test/*.test.js" "web-ide/test/*.test.mjs"
 node --test "tooling/latent-lsp/test/*.test.mjs"
 node --test "mcp/docs-mcp/test/*.test.mjs"
 
 # Документация
-cd docs && npm install && npm run build
+cd docs && pnpm install && pnpm run build
+node docs/scripts/validate-examples.mjs
 ```
 
 ## 6. Окружение (Windows)
