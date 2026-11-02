@@ -192,15 +192,24 @@ fn kw_code(src, off, n) -> int {
         if (match_at(src, 4, off, "true", 4)) { return 90; }
         if (match_at(src, 4, off, "this", 4)) { return 94; }
         if (match_at(src, 4, off, "case", 4)) { return 97; }
+        if (match_at(src, 4, off, "test", 4)) { return 105; }
+        if (match_at(src, 4, off, "null", 4)) { return 107; }
     }
     if (n == 5) {
         if (match_at(src, 4, off, "while", 5)) { return 14; }
         if (match_at(src, 4, off, "false", 5)) { return 91; }
         if (match_at(src, 4, off, "class", 5)) { return 92; }
         if (match_at(src, 4, off, "match", 5)) { return 95; }
+        if (match_at(src, 4, off, "spawn", 5)) { return 100; }
+        if (match_at(src, 4, off, "yield", 5)) { return 101; }
+        if (match_at(src, 4, off, "async", 5)) { return 102; }
+        if (match_at(src, 4, off, "await", 5)) { return 103; }
     }
     if (n == 4) { if (match_at(src, 4, off, "enum", 4)) { return 96; } }
-    if (n == 6) { if (match_at(src, 4, off, "return", 6)) { return 15; } }
+    if (n == 6) {
+        if (match_at(src, 4, off, "return", 6)) { return 15; }
+        if (match_at(src, 4, off, "select", 6)) { return 104; }
+    }
     if (n == 7) { if (match_at(src, 4, off, "default", 7)) { return 98; } }
     return 0;
 }
@@ -229,6 +238,7 @@ fn punct_kind(c, d) -> int {
     if (c == 33) { return 53; }
     if (c == 60 && d == 61) { return 44; }
     if (c == 60 && d == 60) { return 51; }
+    if (c == 60 && d == 45) { return 106; }   // <- (канал)
     if (c == 60) { return 42; }
     if (c == 62 && d == 61) { return 45; }
     if (c == 62 && d == 62) { return 52; }
@@ -241,7 +251,7 @@ fn punct_kind(c, d) -> int {
     return 0;
 }
 fn punct_len(k) -> int {
-    if (k == 28 || k == 40 || k == 41 || k == 44 || k == 45 || k == 46 || k == 47 || k == 51 || k == 52 || k == 99) { return 2; }
+    if (k == 28 || k == 40 || k == 41 || k == 44 || k == 45 || k == 46 || k == 47 || k == 51 || k == 52 || k == 99 || k == 106) { return 2; }
     return 1;
 }
 
@@ -255,15 +265,31 @@ fn tokenize() -> int {
         else {
             if (is_digit(c)) {
                 let s = i;
-                let v = 0;
-                while (i < L && is_digit(sc(src, i))) { v = v * 10 + (sc(src, i) - 48); i = i + 1; }
-                // Дробное число `NNN.NNN` → токен-литерал float (4):
-                // храним оффсет/длину исходной записи, значение соберёт эмиттер.
+                while (i < L && is_digit(sc(src, i))) { i = i + 1; }
+                // Дробная часть `NNN.NNN`.
+                let has_dot = 0;
                 if (i + 1 < L && sc(src, i) == 46 && is_digit(sc(src, i + 1))) {
+                    has_dot = 1;
                     i = i + 1;
                     while (i < L && is_digit(sc(src, i))) { i = i + 1; }
+                }
+                // Экспонента `1e10`, `1.5e-3`, `2E+2`.
+                let has_exp = 0;
+                if (i < L && (sc(src, i) == 101 || sc(src, i) == 69)) {
+                    let j = i + 1;
+                    if (j < L && (sc(src, j) == 43 || sc(src, j) == 45)) { j = j + 1; }
+                    if (j < L && is_digit(sc(src, j))) {
+                        has_exp = 1;
+                        i = j;
+                        while (i < L && is_digit(sc(src, i))) { i = i + 1; }
+                    }
+                }
+                if (has_dot == 1 || has_exp == 1) {
+                    // Токен-литерал float (4): оффсет/длину разберёт эмиттер.
                     store32(KIND() + n * 4, 4); store32(TVAL() + n * 4, s); store32(TLEN() + n * 4, i - s); n = n + 1;
                 } else {
+                    let v = 0; let q = s;
+                    while (q < i) { v = v * 10 + (sc(src, q) - 48); q = q + 1; }
                     store32(KIND() + n * 4, 1); store32(TVAL() + n * 4, v); store32(TLEN() + n * 4, 0); n = n + 1;
                 }
             } else {
@@ -278,7 +304,10 @@ fn tokenize() -> int {
                 } else {
                     if (c == 34) {
                         let s = i; i = i + 1;
-                        while (i < L && sc(src, i) != 34) { i = i + 1; }
+                        // Кавычка внутри литерала может быть экранирована.
+                        while (i < L && sc(src, i) != 34) {
+                            if (sc(src, i) == 92 && i + 1 < L) { i = i + 2; } else { i = i + 1; }
+                        }
                         if (i < L) { i = i + 1; }
                         store32(KIND() + n * 4, 3); store32(TVAL() + n * 4, s); store32(TLEN() + n * 4, i - s); n = n + 1;
                     } else {
@@ -286,9 +315,17 @@ fn tokenize() -> int {
                             while (i < L && sc(src, i) != 10) { i = i + 1; }
                         } else {
                             if (c == 47 && i + 1 < L && sc(src, i + 1) == 42) {
+                                // Блочный комментарий с вложенностью (как oracle).
+                                let cd = 1;
                                 i = i + 2;
-                                while (i + 1 < L && !(sc(src, i) == 42 && sc(src, i + 1) == 47)) { i = i + 1; }
-                                if (i + 1 < L) { i = i + 2; } else { i = L; }
+                                while (i + 1 < L && cd > 0) {
+                                    if (sc(src, i) == 47 && sc(src, i + 1) == 42) { cd = cd + 1; i = i + 2; }
+                                    else {
+                                        if (sc(src, i) == 42 && sc(src, i + 1) == 47) { cd = cd - 1; i = i + 2; }
+                                        else { i = i + 1; }
+                                    }
+                                }
+                                if (cd > 0) { i = L; }
                             } else {
                             let two = 0;
                             if (i + 1 < L) { two = sc(src, i + 1); }
@@ -310,18 +347,18 @@ fn tokenize() -> int {
 
 // ===== часть: 30_syntax.lat =====
 // ============================ ПАРСЕР ============================
-fn tkind() -> int { return load32(KIND() + get(0, 0) * 4); }
-fn tkind_at(off) -> int { return load32(KIND() + (get(0, 0) + off) * 4); }
-fn tval() -> int { return load32(TVAL() + get(0, 0) * 4); }
-fn tlen() -> int { return load32(TLEN() + get(0, 0) * 4); }
-fn adv() -> int { return set(0, 0, get(0, 0) + 1); }
+fn tok_kind() -> int { return load32(KIND() + get(0, 0) * 4); }
+fn tok_kind_at(off) -> int { return load32(KIND() + (get(0, 0) + off) * 4); }
+fn tok_val() -> int { return load32(TVAL() + get(0, 0) * 4); }
+fn tok_len() -> int { return load32(TLEN() + get(0, 0) * 4); }
+fn next_token() -> int { return set(0, 0, get(0, 0) + 1); }
 fn err() -> int { return set(0, 4, 1); }
 fn is_ident_kind(k) -> bool { return k == 2 || (k >= 10 && k <= 19); }
 
-fn expect(k) -> int { if (tkind() == k) { return adv(); } err(); return 0; }
+fn expect(k) -> int { if (tok_kind() == k) { return next_token(); } err(); return 0; }
 fn expect_ident() -> int {
-    let k = tkind();
-    if (k == 2 || (k >= 10 && k <= 19)) { return adv(); }
+    let k = tok_kind();
+    if (k == 2 || (k >= 10 && k <= 19)) { return next_token(); }
     err(); return 0;
 }
 
@@ -405,10 +442,24 @@ fn add_str(off, ln) -> int {
     store32(STRL() + get(0, 6) * 4, ln);
     store32(STRA() + get(0, 6) * 4, addr);
     set(0, 6, get(0, 6) + 1);
-    // blob: [len u32 LE][bytes]
-    bput(DATAB(), ln & 255); bput(DATAB(), (ln >> 8) & 255); bput(DATAB(), (ln >> 16) & 255); bput(DATAB(), (ln >> 24) & 255);
-    let i = 0;
-    while (i < ln) { bput(DATAB(), load8(INPUT() + 4 + off + i)); i = i + 1; }
+    // Blob: [len u32 LE][bytes]. Escape-последовательности (\n \t \\ \")
+    // разворачиваются, как в oracle; длина считается уже по байтам результата.
+    let u = 0; let i = 0;
+    while (i < ln) {
+        if (load8(INPUT() + 4 + off + i) == 92 && i + 1 < ln) { u = u + 1; i = i + 2; }
+        else { u = u + 1; i = i + 1; }
+    }
+    bput(DATAB(), u & 255); bput(DATAB(), (u >> 8) & 255); bput(DATAB(), (u >> 16) & 255); bput(DATAB(), (u >> 24) & 255);
+    i = 0;
+    while (i < ln) {
+        let c = load8(INPUT() + 4 + off + i);
+        if (c == 92 && i + 1 < ln) {
+            let e = load8(INPUT() + 4 + off + i + 1);
+            if (e == 110) { bput(DATAB(), 10); }
+            else { if (e == 116) { bput(DATAB(), 9); } else { bput(DATAB(), e); } }
+            i = i + 2;
+        } else { bput(DATAB(), c); i = i + 1; }
+    }
     return addr;
 }
 fn str_addr(off, ln) -> int {
@@ -879,8 +930,8 @@ fn compile_lambda(li) -> int {
         let slot = get(0, 3);
         add_local(cap_name_off(li, ci), cap_name_len(li, ci), slot);
         set_local_tp(slot, T_INT());
-        ev(32); ev_leb(0); ev(65); ev_sleb(ci * 4); ev(106); ev(40); ev(2); ev(0);
-        ev(33); ev_leb(slot);
+        emit_op(32); emit_leb(0); emit_op(65); emit_sleb(ci * 4); emit_op(106); emit_op(40); emit_op(2); emit_op(0);
+        emit_op(33); emit_leb(slot);
         ci = ci + 1;
     }
     // Тело.
@@ -890,11 +941,11 @@ fn compile_lambda(li) -> int {
         expect(23);
     } else {
         level_or();
-        ev(15);   // return
+        emit_op(15);   // return
     }
     let lb = load8(FNB() + 4 + load32(FNB()) - 1);
-    if (lb != 15) { ev(65); ev_sleb(0); }
-    ev(11);
+    if (lb != 15) { emit_op(65); emit_sleb(0); }
+    emit_op(11);
     // финальное тело: nlocals = все слоты минус (env + np)
     binit(BODYC());
     let nparams = np + 1;
@@ -910,11 +961,35 @@ fn compile_lambda(li) -> int {
     return 0;
 }
 
-// ===== часть: 40_emit_expr.lat =====
-// --- эмиссия ---
-fn ev(b) -> int { return bput(FNB(), b); }
-fn ev_leb(v) -> int { return bleb(FNB(), v); }
-fn ev_sleb(v) -> int { return bsleb(FNB(), v); }
+// ===== часть: 40a_expr_emit.lat =====
+// --- эмиссия: опкоды, встроенные вызовы, print ---
+// Отвечает за «словарь» эмиттера: байт/LEB в буфер функции, разбор
+// аргументов встроенных (память, строки, конверсии, assert, print) и
+// диспетчеризацию вызова по имени. Pratt-уровни и объектные выражения —
+// в соседних частях 40b..40g.
+
+// --- эмиссия опкодов: два слоя ---
+// Чистый слой: буфер передаётся параметром, результат зависит только от
+// аргументов и содержимого памяти — никаких фиксированных адресов.
+fn emit_byte(b, op) -> int { return bput(b, op); }
+fn emit_i32_to(b, v) -> int { emit_byte(b, 65); return bsleb(b, v); }      // i32.const
+fn emit_get_from(b, l) -> int { emit_byte(b, 32); return bleb(b, l); }     // local.get
+fn emit_set_in(b, l) -> int { emit_byte(b, 33); return bleb(b, l); }       // local.set
+fn emit_call_in(b, fi) -> int { emit_byte(b, 16); return bleb(b, fi); }    // call
+fn emit_load32_from(b) -> int { emit_byte(b, 40); emit_byte(b, 2); return emit_byte(b, 0); }
+fn emit_store32_to(b) -> int { emit_byte(b, 54); emit_byte(b, 2); return emit_byte(b, 0); }
+
+// Императивная граница: текущий буфер тела функции (FNB) — состояние
+// компилятора, поэтому эти обёртки не «чистые» и сосредоточены только здесь.
+fn emit_op(b) -> int { return emit_byte(FNB(), b); }
+fn emit_leb(v) -> int { return bleb(FNB(), v); }
+fn emit_sleb(v) -> int { return bsleb(FNB(), v); }
+fn ev_i32(v) -> int { return emit_i32_to(FNB(), v); }
+fn ev_get(l) -> int { return emit_get_from(FNB(), l); }
+fn ev_set(l) -> int { return emit_set_in(FNB(), l); }
+fn ev_call(fi) -> int { return emit_call_in(FNB(), fi); }
+fn ev_load32() -> int { return emit_load32_from(FNB()); }
+fn ev_store32() -> int { return emit_store32_to(FNB()); }
 fn nf() -> int { return get(0, 2); }
 fn ALLOC_FI() -> int { return get(0, 2) + 1; }
 fn MEM_FI() -> int { return get(0, 2) + 2; }
@@ -929,7 +1004,7 @@ fn NHELP() -> int { return 8; }                 // alloc+memcopy+3 str+3 conv
 fn emit_bi1(fi, opcode, align) -> int {
     let base = get(0, 7);
     expect(20); level_or(); expect(21);
-    if (opcode == 0) { ev(16); ev_leb(fi); } else { ev(opcode); ev(align); ev(0); }
+    if (opcode == 0) { ev_call(fi); } else { emit_op(opcode); emit_op(align); emit_op(0); }
     set(0, 5, 1);
     set(0, 7, base); tp(T_INT());
     return 0;
@@ -937,9 +1012,9 @@ fn emit_bi1(fi, opcode, align) -> int {
 fn emit_bi2(fi, opcode, align, produces) -> int {
     let base = get(0, 7);
     expect(20); level_or();
-    if (tkind() == 24) { adv(); }
+    if (tok_kind() == 24) { next_token(); }
     level_or(); expect(21);
-    if (opcode == 0) { ev(16); ev_leb(fi); } else { ev(opcode); ev(align); ev(0); }
+    if (opcode == 0) { ev_call(fi); } else { emit_op(opcode); emit_op(align); emit_op(0); }
     set(0, 5, produces);
     set(0, 7, base);
     if (produces == 1) { tp(T_INT()); }
@@ -948,18 +1023,19 @@ fn emit_bi2(fi, opcode, align, produces) -> int {
 fn emit_memcopy() -> int {
     let base = get(0, 7);
     expect(20); level_or();
-    if (tkind() == 24) { adv(); }
+    if (tok_kind() == 24) { next_token(); }
     level_or();
-    if (tkind() == 24) { adv(); }
+    if (tok_kind() == 24) { next_token(); }
     level_or(); expect(21);
-    ev(16); ev_leb(MEM_FI());
+    ev_call(MEM_FI());
     set(0, 5, 1);
     set(0, 7, base); tp(T_INT());
     return 0;
 }
 
 fn emit_call(off, ln) -> int {
-    if (is_lit(off, ln, "print", 5)) { return emit_call_named(0, 1); }
+    if (is_lit(off, ln, "print", 5)) { return emit_print(); }
+    if (is_host_builtin(off, ln)) { return emit_host_builtin(off, ln); }
     if (is_lit(off, ln, "alloc", 5)) { return emit_bi1(ALLOC_FI(), 0, 0); }
     if (is_lit(off, ln, "memcopy", 7)) { return emit_memcopy(); }
     if (is_lit(off, ln, "load8", 5)) { return emit_bi1(0, 45, 0); }
@@ -982,7 +1058,8 @@ fn emit_call(off, ln) -> int {
         // Локаль, хранящая замыкание → косвенный вызов.
         let li = find_local(off, ln);
         if (li >= 0) { return emit_indirect_call(li); }
-        err(); return 0;
+        err_named("error: undefined function: ", off, ln, "");
+        return 0;
     }
     return emit_call_named(fi + 1, 0);
 }
@@ -992,25 +1069,25 @@ fn emit_variant(tag, ar) -> int {
     let base = get(0, 7);
     expect(20);
     if (ar == 0) {
-        while (tkind() != 21 && tkind() != 0) { set(0, 7, base); level_or(); if (tkind() == 24) { adv(); } }
+        while (tok_kind() != 21 && tok_kind() != 0) { set(0, 7, base); level_or(); if (tok_kind() == 24) { next_token(); } }
         expect(21);
-        ev(65); ev_sleb(tag);
+        ev_i32(tag);
         set(0, 5, 1); set(0, 7, base); tp(T_INT()); return 0;
     }
     let p = reserve();
-    ev(65); ev_sleb(4 + ar * 4); ev(16); ev_leb(ALLOC_FI()); ev(33); ev_leb(p);
+    ev_i32(4 + ar * 4); ev_call(ALLOC_FI()); ev_set(p);
     let i = 0;
-    while (tkind() != 21 && tkind() != 0) {
+    while (tok_kind() != 21 && tok_kind() != 0) {
         set(0, 7, base);
-        ev(32); ev_leb(p); ev(65); ev_sleb(4 + i * 4); ev(106);
+        ev_get(p); ev_i32(4 + i * 4); emit_op(106);
         level_or();
-        ev(54); ev(2); ev(0);
+        ev_store32();
         i = i + 1;
-        if (tkind() == 24) { adv(); }
+        if (tok_kind() == 24) { next_token(); }
     }
     expect(21);
-    ev(32); ev_leb(p); ev(65); ev_sleb(tag); ev(54); ev(2); ev(0);
-    ev(32); ev_leb(p);
+    ev_get(p); ev_i32(tag); ev_store32();
+    ev_get(p);
     set(0, 5, 1); set(0, 7, base); tp(T_INT());
     return 0;
 }
@@ -1019,7 +1096,7 @@ fn emit_variant(tag, ar) -> int {
 fn emit_len() -> int {
     let base = get(0, 7);
     expect(20); level_or(); expect(21);
-    ev(40); ev(2); ev(0);
+    ev_load32();
     set(0, 5, 1);
     set(0, 7, base); tp(T_INT());
     return 0;
@@ -1029,7 +1106,7 @@ fn emit_len() -> int {
 fn emit_assert() -> int {
     let base = get(0, 7);
     expect(20); level_or(); expect(21);
-    ev(69); ev(4); ev(64); ev(0); ev(11);
+    emit_op(69); emit_op(4); emit_op(64); emit_op(0); emit_op(11);
     set(0, 5, 0);
     set(0, 7, base);
     return 0;
@@ -1039,9 +1116,9 @@ fn emit_assert() -> int {
 fn emit_assert_eq() -> int {
     let base = get(0, 7);
     expect(20); level_or();
-    if (tkind() == 24) { adv(); }
+    if (tok_kind() == 24) { next_token(); }
     level_or(); expect(21);
-    ev(70); ev(69); ev(4); ev(64); ev(0); ev(11);
+    emit_op(70); emit_op(69); emit_op(4); emit_op(64); emit_op(0); emit_op(11);
     set(0, 5, 0);
     set(0, 7, base);
     return 0;
@@ -1051,12 +1128,12 @@ fn emit_assert_eq() -> int {
 fn emit_str_conv() -> int {
     let base = get(0, 7);
     expect(20);
-    if (tkind() == 21) { adv(); ev(65); ev_sleb(0); set(0, 5, 1); set(0, 7, base); tp(T_STR()); return 0; }
+    if (tok_kind() == 21) { next_token(); ev_i32(0); set(0, 5, 1); set(0, 7, base); tp(T_STR()); return 0; }
     level_or();
     let xt = load32(TSTK() + base * 4);
     expect(21);
-    if (xt == T_FLT()) { ev(16); ev_leb(F64S_FI()); }
-    else { if (xt != T_STR()) { ev(16); ev_leb(I32S_FI()); } }
+    if (xt == T_FLT()) { ev_call(F64S_FI()); }
+    else { if (xt != T_STR()) { ev_call(I32S_FI()); } }
     set(0, 5, 1); set(0, 7, base); tp(T_STR());
     return 0;
 }
@@ -1064,25 +1141,27 @@ fn emit_str_conv() -> int {
 fn emit_int_conv() -> int {
     let base = get(0, 7);
     expect(20);
-    if (tkind() == 21) { adv(); ev(65); ev_sleb(0); set(0, 5, 1); set(0, 7, base); tp(T_INT()); return 0; }
+    if (tok_kind() == 21) { next_token(); ev_i32(0); set(0, 5, 1); set(0, 7, base); tp(T_INT()); return 0; }
     level_or();
     let xt = load32(TSTK() + base * 4);
     expect(21);
-    if (xt == T_STR()) { ev(16); ev_leb(S2I_FI()); }
-    else { if (xt == T_FLT()) { ev(I32_TRUNC_F64_OP()); } }
+    if (xt == T_STR()) { ev_call(S2I_FI()); }
+    else { if (xt == T_FLT()) { emit_op(I32_TRUNC_F64_OP()); } }
     set(0, 5, 1); set(0, 7, base); tp(T_INT());
     return 0;
 }
 
-// float(x): int → f64 (f64.convert_i32_s); float оставляем как есть.
+// float(x): int → f64 (f64.convert_i32_s); строку парсим (str_to_i32) и
+// конвертируем; float оставляем как есть — как oracle.
 fn emit_float_conv() -> int {
     let base = get(0, 7);
     expect(20);
-    if (tkind() == 21) { adv(); ev(65); ev_sleb(0); ev(F64_CONV_I32_OP()); set(0, 5, 1); set(0, 7, base); tp(T_FLT()); return 0; }
+    if (tok_kind() == 21) { next_token(); ev_i32(0); emit_op(F64_CONV_I32_OP()); set(0, 5, 1); set(0, 7, base); tp(T_FLT()); return 0; }
     level_or();
     let xt = load32(TSTK() + base * 4);
     expect(21);
-    if (xt != T_FLT()) { ev(F64_CONV_I32_OP()); }
+    if (xt == T_STR()) { ev_call(S2I_FI()); emit_op(F64_CONV_I32_OP()); }
+    else { if (xt != T_FLT()) { emit_op(F64_CONV_I32_OP()); } }
     set(0, 5, 1); set(0, 7, base); tp(T_FLT());
     return 0;
 }
@@ -1090,12 +1169,12 @@ fn emit_float_conv() -> int {
 fn emit_sqrt() -> int {
     let base = get(0, 7);
     expect(20);
-    if (tkind() == 21) { adv(); ev(65); ev_sleb(0); ev(F64_CONV_I32_OP()); ev(159); set(0, 5, 1); set(0, 7, base); tp(T_FLT()); return 0; }
+    if (tok_kind() == 21) { next_token(); ev_i32(0); emit_op(F64_CONV_I32_OP()); emit_op(159); set(0, 5, 1); set(0, 7, base); tp(T_FLT()); return 0; }
     level_or();
     let xt = load32(TSTK() + base * 4);
     expect(21);
-    if (xt != T_FLT()) { ev(F64_CONV_I32_OP()); }
-    ev(159);                             // f64.sqrt
+    if (xt != T_FLT()) { emit_op(F64_CONV_I32_OP()); }
+    emit_op(159);                             // f64.sqrt
     set(0, 5, 1); set(0, 7, base); tp(T_FLT());
     return 0;
 }
@@ -1105,10 +1184,10 @@ fn emit_sqrt() -> int {
 fn emit_push_call() -> int {
     let base = get(0, 7);
     expect(20); level_or();
-    if (tkind() == 24) { adv(); }
+    if (tok_kind() == 24) { next_token(); }
     level_or(); expect(21);
-    let xl = reserve(); ev(33); ev_leb(xl);
-    let al = reserve(); ev(33); ev_leb(al);
+    let xl = reserve(); ev_set(xl);
+    let al = reserve(); ev_set(al);
     emit_push_seq(al, xl);
     set(0, 5, 1);
     set(0, 7, base); tp(T_INT());
@@ -1117,28 +1196,105 @@ fn emit_push_call() -> int {
 
 // Общая последовательность push для уже сохранённых в локалях arr/x.
 fn emit_push_seq(al, xl) -> int {
-    ev(32); ev_leb(al); ev(32); ev_leb(al); ev(40); ev(2); ev(0); ev(65); ev_sleb(4); ev(108); ev(106); ev(65); ev_sleb(4); ev(106); ev(32); ev_leb(xl); ev(54); ev(2); ev(0);
-    ev(32); ev_leb(al); ev(32); ev_leb(al); ev(40); ev(2); ev(0); ev(65); ev_sleb(1); ev(106); ev(54); ev(2); ev(0);
-    ev(32); ev_leb(al);
+    ev_get(al); ev_get(al); ev_load32(); ev_i32(4); emit_op(108); emit_op(106); ev_i32(4); emit_op(106); ev_get(xl); ev_store32();
+    ev_get(al); ev_get(al); ev_load32(); ev_i32(1); emit_op(106); ev_store32();
+    ev_get(al);
     return 0;
 }
 
 // Общая последовательность pop для arr в локали: len--; результат arr[len].
 fn emit_pop_seq(al) -> int {
-    ev(32); ev_leb(al); ev(32); ev_leb(al); ev(40); ev(2); ev(0); ev(65); ev_sleb(1); ev(107); ev(54); ev(2); ev(0);
-    ev(32); ev_leb(al); ev(32); ev_leb(al); ev(40); ev(2); ev(0); ev(65); ev_sleb(4); ev(108); ev(106); ev(65); ev_sleb(4); ev(106); ev(40); ev(2); ev(0);
+    ev_get(al); ev_get(al); ev_load32(); ev_i32(1); emit_op(107); ev_store32();
+    ev_get(al); ev_get(al); ev_load32(); ev_i32(4); emit_op(108); emit_op(106); ev_i32(4); emit_op(106); ev_load32();
     return 0;
 }
+// print(a, b, ...) — каждый аргумент конвертируется в строку и печатается
+// отдельной строкой (как в oracle): int → i32_to_str, float → f64_to_str,
+// строка — как есть.
+fn emit_print() -> int {
+    let base = get(0, 7);
+    expect(20);
+    while (tok_kind() != 21 && tok_kind() != 0) {
+        set(0, 7, base);
+        level_or();
+        let t = load32(TSTK() + base * 4);
+        if (t == T_FLT()) { ev_call(F64S_FI()); }
+        else { if (t != T_STR()) { ev_call(I32S_FI()); } }
+        ev_call(0);                 // call env.print (импорт, индекс 0)
+        set(0, 5, 0);
+        set(0, 7, base);
+        if (tok_kind() == 24) { next_token(); }
+    }
+    expect(21);
+    set(0, 5, 0);
+    set(0, 7, base);
+    return 0;
+}
+
+// ===== часть: 40b_expr_values.lat =====
+// --- эмиссия: host-builtin'ы, вызов по индексу, float-литералы ---
+// Host-конструкции (AI/каналы) дают ошибку с именем builtin'а; здесь же
+// вычисление значения float-литерала без кодирования битов IEEE754 и
+// повышение int→f64 для смешанной арифметики.
+
+// Встроенные, которым нужен host-рантайм движка №1 (HOST_BUILTINS в oracle):
+// oracle даёт по ним понятную ошибку кодогена — повторяем её с именем.
+fn is_host_builtin(off, ln) -> bool {
+    if (is_lit(off, ln, "channel", 7)) { return true; }
+    if (is_lit(off, ln, "tensor", 6)) { return true; }
+    if (is_lit(off, ln, "semantic", 8)) { return true; }
+    if (is_lit(off, ln, "matmul", 6)) { return true; }
+    if (is_lit(off, ln, "cosine_similarity", 17)) { return true; }
+    if (is_lit(off, ln, "dot", 3)) { return true; }
+    if (is_lit(off, ln, "magnitude", 9)) { return true; }
+    if (is_lit(off, ln, "zeros", 5)) { return true; }
+    if (is_lit(off, ln, "ones", 4)) { return true; }
+    if (is_lit(off, ln, "snapshot", 8)) { return true; }
+    if (is_lit(off, ln, "ai_contract", 11)) { return true; }
+    if (is_lit(off, ln, "enforce_contract", 16)) { return true; }
+    if (is_lit(off, ln, "ai_infer", 8)) { return true; }
+    if (is_lit(off, ln, "ai_embed", 8)) { return true; }
+    if (is_lit(off, ln, "ai_stream", 9)) { return true; }
+    if (is_lit(off, ln, "stream_next", 11)) { return true; }
+    return false;
+}
+
+// channel<T>(args): generic-параметр отбрасывается (как в oracle), далее —
+// обычная host-ошибка с именем builtin'а.
+fn emit_channel_generic(off, ln) -> int {
+    next_token(); next_token();                        // channel, <
+    while (tok_kind() != 43 && tok_kind() != 0) { next_token(); }
+    if (tok_kind() == 43) { next_token(); }
+    return emit_host_builtin(off, ln);
+}
+
+// Разбирает аргументы host-builtin'а и сообщает об ошибке с его именем:
+// движок №2 не имеет host-рантайма (AI/tensor/каналы).
+fn emit_host_builtin(off, ln) -> int {
+    let base = get(0, 7);
+    expect(20);
+    while (tok_kind() != 21 && tok_kind() != 0) {
+        set(0, 7, base);
+        level_or();
+        if (tok_kind() == 24) { next_token(); }
+    }
+    expect(21);
+    err_named("error: builtin '", off, ln, "' requires host runtime (engine #2)");
+    set(0, 5, 0);
+    set(0, 7, base);
+    return 0;
+}
+
 fn emit_call_named(fidx, is_print) -> int {
     let base = get(0, 7);
     expect(20);
     let argc = 0;
-    while (tkind() != 21 && tkind() != 0) {
+    while (tok_kind() != 21 && tok_kind() != 0) {
         level_or(); argc = argc + 1;
-        if (tkind() == 24) { adv(); }
+        if (tok_kind() == 24) { next_token(); }
     }
     expect(21);
-    ev(16); ev_leb(fidx);
+    ev_call(fidx);
     set(0, 7, base);
     if (is_print == 1) { set(0, 5, 0); }
     else {
@@ -1149,35 +1305,51 @@ fn emit_call_named(fidx, is_print) -> int {
     return 0;
 }
 
-// Литерал float `I.F`: собираем как f64-арифметику без кодирования битов
-// IEEE754 — целая часть + дробь/10^k. Так не нужна 64-битная арифметика.
+// Литерал с плавающей точкой `I.F`, `IeN`, `I.FeN`: значение = mant / 10^k *
+// 10^exp. Целочисленно-значные литералы (по oracle: f64.fract()==0) эмитятся
+// как i32.const и имеют тип int — это наблюдаемо через str(2.0) → "2".
+// Дробные — как f64-арифметика без кодирования битов IEEE754.
+// Возвращает T_INT или T_FLT (тип литерала).
 fn emit_float_lit(off, ln) -> int {
-    let ip = 0; let i = 0;
-    while (i < ln && load8(INPUT() + 4 + off + i) != 46) { ip = ip * 10 + (load8(INPUT() + 4 + off + i) - 48); i = i + 1; }
-    i = i + 1;                          // через '.'
-    let fp = 0; let k = 0;
-    while (i < ln) { fp = fp * 10 + (load8(INPUT() + 4 + off + i) - 48); k = k + 1; i = i + 1; }
-    // Целочисленно-значный литерал (`2.0`, `4.0`) эмитим как int (i32.const I),
-// что совпадает с его типом (T_INT) и с oracle; смешанная арифметика затем
-// повышает int→f64 в promote_pair.
-    if (k == 0 || fp == 0) { ev(65); ev_sleb(ip); return 0; }
-    ev(65); ev_sleb(ip); ev(183);        // i32.const I; f64.convert_i32_s
-    ev(65); ev_sleb(fp); ev(183);        // i32.const F; f64.convert_i32_s
-    ev(65); ev_sleb(pow10(k)); ev(183);  // i32.const 10^k; f64.convert_i32_s
-    ev(163);                             // f64.div
-    ev(160);                             // f64.add
-    return 0;
-}
-// Литерал вида `I.0` (все дробные цифры — нули) oracle трактует как int.
-fn float_lit_is_int(off, ln) -> bool {
-    let i = 0; let seen_dot = 0;
+    // Позиция экспоненты (e/E), -1 если её нет.
+    let epos = -1; let i = 0;
     while (i < ln) {
         let c = load8(INPUT() + 4 + off + i);
-        if (c == 46) { seen_dot = 1; }
-        else { if (seen_dot == 1 && c != 48) { return false; } }
+        if (c == 101 || c == 69) { epos = i; i = ln; } else { i = i + 1; }
+    }
+    let mend = ln; if (epos >= 0) { mend = epos; }
+    // Мантисса: целые/дробные цифры, k — число цифр после точки.
+    let mant = 0; let k = 0; let dot = 0;
+    i = 0;
+    while (i < mend) {
+        let c = load8(INPUT() + 4 + off + i);
+        if (c == 46) { dot = 1; }
+        else {
+            mant = mant * 10 + (c - 48);
+            if (dot == 1) { k = k + 1; }
+        }
         i = i + 1;
     }
-    return true;
+    // Экспонента (со знаком).
+    let exp = 0; let esign = 1;
+    if (epos >= 0) {
+        i = epos + 1;
+        if (i < ln && load8(INPUT() + 4 + off + i) == 45) { esign = -1; i = i + 1; }
+        else { if (i < ln && load8(INPUT() + 4 + off + i) == 43) { i = i + 1; } }
+        while (i < ln) { exp = exp * 10 + (load8(INPUT() + 4 + off + i) - 48); i = i + 1; }
+        exp = exp * esign;
+    }
+    if (exp >= k) {
+        ev_i32(mant * pow10(exp - k));
+        return T_INT();
+    }
+    let d = k - exp;
+    let p = pow10(d);
+    if (mant % p == 0) { ev_i32(mant / p); return T_INT(); }
+    ev_i32(mant); emit_op(183);      // mant → f64
+    ev_i32(p); emit_op(183);         // 10^d → f64
+    emit_op(163);                             // f64.div
+    return T_FLT();
 }
 // Меняет местами/повышает два верхних операнда в локалях: когда один int,
 // другой float — int конвертируется в f64, чтобы f64-операция была валидна.
@@ -1185,10 +1357,10 @@ fn float_lit_is_int(off, ln) -> bool {
 fn promote_pair(base, lt, rt) -> int {
     // Каждый операнд сохраняем в локаль СВОЕГО типа (иначе local.set невалиден),
     // затем повторно кладём на стек, конвертируя int→f64.
-    let rl = reserve_any(rt); ev(33); ev_leb(rl);
-    let ll = reserve_any(lt); ev(33); ev_leb(ll);
-    ev(32); ev_leb(ll); if (lt != T_FLT()) { ev(F64_CONV_I32_OP()); }
-    ev(32); ev_leb(rl); if (rt != T_FLT()) { ev(F64_CONV_I32_OP()); }
+    let rl = reserve_any(rt); ev_set(rl);
+    let ll = reserve_any(lt); ev_set(ll);
+    ev_get(ll); if (lt != T_FLT()) { emit_op(F64_CONV_I32_OP()); }
+    ev_get(rl); if (rt != T_FLT()) { emit_op(F64_CONV_I32_OP()); }
     set(0, 7, base);
     return 0;
 }
@@ -1203,47 +1375,89 @@ fn pow10(k) -> int {
     return v;
 }
 
+// ===== часть: 40c_expr_primary.lat =====
+// --- эмиссия: первичные выражения и замыкания ---
+// Литералы, идентификаторы, `await`, `null`, лямбда-литерал (создание env
+// и closure-объекта) и косвенный вызов замыкания.
+
 fn level_primary() -> int {
-    let k = tkind();
-    if (k == 1) { ev(65); ev_sleb(tval()); adv(); set(0, 5, 1); tp(T_INT()); return 0; }
+    let k = tok_kind();
+    if (k == 1) { ev_i32(tok_val()); next_token(); set(0, 5, 1); tp(T_INT()); return 0; }
     if (k == 4) {
-        let isint = float_lit_is_int(tval(), tlen());
-        emit_float_lit(tval(), tlen()); adv(); set(0, 5, 1);
-        // Целочисленно-значный литерал oracle сворачивает в int (`2.0`≡2):
-        // это наблюдаемо через str(2.0) → "2". Иначе — float.
-        if (isint) { tp(T_INT()); } else { tp(T_FLT()); }
+        let t = emit_float_lit(tok_val(), tok_len()); next_token(); set(0, 5, 1); tp(t);
         return 0;
     }
-    if (k == 90) { ev(65); ev_sleb(1); adv(); set(0, 5, 1); tp(T_INT()); return 0; }
-    if (k == 91) { ev(65); ev_sleb(0); adv(); set(0, 5, 1); tp(T_INT()); return 0; }
+    if (k == 90) { ev_i32(1); next_token(); set(0, 5, 1); tp(T_INT()); return 0; }
+    if (k == 91) { ev_i32(0); next_token(); set(0, 5, 1); tp(T_INT()); return 0; }
+    if (k == 107) { ev_i32(0); next_token(); set(0, 5, 1); tp(T_INT()); return 0; }   // null ≡ 0
     if (k == 3) {
-        let q = tval(); let ql = tlen();
+        let q = tok_val(); let ql = tok_len();
         let addr = str_addr(q + 1, ql - 2);
-        ev(65); ev_sleb(addr); adv(); set(0, 5, 1); tp(T_STR()); return 0;
+        ev_i32(addr); next_token(); set(0, 5, 1); tp(T_STR()); return 0;
     }
-    if (k == 20) { adv(); level_or(); expect(21); return 0; }
+    if (k == 20) { next_token(); level_or(); expect(21); return 0; }
     if (k == 80) { return level_array(); }
-    if (k == 31) { adv(); ev(65); ev_sleb(0); level_unary(); ev(107); set(0, 5, 1); return 0; }
-    if (k == 53) { adv(); level_unary(); ev(69); set(0, 5, 1); return 0; }
-    if (k == 94) { adv(); ev(32); ev_leb(0); set(0, 5, 1); tp(T_INT()); set(0, 8, load32(FNCLS() + load32(CURFI()) * 4)); return 0; }
+    if (k == 31) { next_token(); ev_i32(0); level_unary(); emit_op(107); set(0, 5, 1); return 0; }
+    if (k == 53) { next_token(); level_unary(); emit_op(69); set(0, 5, 1); return 0; }
+    if (k == 94) { next_token(); ev_get(0); set(0, 5, 1); tp(T_INT()); set(0, 8, load32(FNCLS() + load32(CURFI()) * 4)); return 0; }
     if (k == 93) { return level_new(); }
     if (k == 95) { return level_match(); }
+    if (k == 104) { return level_select(); }
     if (k == 11) { return level_lambda(); }
-    if (is_ident_kind(k)) {
-        let off = tval(); let ln = tlen();
-        // 0-арный enum-вариант как значение (без скобок).
-        if (tkind_at(1) != 20 && find_local(off, ln) < 0 && find_func(off, ln) < 0
-            && variant_tag(off, ln) >= 0) {
-            ev(65); ev_sleb(variant_tag(off, ln)); adv();
-            set(0, 5, 1); tp(T_INT()); set(0, 8, -1); return 0;
-        }
-        adv();
-        if (tkind() == 20) { return emit_call(off, ln); }
-        let li = find_local(off, ln);
-        if (li >= 0) { ev(32); ev_leb(li); set(0, 5, 1); tp(local_tp(li)); set(0, 8, load32(LOCCLS() + li * 4)); return 0; }
-        err(); return 0;
-    }
+    // await — прозрачное разворачивание значения (Promise в WASM нет).
+    if (k == 103) { next_token(); return level_unary(); }
+    // <-ch — приём из канала: host-рантайм движка №1.
+    if (k == 106) { return level_receive(); }
+    if (is_ident_kind(k)) { return level_ident(); }
     err(); set(0, 5, 1); tp(T_INT()); set(0, 8, -1); return 0;
+}
+
+// <-ch: выражение разбирается целиком, но каналы требуют host-рантайма №1.
+fn level_receive() -> int {
+    next_token(); level_unary();
+    err_named("error: channel operations require host runtime (engine #1)", 0, 0, "");
+    set(0, 5, 1); tp(T_INT()); set(0, 8, -1);
+    return 0;
+}
+
+// Идентификатор: AI-примитив, generic-канал, 0-арный вариант, вызов функции,
+// локальная переменная — или ошибка «undefined variable» с именем.
+fn level_ident() -> int {
+    let off = tok_val(); let ln = tok_len();
+    if (tok_kind_at(1) == 53 && is_lit(off, ln, "ai_generate", 11)) {
+        return emit_ai_generate_error();
+    }
+    if (tok_kind_at(1) == 42 && is_lit(off, ln, "channel", 7)) {
+        return emit_channel_generic(off, ln);
+    }
+    // 0-арный enum-вариант как значение (без скобок).
+    if (tok_kind_at(1) != 20 && find_local(off, ln) < 0 && find_func(off, ln) < 0
+        && variant_tag(off, ln) >= 0) {
+        ev_i32(variant_tag(off, ln)); next_token();
+        set(0, 5, 1); tp(T_INT()); set(0, 8, -1); return 0;
+    }
+    next_token();
+    if (tok_kind() == 20) { return emit_call(off, ln); }
+    let li = find_local(off, ln);
+    if (li >= 0) {
+        ev_get(li); set(0, 5, 1); tp(local_tp(li));
+        set(0, 8, load32(LOCCLS() + li * 4));
+        return 0;
+    }
+    err_named("error: undefined variable: ", off, ln, "");
+    set(0, 5, 1); tp(T_INT()); set(0, 8, -1);
+    return 0;
+}
+
+// ai_generate!("prompt") — AI-примитив, требует host-рантайма.
+fn emit_ai_generate_error() -> int {
+    next_token(); next_token();                  // ai_generate !
+    expect(20);
+    if (tok_kind() == 3) { next_token(); } else { err(); }
+    expect(21);
+    err_named("error: AI primitives require host runtime (engine #1)", 0, 0, "");
+    set(0, 5, 1); tp(T_INT()); set(0, 8, -1);
+    return 0;
 }
 
 // Литерал лямбды `fn(params) => expr` / `fn(params) { ... }` → closure-указатель
@@ -1256,26 +1470,26 @@ fn level_lambda() -> int {
     // env = alloc(4*nc) или 0
     let env = reserve();
     if (nc > 0) {
-        ev(65); ev_sleb(4 * nc); ev(16); ev_leb(ALLOC_FI()); ev(33); ev_leb(env);
+        ev_i32(4 * nc); ev_call(ALLOC_FI()); ev_set(env);
     } else {
-        ev(65); ev_sleb(0); ev(33); ev_leb(env);
+        ev_i32(0); ev_set(env);
     }
     let c = 0;
     while (c < nc) {
         let locali = find_local(cap_name_off(li, c), cap_name_len(li, c));
         if (locali >= 0) {
-            ev(32); ev_leb(env); ev(65); ev_sleb(c * 4); ev(106);
-            ev(32); ev_leb(locali);
-            ev(54); ev(2); ev(0);
+            ev_get(env); ev_i32(c * 4); emit_op(106);
+            ev_get(locali);
+            ev_store32();
         }
         c = c + 1;
     }
     // closure = alloc(8); [0]=table_slot(=индекс функции); [4]=env
     let cl = reserve();
-    ev(65); ev_sleb(8); ev(16); ev_leb(ALLOC_FI()); ev(33); ev_leb(cl);
-    ev(32); ev_leb(cl); ev(65); ev_sleb(lam_fn(li)); ev(54); ev(2); ev(0);
-    ev(32); ev_leb(cl); ev(65); ev_sleb(4); ev(106); ev(32); ev_leb(env); ev(54); ev(2); ev(0);
-    ev(32); ev_leb(cl);
+    ev_i32(8); ev_call(ALLOC_FI()); ev_set(cl);
+    ev_get(cl); ev_i32(lam_fn(li)); ev_store32();
+    ev_get(cl); ev_i32(4); emit_op(106); ev_get(env); ev_store32();
+    ev_get(cl);
     // Пропускаем тело лямбды до его конца (оно уже скомпилировано отдельно).
     set(0, 0, lam_body_end(li));
     set(0, 5, 1); tp(T_INT()); set(0, 8, -1);
@@ -1288,83 +1502,144 @@ fn emit_indirect_call(callee_slot) -> int {
     let base = get(0, 7);
     expect(20);                   // '('
     // env = [closure+4]: адрес сначала, затем load.
-    ev(32); ev_leb(callee_slot); ev(65); ev_sleb(4); ev(106); ev(40); ev(2); ev(0);
-    let envl = reserve(); ev(33); ev_leb(envl);
-    ev(32); ev_leb(envl);         // env — первый аргумент
+    ev_get(callee_slot); ev_i32(4); emit_op(106); ev_load32();
+    let envl = reserve(); ev_set(envl);
+    ev_get(envl);         // env — первый аргумент
     let argc = 0;
-    while (tkind() != 21 && tkind() != 0) {
+    while (tok_kind() != 21 && tok_kind() != 0) {
         set(0, 7, base);
         level_or();
         argc = argc + 1;
-        if (tkind() == 24) { adv(); }
+        if (tok_kind() == 24) { next_token(); }
     }
     expect(21);
     // table index = [closure+0]
-    ev(32); ev_leb(callee_slot); ev(40); ev(2); ev(0);
-    ev(17); ev_leb(argc + 2); ev(0);    // call_indirect: тип арности argc+1 (env)
+    ev_get(callee_slot); ev_load32();
+    emit_op(17); emit_leb(argc + 2); emit_op(0);    // call_indirect: тип арности argc+1 (env)
     set(0, 5, 1); set(0, 7, base); tp(T_INT()); set(0, 8, -1);
     return 0;
 }
 
+// ===== часть: 40d_expr_objects.lat =====
+// --- эмиссия: match, select, new ---
+// Ветвления по образцу (числа/строки/конструкторы/`_`), select-выражение
+// (исполняется первая ветка) и создание объекта класса с init/new.
+
 // match scrut { case pat: expr, ... }: цепочка IF/ELSE, значение на стеке.
 // scrut сохраняется в локаль; каждый паттерн — условие, тело — ветвь THEN.
 fn level_match() -> int {
-    adv();
+    next_token();
     let scrut = reserve();
-    level_or(); ev(33); ev_leb(scrut);
+    level_or(); ev_set(scrut);
     expect(22);                        // {
     let out = reserve();               // результат match
     emit_match_arms(scrut, out);
     expect(23);                        // }
-    ev(32); ev_leb(out);
+    ev_get(out);
     set(0, 5, 1); tp(T_INT());
     return 0;
 }
+
+// select-выражение: oracle исполняет тело ПЕРВОЙ ветки (переменная = 0),
+// default — только если веток нет; выражения каналов не вычисляются.
+fn level_select() -> int {
+    next_token(); expect(22);                 // select {
+    let out = reserve();
+    if (tok_kind() == 98) {               // default: expr
+        next_token(); expect(26);
+        level_or(); ev_set(out);
+        skip_to_rbrace(); expect(23);
+        ev_get(out);
+        set(0, 5, 1); tp(T_INT()); set(0, 8, -1);
+        return 0;
+    }
+    if (tok_kind() == 23) {               // пустой select
+        ev_i32(0); ev_set(out);
+        expect(23);
+        ev_get(out);
+        set(0, 5, 1); tp(T_INT()); set(0, 8, -1);
+        return 0;
+    }
+    if (tok_kind() == 97) { next_token(); }      // case
+    if (is_ident_kind(tok_kind()) && tok_kind_at(1) == 106) {
+        let voff = tok_val(); let vlen = tok_len();
+        next_token(); next_token();                  // IDENT, <-
+        let slot = get(0, 3);
+        add_local(voff, vlen, slot);
+        set_local_tp(slot, T_INT());
+        store32(LOCCLS() + slot * 4, -1);
+        ev_i32(0); ev_set(slot);
+    } else {
+        if (tok_kind() == 106) { next_token(); }
+    }
+    // Выражение канала не исполняется: эмитим и откатываем буфер.
+    let save = blen(FNB()); let tsp = get(0, 7);
+    if (tok_kind() != 26) { level_or(); }
+    store32(FNB(), save); set(0, 7, tsp);
+    expect(26);
+    level_or(); ev_set(out);
+    skip_to_rbrace(); expect(23);
+    ev_get(out);
+    set(0, 5, 1); tp(T_INT()); set(0, 8, -1);
+    return 0;
+}
+
 fn emit_match_arms(scrut, out) -> int {
-    while (tkind() != 23 && tkind() != 0) {
-        if (tkind() == 24) { adv(); }   // запятая между ветками
-        if (tkind() == 97) { adv(); }   // case
+    while (tok_kind() != 23 && tok_kind() != 0) {
+        if (tok_kind() == 24) { next_token(); }   // запятая между ветками
+        if (tok_kind() == 97) { next_token(); }   // case
         set(0, 7, 0);
         // wildcard `_` или `default`
-        if (tkind() == 98) { adv(); expect(26); level_or(); ev(33); ev_leb(out); return 0; }
-        if (is_ident_kind(tkind()) && ttext_is(tval(), tlen(), "_", 1) && tkind_at(1) == 26) {
-            adv(); expect(26); level_or(); ev(33); ev_leb(out); return 0;
+        if (tok_kind() == 98) { next_token(); expect(26); level_or(); ev_set(out); return 0; }
+        if (is_ident_kind(tok_kind()) && ttext_is(tok_val(), tok_len(), "_", 1) && tok_kind_at(1) == 26) {
+            next_token(); expect(26); level_or(); ev_set(out); return 0;
         }
         // паттерн
-        let poff = tval(); let plen = tlen();
-        let isvar = is_ident_kind(tkind());
+        let poff = tok_val(); let plen = tok_len();
+        let isvar = is_ident_kind(tok_kind());
         if (isvar) {
-            adv();
-            if (tkind() == 20) {
+            next_token();
+            if (tok_kind() == 20) {
                 // Конструктор: Tag(sub...)
                 emit_ctor_test(poff, plen, scrut);
-                ev(4); ev(64);              // if
+                emit_op(4); emit_op(64);              // if
                 emit_bind_fields(scrut);
-                expect(26); level_or(); ev(33); ev_leb(out);
-                ev(5);                      // else
+                expect(26); level_or(); ev_set(out);
+                emit_op(5);                      // else
                 emit_match_arms(scrut, out);
-                ev(11);                     // end
+                emit_op(11);                     // end
                 return 0;
             }
-            if (tkind() == 26) {
+            if (tok_kind() == 26) {
                 // Связывание: pat: expr
                 expect(26);
-                ev(32); ev_leb(scrut); ev(33); ev_leb(scrut);
-                level_or(); ev(33); ev_leb(out);
+                ev_get(scrut); ev_set(scrut);
+                level_or(); ev_set(out);
                 return 0;
             }
         }
         // числовой литерал
-        if (tkind() == 1) {
-            let v = tval(); adv(); expect(26);
-            ev(32); ev_leb(scrut); ev(65); ev_sleb(v); ev(70); ev(4); ev(64);
-            level_or(); ev(33); ev_leb(out);
-            ev(5); emit_match_arms(scrut, out); ev(11);
+        if (tok_kind() == 1) {
+            let v = tok_val(); next_token(); expect(26);
+            ev_get(scrut); ev_i32(v); emit_op(70); emit_op(4); emit_op(64);
+            level_or(); ev_set(out);
+            emit_op(5); emit_match_arms(scrut, out); emit_op(11);
+            return 0;
+        }
+        // строковый литерал — сравнение по содержимому (str_eq), как oracle
+        if (tok_kind() == 3) {
+            let q = tok_val(); let ql = tok_len();
+            let addr = str_addr(q + 1, ql - 2);
+            next_token(); expect(26);
+            ev_get(scrut); ev_i32(addr);
+            ev_call(SEQ_FI()); emit_op(4); emit_op(64);
+            level_or(); ev_set(out);
+            emit_op(5); emit_match_arms(scrut, out); emit_op(11);
             return 0;
         }
         err(); return 0;
     }
-    ev(65); ev_sleb(0); ev(33); ev_leb(out);
+    ev_i32(0); ev_set(out);
     return 0;
 }
 // Условие «scrut это вариант Tag»: возвращает i32-условие на стеке.
@@ -1372,9 +1647,9 @@ fn emit_ctor_test(off, ln, scrut) -> int {
     let tag = variant_tag(off, ln);
     let ar = variant_arity(off, ln);
     if (ar == 0) {
-        ev(32); ev_leb(scrut); ev(65); ev_sleb(tag); ev(70);
+        ev_get(scrut); ev_i32(tag); emit_op(70);
     } else {
-        ev(32); ev_leb(scrut); ev(40); ev(2); ev(0); ev(65); ev_sleb(tag); ev(70);
+        ev_get(scrut); ev_load32(); ev_i32(tag); emit_op(70);
     }
     return 0;
 }
@@ -1383,16 +1658,16 @@ fn emit_bind_fields(scrut) -> int {
     // Имена под-паттернов идут сразу за именем конструктора в скобках.
     expect(20);
     let i = 0;
-    while (tkind() != 21 && tkind() != 0) {
-        if (is_ident_kind(tkind())) {
-            let noff = tval(); let nlen = tlen(); adv();
+    while (tok_kind() != 21 && tok_kind() != 0) {
+        if (is_ident_kind(tok_kind())) {
+            let noff = tok_val(); let nlen = tok_len(); next_token();
             let slot = get(0, 3);
             add_local(noff, nlen, slot); set_local_tp(slot, T_INT()); store32(LOCCLS() + slot * 4, -1);
-            ev(32); ev_leb(scrut); ev(65); ev_sleb(4 + i * 4); ev(106); ev(40); ev(2); ev(0);
-            ev(33); ev_leb(slot);
-        } else { adv(); }
+            ev_get(scrut); ev_i32(4 + i * 4); emit_op(106); ev_load32();
+            ev_set(slot);
+        } else { next_token(); }
         i = i + 1;
-        if (tkind() == 24) { adv(); }
+        if (tok_kind() == 24) { next_token(); }
     }
     expect(21);
     return 0;
@@ -1401,63 +1676,68 @@ fn ttext_is(off, ln, s, sn) -> bool { return is_lit(off, ln, s, sn); }
 
 // new Class(args): bump-alloc(CLSZ); вызвать Class_init/_new (this первым).
 fn level_new() -> int {
-    adv();
-    let noff = tval(); let nlen = tlen();
+    next_token();
+    let noff = tok_val(); let nlen = tok_len();
     expect_ident();
     let cls = class_idx_by_name(noff, nlen);
     if (cls < 0) { err(); tp(T_INT()); return 0; }
     let sz = load32(CLSZ() + cls * 4);
     let p = reserve();
-    ev(65); ev_sleb(sz); ev(16); ev_leb(ALLOC_FI()); ev(33); ev_leb(p);
+    ev_i32(sz); ev_call(ALLOC_FI()); ev_set(p);
     expect(20);
     let ctor = find_method_named(cls, "init", 4);
     if (ctor < 0) { ctor = find_method_named(cls, "new", 3); }
     if (ctor >= 0) {
-        ev(32); ev_leb(p);                    // this — первый аргумент
-        while (tkind() != 21 && tkind() != 0) {
+        ev_get(p);                    // this — первый аргумент
+        while (tok_kind() != 21 && tok_kind() != 0) {
             set(0, 7, 0);
             level_or();
-            if (tkind() == 24) { adv(); }
+            if (tok_kind() == 24) { next_token(); }
         }
-        ev(16); ev_leb(ctor + 1);
-        if (fn_has_result(ctor)) { ev(26); }
+        ev_call(ctor + 1);
+        if (fn_has_result(ctor)) { emit_op(26); }
     } else {
-        while (tkind() != 21 && tkind() != 0) { set(0, 7, 0); level_or(); if (tkind() == 24) { adv(); } }
+        while (tok_kind() != 21 && tok_kind() != 0) { set(0, 7, 0); level_or(); if (tok_kind() == 24) { next_token(); } }
     }
     expect(21);
-    ev(32); ev_leb(p);
+    ev_get(p);
     set(0, 5, 1); tp(T_INT()); set(0, 8, cls);
     return 0;
 }
+
+// ===== часть: 40e_expr_postfix.lat =====
+// --- эмиссия: постфиксные операции ---
+// Индексация `a[i]` (байт строки vs элемент массива), `.length`, доступ к
+// полю класса и вызов метода (push/pop/length/to_str/to_int).
 
 // Постфиксные операции: индексация a[i] и поле .length.
 fn level_postfix() -> int {
     let base = get(0, 7);
     level_primary();
     while (true) {
-        let k = tkind();
+        let k = tok_kind();
         if (k == 80) {
             let ot = load32(TSTK() + base * 4);
-            adv(); level_or(); expect(81);
+            next_token(); level_or(); expect(81);
             if (ot == T_STR()) {
                 // Индексация строки → байт-символ (str_char_at), не элемент массива.
-                ev(16); ev_leb(SCHR_FI());
+                ev_call(SCHR_FI());
             } else {
-                ev(65); ev_sleb(4); ev(108);   // idx*4
-                ev(106);                        // obj + idx*4
-                ev(65); ev_sleb(4); ev(106);    // + 4 (после заголовка длины)
-                ev(40); ev(2); ev(0);           // i32.load
+                ev_i32(4); emit_op(108);   // idx*4
+                emit_op(106);                        // obj + idx*4
+                ev_i32(4); emit_op(106);    // + 4 (после заголовка длины)
+                ev_load32();           // i32.load
             }
             set(0, 5, 1);
             set(0, 7, base); tp(T_INT());
         } else {
             if (k == 29) {
-                adv();
-                let a = tval(); let al = tlen();
+                next_token();
+                let a = tok_val(); let al = tok_len();
                 expect_ident();
-                if (tkind() == 20) { level_method(a, al); }
+                if (tok_kind() == 20) { level_method(a, al, base); }
                 else {
-                    if (is_lit(a, al, "length", 6)) { ev(40); ev(2); ev(0); set(0, 5, 1); set(0, 7, base); tp(T_INT()); }
+                    if (is_lit(a, al, "length", 6)) { ev_load32(); set(0, 5, 1); set(0, 7, base); tp(T_INT()); }
                     else {
                         let cls = get(0, 8);
                         if (cls >= 0) {
@@ -1465,8 +1745,8 @@ fn level_postfix() -> int {
                             let off = field_off(cls, a, al);
                             if (off < 0) { err(); }
                             else {
-                                if (off > 0) { ev(65); ev_sleb(off); ev(106); }
-                                ev(40); ev(2); ev(0);
+                                if (off > 0) { ev_i32(off); emit_op(106); }
+                                ev_load32();
                                 set(0, 5, 1); set(0, 7, base); tp(T_INT());
                             }
                         } else { err(); }
@@ -1477,59 +1757,94 @@ fn level_postfix() -> int {
     }
     return 0;
 }
-// Метод-вызов obj.name(args). Объект уже лежит на стеке (из level_postfix).
-// Поддерживаются: push(x), pop(), length().
-fn level_method(off, ln) -> int {
+// Метод-вызов obj.name(args). Объект уже лежит на стеке (из level_postfix);
+// base — позиция его типа в TSTK. Поддерживаются: push(x), pop(), length(),
+// to_str()/to_int() с учётом статического типа получателя (как oracle).
+fn level_method(off, ln, base) -> int {
     // Метод класса: объект уже на стеке → сохранить как this, затем вызвать.
     let cls = get(0, 8);
-    if (cls >= 0 && (tkind_at(0) == 20)) {
-        let mi = find_method(cls, off, ln);
-        if (mi >= 0) {
-            let tl = reserve(); ev(33); ev_leb(tl);
-            let base = get(0, 7);
-            expect(20);
-            ev(32); ev_leb(tl);              // this первым
-            while (tkind() != 21 && tkind() != 0) {
-                set(0, 7, base);
-                level_or();
-                if (tkind() == 24) { adv(); }
-            }
-            expect(21);
-            ev(16); ev_leb(mi + 1);
-            set(0, 5, 1); set(0, 7, base); tp(load32(FNRET() + mi * 4)); set(0, 8, -1);
-            return 0;
-        }
+    if (cls >= 0 && (tok_kind_at(0) == 20)) {
+        if (emit_class_method(cls, off, ln, base) == 1) { return 0; }
     }
-    if (is_lit(off, ln, "push", 4)) {
-        let al = reserve(); ev(33); ev_leb(al);
-        expect(20); level_or(); expect(21);
-        let xl = reserve(); ev(33); ev_leb(xl);
-        emit_push_seq(al, xl);
-        set(0, 5, 1); return 0;
-    }
-    if (is_lit(off, ln, "pop", 3)) {
-        let al = reserve(); ev(33); ev_leb(al);
-        expect(20); expect(21);
-        emit_pop_seq(al);
-        set(0, 5, 1); return 0;
-    }
-    if (is_lit(off, ln, "length", 6)) {
-        expect(20); expect(21);
-        ev(40); ev(2); ev(0);
-        set(0, 5, 1); return 0;
-    }
-    if (is_lit(off, ln, "to_str", 6) || is_lit(off, ln, "toString", 8)) {
-        expect(20); expect(21);
-        ev(16); ev_leb(I32S_FI());
-        set(0, 5, 1); return 0;
-    }
-    if (is_lit(off, ln, "to_int", 6) || is_lit(off, ln, "toInt", 5)) {
-        expect(20); expect(21);
-        ev(16); ev_leb(S2I_FI());
-        set(0, 5, 1); return 0;
-    }
-    err(); return 0;
+    if (is_lit(off, ln, "push", 4)) { return level_push_method(base); }
+    if (is_lit(off, ln, "pop", 3)) { return level_pop_method(base); }
+    if (is_lit(off, ln, "length", 6)) { return level_length_method(base); }
+    if (is_lit(off, ln, "to_str", 6) || is_lit(off, ln, "toString", 8)) { return level_to_str_method(base); }
+    if (is_lit(off, ln, "to_int", 6) || is_lit(off, ln, "toInt", 5)) { return level_to_int_method(base); }
+    err_named("error: method '", off, ln, "' requires host runtime (engine #2)");
+    set(0, 5, 0);
+    return 0;
 }
+
+// Вызов метода класса: сохраняет объект как this и передаёт его первым
+// аргументом; возвращает 1, если метод найден (0 — не метод класса).
+fn emit_class_method(cls, off, ln, base) -> int {
+    let mi = find_method(cls, off, ln);
+    if (mi < 0) { return 0; }
+    let tl = reserve(); ev_set(tl);
+    let tbase = get(0, 7);
+    expect(20);
+    ev_get(tl);              // this первым
+    while (tok_kind() != 21 && tok_kind() != 0) {
+        set(0, 7, tbase);
+        level_or();
+        if (tok_kind() == 24) { next_token(); }
+    }
+    expect(21);
+    ev_call(mi + 1);
+    set(0, 5, 1); set(0, 7, base); tp(load32(FNRET() + mi * 4)); set(0, 8, -1);
+    return 1;
+}
+
+fn level_push_method(base) -> int {
+    let al = reserve(); ev_set(al);
+    expect(20); level_or(); expect(21);
+    let xl = reserve(); ev_set(xl);
+    emit_push_seq(al, xl);
+    set(0, 5, 1); set(0, 7, base); tp(T_INT());
+    return 0;
+}
+
+fn level_pop_method(base) -> int {
+    let al = reserve(); ev_set(al);
+    expect(20); expect(21);
+    emit_pop_seq(al);
+    set(0, 5, 1); set(0, 7, base); tp(T_INT());
+    return 0;
+}
+
+fn level_length_method(base) -> int {
+    expect(20); expect(21);
+    ev_load32();
+    set(0, 5, 1); set(0, 7, base); tp(T_INT());
+    return 0;
+}
+
+// to_str() по статическому типу получателя: float → f64_to_str, иначе
+// int → i32_to_str, строка — без изменений (как oracle).
+fn level_to_str_method(base) -> int {
+    expect(20); expect(21);
+    let rt = load32(TSTK() + base * 4);
+    if (rt == T_FLT()) { ev_call(F64S_FI()); }
+    else { if (rt != T_STR()) { ev_call(I32S_FI()); } }
+    set(0, 5, 1); set(0, 7, base); tp(T_STR());
+    return 0;
+}
+
+// to_int(): строка → str_to_i32, float → i32.trunc_f64_s, int — как есть.
+fn level_to_int_method(base) -> int {
+    expect(20); expect(21);
+    let rt = load32(TSTK() + base * 4);
+    if (rt == T_STR()) { ev_call(S2I_FI()); }
+    else { if (rt == T_FLT()) { emit_op(I32_TRUNC_F64_OP()); } }
+    set(0, 5, 1); set(0, 7, base); tp(T_INT());
+    return 0;
+}
+
+// ===== часть: 40f_expr_assign.lat =====
+// --- эмиссия: унарные выражения, массивы, присваивания ---
+// Унарный минус/`!`, литерал массива, присваивание в переменную/индекс/
+// канал и вход в Pratt-парсер (level_or).
 
 fn level_unary() -> int { return level_postfix(); }
 
@@ -1560,54 +1875,65 @@ fn count_elems() -> int {
 // Литерал массива [e0, e1, ...] -> [len u32][e0][e1]... в линейной памяти.
 fn level_array() -> int {
     let base = get(0, 7);
-    adv();
+    next_token();
     let cnt = count_elems();
     let size = 4 + cnt * 4;
     let t = reserve();
-    ev(65); ev_sleb(size);
-    ev(16); ev_leb(ALLOC_FI());
-    ev(33); ev_leb(t);
-    ev(32); ev_leb(t); ev(65); ev_sleb(cnt); ev(54); ev(2); ev(0);
+    ev_i32(size);
+    ev_call(ALLOC_FI());
+    ev_set(t);
+    ev_get(t); ev_i32(cnt); ev_store32();
     let i = 0;
     set(0, 7, base + 1);
-    while (tkind() != 81 && tkind() != 0) {
+    while (tok_kind() != 81 && tok_kind() != 0) {
         set(0, 7, base + 1);
-        ev(32); ev_leb(t); ev(65); ev_sleb(4 + i * 4); ev(106);
+        ev_get(t); ev_i32(4 + i * 4); emit_op(106);
         level_or();
-        ev(54); ev(2); ev(0);
+        ev_store32();
         i = i + 1;
-        if (tkind() == 24) { adv(); }
+        if (tok_kind() == 24) { next_token(); }
     }
     expect(81);
-    ev(32); ev_leb(t);
+    ev_get(t);
     set(0, 5, 1);
     set(0, 7, base); tp(T_INT());
     return 0;
 }
 
 fn parse_assign() -> int {
-    let noff = tval(); let nlen = tlen();
-    adv(); adv();
+    let noff = tok_val(); let nlen = tok_len();
+    next_token(); next_token();
     level_or();
     let vt = tpop();
     let li = find_local(noff, nlen);
-    if (li < 0) { err(); } else { ev(33); ev_leb(li); ev(32); ev_leb(li); set_local_tp(li, vt); }
+    if (li < 0) { err(); } else { ev_set(li); ev_get(li); set_local_tp(li, vt); }
     set(0, 5, 1);
     tp(vt);
     return 0;
 }
 
+// ch <- v — отправка в канал: host-рантайм движка №1 (ошибка с тем же
+// смыслом, что у oracle; правый операнд разбираем для целостности парсера).
+fn parse_send() -> int {
+    next_token(); next_token();                        // IDENT, <-
+    level_or();
+    err_named("error: channel operations require host runtime (engine #1)", 0, 0, "");
+    set(0, 5, 1); tp(T_INT());
+    return 0;
+}
+
 fn level_or() -> int {
-    if (is_ident_kind(tkind()) && tkind_at(1) == 27) { return parse_assign(); }
+    if (is_ident_kind(tok_kind()) && tok_kind_at(1) == 27) { return parse_assign(); }
+    if (is_ident_kind(tok_kind()) && tok_kind_at(1) == 106) { return parse_send(); }
     if (is_index_assign()) { return parse_index_assign(); }
     let base = get(0, 7);
     level_and();
-    while (tkind() == 47) {
-        adv();
-        ev(4); ev(127); ev(65); ev_sleb(1); ev(5);
+    while (tok_kind() == 47) {
+        next_token();
+        emit_op(4); emit_op(127); ev_i32(1); emit_op(5);
         level_and();
-        ev(69); ev(69);
-        ev(11);
+        emit_op(69); emit_op(69);
+        emit_op(11);
         set(0, 7, base); tp(T_INT());
     }
     return 0;
@@ -1616,7 +1942,7 @@ fn level_or() -> int {
 // Проверка «ident [ ... ]* = ...». Возвращает true только если после
 // цепочки индексов идёт '='; иначе это обычное rvalue-выражение.
 fn is_index_assign() -> bool {
-    if (!is_ident_kind(tkind())) { return false; }
+    if (!is_ident_kind(tok_kind())) { return false; }
     let j = get(0, 0) + 1;
     let groups = 0;
     while (load32(KIND() + j * 4) == 80) {
@@ -1640,47 +1966,79 @@ fn is_index_assign() -> bool {
 // Присваивание в элемент a[i] = v (в т.ч. цепочка a[i][j] = v).
 // Для промежуточных уровней загружаем указатель, на последнем — store.
 fn parse_index_assign() -> int {
-    let noff = tval(); let nlen = tlen();
-    adv();
+    let noff = tok_val(); let nlen = tok_len();
+    next_token();
     let base = find_local(noff, nlen);
     if (base < 0) { err(); return 0; }
     let cur = reserve();
-    ev(32); ev_leb(base); ev(33); ev_leb(cur);
-    while (tkind() == 80) {
-        adv(); level_or(); expect(81);
-        let idx = reserve(); ev(33); ev_leb(idx);
-        if (tkind() == 80) {
-            ev(32); ev_leb(cur);
-            ev(32); ev_leb(idx); ev(65); ev_sleb(4); ev(108); ev(106);
-            ev(65); ev_sleb(4); ev(106);
-            ev(40); ev(2); ev(0);
-            ev(33); ev_leb(cur);
+    ev_get(base); ev_set(cur);
+    while (tok_kind() == 80) {
+        next_token(); level_or(); expect(81);
+        let idx = reserve(); ev_set(idx);
+        if (tok_kind() == 80) {
+            ev_get(cur);
+            ev_get(idx); ev_i32(4); emit_op(108); emit_op(106);
+            ev_i32(4); emit_op(106);
+            ev_load32();
+            ev_set(cur);
         } else {
             expect(27);
             level_or();
-            let val = reserve(); ev(33); ev_leb(val);
-            ev(32); ev_leb(cur);
-            ev(32); ev_leb(idx); ev(65); ev_sleb(4); ev(108); ev(106);
-            ev(65); ev_sleb(4); ev(106);
-            ev(32); ev_leb(val);
-            ev(54); ev(2); ev(0);
-            ev(32); ev_leb(val);
+            let val = reserve(); ev_set(val);
+            ev_get(cur);
+            ev_get(idx); ev_i32(4); emit_op(108); emit_op(106);
+            ev_i32(4); emit_op(106);
+            ev_get(val);
+            ev_store32();
+            ev_get(val);
             set(0, 5, 1);
             tp(T_INT());
         }
     }
     return 0;
 }
+
+// ===== часть: 40g_expr_operators.lat =====
+// --- эмиссия: бинарные уровни Pratt-парсера ---
+// &&/|| с коротким замыканием, ==/!=, сравнения, битовые, сдвиги,
+// + - * / % с выбором i32/f64-опкодов и конкатенацией строк.
+
+// Чистые отображения «токен оператора → WASM-опкод»: результат зависит только
+// от аргумента, поэтому таблицы проверяются отдельно от эмиссии.
+fn eq_opcode(k) -> int { if (k == 40) { return 70; } return 71; }
+fn cmp_opcode(k) -> int { if (k == 42) { return 72; } if (k == 43) { return 74; } if (k == 44) { return 76; } return 78; }
+fn f64_cmp_opcode(k) -> int {
+    if (k == 42) { return F64_LT_OP(); }
+    if (k == 43) { return F64_GT_OP(); }
+    if (k == 44) { return F64_LE_OP(); }
+    return F64_GE_OP();
+}
+fn bit_opcode(k) -> int { if (k == 48) { return 113; } if (k == 49) { return 114; } return 115; }
+fn shift_opcode(k) -> int { if (k == 51) { return 116; } return 117; }
+fn int_arith_opcode(k) -> int {
+    if (k == 30) { return 106; }
+    if (k == 31) { return 107; }
+    if (k == 32) { return 108; }
+    if (k == 33) { return 109; }
+    return 111;
+}
+fn f64_arith_opcode(k) -> int {
+    if (k == 30) { return F64_ADD_OP(); }
+    if (k == 31) { return F64_SUB_OP(); }
+    if (k == 32) { return F64_MUL_OP(); }
+    return F64_DIV_OP();
+}
+
 fn level_and() -> int {
     let base = get(0, 7);
     level_eq();
-    while (tkind() == 46) {
-        adv();
-        ev(4); ev(127);
+    while (tok_kind() == 46) {
+        next_token();
+        emit_op(4); emit_op(127);
         level_eq();
-        ev(69); ev(69);
-        ev(5); ev(65); ev_sleb(0);
-        ev(11);
+        emit_op(69); emit_op(69);
+        emit_op(5); ev_i32(0);
+        emit_op(11);
         set(0, 7, base); tp(T_INT());
     }
     return 0;
@@ -1690,17 +2048,17 @@ fn level_and() -> int {
 fn level_eq() -> int {
     let base = get(0, 7);
     level_cmp();
-    while (tkind() == 40 || tkind() == 41) {
-        let k = tkind(); adv();
+    while (tok_kind() == 40 || tok_kind() == 41) {
+        let k = tok_kind(); next_token();
         let lt = load32(TSTK() + base * 4);
         level_cmp();
         let rt = load32(TSTK() + (base + 1) * 4);
         if (lt == T_STR() || rt == T_STR()) {
             // Сравнение строк по содержимому (str_eq), как в oracle.
-            ev(16); ev_leb(SEQ_FI());
-            if (k == 41) { ev(69); }
+            ev_call(SEQ_FI());
+            if (k == 41) { emit_op(69); }
         } else {
-            if (k == 40) { ev(70); } else { ev(71); }
+            emit_op(eq_opcode(k));
         }
         set(0, 7, base); tp(T_INT());
     }
@@ -1709,16 +2067,16 @@ fn level_eq() -> int {
 fn level_cmp() -> int {
     let base = get(0, 7);
     level_bit();
-    while (tkind() == 42 || tkind() == 43 || tkind() == 44 || tkind() == 45) {
-        let k = tkind(); adv();
+    while (tok_kind() == 42 || tok_kind() == 43 || tok_kind() == 44 || tok_kind() == 45) {
+        let k = tok_kind(); next_token();
         let lt = load32(TSTK() + base * 4);
         level_bit();
         let rt = load32(TSTK() + (base + 1) * 4);
         if (lt == T_FLT() || rt == T_FLT()) {
             if (lt != rt) { promote_pair(base, lt, rt); }
-            if (k == 42) { ev(F64_LT_OP()); } else { if (k == 43) { ev(F64_GT_OP()); } else { if (k == 44) { ev(F64_LE_OP()); } else { ev(F64_GE_OP()); } } }
+            emit_op(f64_cmp_opcode(k));
         } else {
-            if (k == 42) { ev(72); } else { if (k == 43) { ev(74); } else { if (k == 44) { ev(76); } else { ev(78); } } }
+            emit_op(cmp_opcode(k));
         }
         set(0, 7, base); tp(T_INT());
     }
@@ -1727,10 +2085,10 @@ fn level_cmp() -> int {
 fn level_bit() -> int {
     let base = get(0, 7);
     level_shift();
-    while (tkind() == 48 || tkind() == 49 || tkind() == 50) {
-        let k = tkind(); adv();
+    while (tok_kind() == 48 || tok_kind() == 49 || tok_kind() == 50) {
+        let k = tok_kind(); next_token();
         level_shift();
-        if (k == 48) { ev(113); } else { if (k == 49) { ev(114); } else { ev(115); } }
+        emit_op(bit_opcode(k));
         set(0, 7, base); tp(T_INT());
     }
     return 0;
@@ -1738,10 +2096,10 @@ fn level_bit() -> int {
 fn level_shift() -> int {
     let base = get(0, 7);
     level_add();
-    while (tkind() == 51 || tkind() == 52) {
-        let k = tkind(); adv();
+    while (tok_kind() == 51 || tok_kind() == 52) {
+        let k = tok_kind(); next_token();
         level_add();
-        if (k == 51) { ev(116); } else { ev(117); }
+        emit_op(shift_opcode(k));
         set(0, 7, base); tp(T_INT());
     }
     return 0;
@@ -1749,28 +2107,28 @@ fn level_shift() -> int {
 fn level_add() -> int {
     let base = get(0, 7);
     level_mul();
-    while (tkind() == 30 || tkind() == 31) {
-        let k = tkind(); adv();
+    while (tok_kind() == 30 || tok_kind() == 31) {
+        let k = tok_kind(); next_token();
         let lt = load32(TSTK() + base * 4);
         level_mul();
         let rt = load32(TSTK() + (base + 1) * 4);
         if (k == 30 && (lt == T_STR() || rt == T_STR())) {
             // Конкатенация строк: "+" над строками — не арифметика.
             // Не-строковый операнд коэрцится в строку (i32_to_str), как oracle.
-            let rl = reserve(); ev(33); ev_leb(rl);
-            let ll = reserve(); ev(33); ev_leb(ll);
-            ev(32); ev_leb(ll); if (lt != T_STR()) { ev(16); ev_leb(I32S_FI()); }
-            ev(32); ev_leb(rl); if (rt != T_STR()) { ev(16); ev_leb(I32S_FI()); }
-            ev(16); ev_leb(SCAT_FI());
+            let rl = reserve(); ev_set(rl);
+            let ll = reserve(); ev_set(ll);
+            ev_get(ll); if (lt != T_STR()) { ev_call(I32S_FI()); }
+            ev_get(rl); if (rt != T_STR()) { ev_call(I32S_FI()); }
+            ev_call(SCAT_FI());
             set(0, 7, base); tp(T_STR());
         } else {
             if (lt == T_FLT() || rt == T_FLT()) {
                 // '-' у float в oracle не проходит, но эмитим корректный f64.
                 if (lt != rt) { promote_pair(base, lt, rt); }
-                if (k == 30) { ev(F64_ADD_OP()); } else { ev(F64_SUB_OP()); }
+                emit_op(f64_arith_opcode(k));
                 set(0, 7, base); tp(T_FLT());
             } else {
-                if (k == 30) { ev(106); } else { ev(107); }
+                emit_op(int_arith_opcode(k));
                 set(0, 7, base); tp(T_INT());
             }
         }
@@ -1780,25 +2138,29 @@ fn level_add() -> int {
 fn level_mul() -> int {
     let base = get(0, 7);
     level_unary();
-    while (tkind() == 32 || tkind() == 33 || tkind() == 34) {
-        let k = tkind(); adv();
+    while (tok_kind() == 32 || tok_kind() == 33 || tok_kind() == 34) {
+        let k = tok_kind(); next_token();
         let lt = load32(TSTK() + base * 4);
         level_unary();
         let rt = load32(TSTK() + (base + 1) * 4);
         if (lt == T_FLT() || rt == T_FLT()) {
             // Смешанные операнды: перекладываем в локали и повышаем int→f64.
             if (lt != rt) { promote_pair(base, lt, rt); }
-            if (k == 32) { ev(F64_MUL_OP()); } else { if (k == 33) { ev(F64_DIV_OP()); } else { err(); } }
+            if (k == 34) { err(); } else { emit_op(f64_arith_opcode(k)); }
             set(0, 7, base); tp(T_FLT());
         } else {
-            if (k == 32) { ev(108); } else { if (k == 33) { ev(109); } else { ev(111); } }
+            emit_op(int_arith_opcode(k));
             set(0, 7, base); tp(T_INT());
         }
     }
     return 0;
 }
 
-// ===== часть: 45_typecheck.lat =====
+// ===== часть: 45a_tc_core.lat =====
+// ============================ ТАЙП-ЧЕКЕР: ЯДРО ============================
+// Теги типов, канал ошибок (ERRB), курсор токенов, таблица переменных
+// со слоями видимости и разбор аннотаций типов.
+
 // ============================ ТАЙП-ЧЕКЕР ============================
 // Отдельный проход после лексера/регистрации: строит таблицу переменных с
 // типами и проверяет аннотации, возвраты, арность вызовов, условия. При
@@ -1828,9 +2190,25 @@ fn tcerr(msg: string) -> int {
     if (get(0, 4) == 0) { tcerr_msg(msg); set(0, 4, 1); }
     return 0;
 }
-fn tck() -> int { return load32(KIND() + get(0, 9) * 4); }
+// Ошибка с подстановкой имени: pre + <имя из исходника> + post.
+// Пишет [len][utf8] в ERRB и включает статус; используется кодогеном для
+// ошибок с именем конструкции (undefined variable/function/method, builtin).
+fn err_named(pre: string, off, ln, post: string) -> int {
+    if (get(0, 4) == 0) {
+        binit(ERRB());
+        let i = 0;
+        while (i < len(pre)) { bput(ERRB(), pre[i]); i = i + 1; }
+        i = 0;
+        while (i < ln) { bput(ERRB(), load8(INPUT() + 4 + off + i)); i = i + 1; }
+        i = 0;
+        while (i < len(post)) { bput(ERRB(), post[i]); i = i + 1; }
+    }
+    set(0, 4, 1);
+    return 0;
+}
+fn tc_kind() -> int { return load32(KIND() + get(0, 9) * 4); }
 fn tck_at(d) -> int { return load32(KIND() + (get(0, 9) + d) * 4); }
-fn tcx() -> int { return set(0, 9, get(0, 9) + 1); }
+fn tc_next() -> int { return set(0, 9, get(0, 9) + 1); }
 fn tc_is_tok(k) -> bool { return k == 2 || (k >= 10 && k <= 19); }
 
 // --- таблица переменных типов ---
@@ -1860,10 +2238,10 @@ fn tc_exit() -> int {
 
 // --- аннотация типа -> тег ---
 fn tc_ann() -> int {
-    let k = tck();
+    let k = tc_kind();
     if (tc_is_tok(k)) {
         let off = load32(TVAL() + get(0, 9) * 4); let ln = load32(TLEN() + get(0, 9) * 4);
-        tcx();
+        tc_next();
         if (is_lit(off, ln, "int", 3) || is_lit(off, ln, "float", 5)) { return TY_NUM(); }
         if (is_lit(off, ln, "bool", 4)) { return TY_BOOL(); }
         if (is_lit(off, ln, "string", 6)) { return TY_STR(); }
@@ -1873,13 +2251,18 @@ fn tc_ann() -> int {
     return TY_UNK();
 }
 
+// ===== часть: 45b_tc_expr.lat =====
+// ============================ ТАЙП-ЧЕКЕР: ВЫРАЖЕНИЯ ============================
+// Вывод типа выражения по токенам: литералы, вызовы и арность, постфиксные
+// операции, лямбды и бинарные уровни приоритета.
+
 // --- вычисление типа выражения по токенам ---
 // Упрощённый, но достаточный для приёмки/отклонения: возвращает тег.
 fn tc_expr() -> int {
     // Присваивание в переменную: IDENT = expr (не в поле/индекс).
-    if (tc_is_tok(tck()) && tck_at(1) == 27) {
+    if (tc_is_tok(tc_kind()) && tck_at(1) == 27) {
         let noff = load32(TVAL() + get(0, 9) * 4); let nlen = load32(TLEN() + get(0, 9) * 4);
-        tcx(); tcx();                    // IDENT '='
+        tc_next(); tc_next();                    // IDENT '='
         let vt = tc_expr();
         let vi = tv_find(noff, nlen);
         if (vi >= 0) {
@@ -1893,42 +2276,60 @@ fn tc_expr() -> int {
     return t;
 }
 fn tc_primary() -> int {
-    let k = tck();
-    if (k == 1) { tcx(); return TY_NUM(); }
-    if (k == 4) { tcx(); return TY_NUM(); }   // литерал float
-    if (k == 3) { tcx(); return TY_STR(); }
-    if (k == 90 || k == 91) { tcx(); return TY_BOOL(); }
-    if (k == 20) { tcx(); let t = tc_expr(); if (tck() == 21) { tcx(); } return t; }
+    let k = tc_kind();
+    if (k == 1) { tc_next(); return TY_NUM(); }
+    if (k == 4) { tc_next(); return TY_NUM(); }   // литерал float
+    if (k == 3) { tc_next(); return TY_STR(); }
+    if (k == 90 || k == 91) { tc_next(); return TY_BOOL(); }
+    if (k == 107) { tc_next(); return TY_UNK(); }          // null
+    if (k == 103) { tc_next(); return tc_unary_operand(); } // await — passthrough
+    if (k == 106) { tc_next(); tc_unary_operand(); return TY_UNK(); }   // <-ch
+    if (k == 20) { tc_next(); let t = tc_expr(); if (tc_kind() == 21) { tc_next(); } return t; }
     if (k == 80) {               // литерал массива
-        tcx();
-        while (tck() != 81 && tck() != 0) { tc_expr(); if (tck() == 24) { tcx(); } }
-        if (tck() == 81) { tcx(); }
+        tc_next();
+        while (tc_kind() != 81 && tc_kind() != 0) { tc_expr(); if (tc_kind() == 24) { tc_next(); } }
+        if (tc_kind() == 81) { tc_next(); }
         return TY_ARRAY();
     }
-    if (k == 31) { tcx(); tc_unary_operand(); return TY_NUM(); }   // -x
-    if (k == 53) { tcx(); tc_unary_operand(); return TY_BOOL(); }  // !x
-    if (k == 94) { tcx(); return TY_NAMED(); }   // this
+    if (k == 31) { tc_next(); tc_unary_operand(); return TY_NUM(); }   // -x
+    if (k == 53) { tc_next(); tc_unary_operand(); return TY_BOOL(); }  // !x
+    if (k == 94) { tc_next(); return TY_NAMED(); }   // this
     if (k == 93) {                                // new Class
-        tcx(); tcx();                             // new IDENT
-        if (tck() == 20) { tc_arglist(); }
+        tc_next(); tc_next();                             // new IDENT
+        if (tc_kind() == 20) { tc_arglist(); }
         return TY_NAMED();
     }
     if (k == 95) { return tc_match(); }
+    if (k == 104) { return tc_select_expr(); }
     if (k == 11) { return tc_lambda(); }
     if (tc_is_tok(k)) {
         let off = load32(TVAL() + get(0, 9) * 4); let ln = load32(TLEN() + get(0, 9) * 4);
+        // ai_generate!("prompt") — AI-примитив (в кодогене — host-ошибка).
+        if (tck_at(1) == 53 && is_lit(off, ln, "ai_generate", 11)) {
+            tc_next(); tc_next();                       // ai_generate, '!'
+            if (tc_kind() == 20) { tc_next(); if (tc_kind() == 3) { tc_next(); } if (tc_kind() == 21) { tc_next(); } }
+            return TY_STR();
+        }
+        // channel<T>() — generic-параметр потребляем, тип не важен (host-ошибка).
+        if (tck_at(1) == 42 && is_lit(off, ln, "channel", 7)) {
+            tc_next(); tc_next();                       // channel, <
+            while (tc_kind() != 43 && tc_kind() != 0) { tc_next(); }
+            if (tc_kind() == 43) { tc_next(); }
+            if (tc_kind() == 20) { tc_arglist(); }
+            return TY_UNK();
+        }
         // вызов функции?
-        if (tck_at(1) == 20) { tcx(); return tc_call(off, ln); }
+        if (tck_at(1) == 20) { tc_next(); return tc_call(off, ln); }
         // 0-арный enum-вариант
-        if (variant_tag(off, ln) >= 0) { tcx(); return TY_NAMED(); }
-        tcx();
+        if (variant_tag(off, ln) >= 0) { tc_next(); return TY_NAMED(); }
+        tc_next();
         let vi = tv_find(off, ln);
         if (vi >= 0) { return load32(TV_TY() + vi * 4); }
         let fi = find_func(off, ln);
         if (fi >= 0) { return TY_FN(); }
         // Внутри лямбды свободное имя может быть захватом внешней переменной —
         // не считаем это ошибкой (захваты вычисляются отдельным проходом).
-        if (get(0, 12) == 0) { tcerr("error: undefined variable"); }
+        if (get(0, 12) == 0) { err_named("error: undefined variable: ", off, ln, ""); }
         return TY_UNK();
     }
     return TY_UNK();
@@ -1937,9 +2338,9 @@ fn tc_unary_operand() -> int { return tc_primary(); }
 
 fn tc_arglist() -> int {
     // текущий токен — '('
-    tcx();
-    while (tck() != 21 && tck() != 0) { tc_expr(); if (tck() == 24) { tcx(); } }
-    if (tck() == 21) { tcx(); }
+    tc_next();
+    while (tc_kind() != 21 && tc_kind() != 0) { tc_expr(); if (tc_kind() == 24) { tc_next(); } }
+    if (tc_kind() == 21) { tc_next(); }
     return 0;
 }
 
@@ -1954,25 +2355,28 @@ fn tc_call(off, ln) -> int {
         // принимаем без строгой проверки типа результата.
         let vi = tv_find(off, ln);
         if (vi >= 0) { tc_arglist(); return TY_UNK(); }
-        tcerr("error: undefined function");
+        err_named("error: undefined function: ", off, ln, "");
         tc_arglist();
         return TY_UNK();
     }
     let want = load32(FNNP() + fi * 4);
     // считаем аргументы
     let cnt = 0;
-    tcx();                       // '('
-    while (tck() != 21 && tck() != 0) {
+    tc_next();                       // '('
+    while (tc_kind() != 21 && tc_kind() != 0) {
         tc_expr();
         cnt = cnt + 1;
-        if (tck() == 24) { tcx(); }
+        if (tc_kind() == 24) { tc_next(); }
     }
-    if (tck() == 21) { tcx(); }
+    if (tc_kind() == 21) { tc_next(); }
     if (cnt != want) { tcerr("error: arity mismatch"); }
     return load32(FRETTY() + fi * 4);
 }
 
 fn is_builtin_tyname(off, ln) -> bool {
+    // Host-builtins (AI/tensor/каналы) принимаем при типизации: осмысленную
+    // ошибку про host-рантайм выдаёт кодоген — как в oracle.
+    if (is_host_builtin(off, ln)) { return true; }
     if (is_lit(off, ln, "print", 5)) { return true; }
     if (is_lit(off, ln, "len", 3)) { return true; }
     if (is_lit(off, ln, "push", 4)) { return true; }
@@ -1992,6 +2396,7 @@ fn is_builtin_tyname(off, ln) -> bool {
     return false;
 }
 fn tc_builtin_ret(off, ln) -> int {
+    if (is_host_builtin(off, ln)) { return TY_UNK(); }
     if (is_lit(off, ln, "len", 3)) { return TY_NUM(); }
     if (is_lit(off, ln, "str", 3)) { return TY_STR(); }
     if (is_lit(off, ln, "int", 3)) { return TY_NUM(); }
@@ -2010,8 +2415,8 @@ fn tc_binary() -> int { return tc_bin(0); }
 fn tc_bin(level) -> int {
     if (level >= 8) { return tc_postfix(); }
     let base = tc_bin(level + 1);
-    while (is_op_at(level, tck())) {
-        let op = tck(); tcx();
+    while (is_op_at(level, tc_kind())) {
+        let op = tc_kind(); tc_next();
         let lt = base;
         let rt = tc_bin(level + 1);
         // "+" над строкой (любой стороной) даёт строку, как в oracle.
@@ -2042,16 +2447,16 @@ fn op_result(op) -> int {
 fn tc_postfix() -> int {
     let t = tc_primary();
     while (true) {
-        let k = tck();
+        let k = tc_kind();
         if (k == 80) {                       // индексация
-            tcx(); tc_expr();
-            if (tck() == 81) { tcx(); }
+            tc_next(); tc_expr();
+            if (tc_kind() == 81) { tc_next(); }
             t = TY_NUM();
         } else {
             if (k == 29) {                   // .field / .method()
-                tcx();
-                if (tc_is_tok(tck())) { tcx(); }
-                if (tck() == 20) { tcx(); while (tck() != 21 && tck() != 0) { tc_expr(); if (tck() == 24) { tcx(); } } if (tck() == 21) { tcx(); } t = TY_NUM(); }
+                tc_next();
+                if (tc_is_tok(tc_kind())) { tc_next(); }
+                if (tc_kind() == 20) { tc_next(); while (tc_kind() != 21 && tc_kind() != 0) { tc_expr(); if (tc_kind() == 24) { tc_next(); } } if (tc_kind() == 21) { tc_next(); } t = TY_NUM(); }
                 else { t = TY_NUM(); }
             } else { return t; }
         }
@@ -2060,166 +2465,274 @@ fn tc_postfix() -> int {
 }
 
 fn tc_lambda() -> int {
-    tcx();                        // fn
+    tc_next();                        // fn
     set(0, 12, get(0, 12) + 1);   // внутри лямбды свободные имена — захваты
     tc_enter();                   // область параметров лямбды
-    if (tck() == 20) {
-        tcx();
-        while (tck() != 21 && tck() != 0) {
-            if (tc_is_tok(tck())) {
+    if (tc_kind() == 20) {
+        tc_next();
+        while (tc_kind() != 21 && tc_kind() != 0) {
+            if (tc_is_tok(tc_kind())) {
                 let po = load32(TVAL() + get(0, 9) * 4); let pl = load32(TLEN() + get(0, 9) * 4);
-                tcx();
+                tc_next();
                 let pt = TY_UNK();
-                if (tck() == 26) { tcx(); pt = tc_ann(); }
+                if (tc_kind() == 26) { tc_next(); pt = tc_ann(); }
                 tv_add(po, pl, pt, TY_UNK(), 0);
             }
-            if (tck() == 24) { tcx(); }
+            if (tc_kind() == 24) { tc_next(); }
         }
-        if (tck() == 21) { tcx(); }
+        if (tc_kind() == 21) { tc_next(); }
     }
-    if (tck() == 28) { tcx(); tc_ann(); }
-    if (tck() == 99) { tcx(); tc_expr(); }
+    if (tc_kind() == 28) { tc_next(); tc_ann(); }
+    if (tc_kind() == 99) { tc_next(); tc_expr(); }
     else {
-        if (tck() == 22) { tcx(); tc_block(); if (tck() == 23) { tcx(); } }
+        if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } }
     }
     tc_exit();
     set(0, 12, get(0, 12) - 1);
     return TY_FN();
 }
 fn skip_braces() -> int {
-    if (tck() != 22) { return 0; }
+    if (tc_kind() != 22) { return 0; }
     let d = 0;
-    while (tck() != 0) {
-        let k = tck();
+    while (tc_kind() != 0) {
+        let k = tc_kind();
         if (k == 22) { d = d + 1; }
         else { if (k == 23) { d = d - 1; } }
-        tcx();
+        tc_next();
         if (d == 0) { return 0; }
     }
     return 0;
 }
 
+// ===== часть: 45c_tc_flow.lat =====
+// ============================ ТАЙП-ЧЕКЕР: MATCH И ИНСТРУКЦИИ ============================
+// match, ветки инструкций (let/return/if/while/for/spawn/yield/test/select)
+// и блоки; области видимости открываются и закрываются tc_enter/tc_exit.
+
 fn tc_match() -> int {
-    tcx();                        // match
+    tc_next();                        // match
     tc_expr();                    // scrutinee
-    if (tck() == 22) { tcx(); }
+    if (tc_kind() == 22) { tc_next(); }
     let rt = TY_UNK();
-    while (tck() != 23 && tck() != 0) {
+    while (tc_kind() != 23 && tc_kind() != 0) {
         let before = get(0, 9);
-        if (tck() == 24) { tcx(); }
-        if (tck() == 97) { tcx(); }
-        if (tck() == 98) { tcx(); }        // default
+        if (tc_kind() == 24) { tc_next(); }
+        if (tc_kind() == 97) { tc_next(); }
+        if (tc_kind() == 98) { tc_next(); }        // default
         // паттерн: литерал / идентификатор / конструктор / _
-        if (tc_is_tok(tck())) {
-            tcx();
-            if (tck() == 20) {
-                tcx();
-                while (tck() != 21 && tck() != 0) {
+        if (tc_is_tok(tc_kind())) {
+            tc_next();
+            if (tc_kind() == 20) {
+                tc_next();
+                while (tc_kind() != 21 && tc_kind() != 0) {
                     // Связываем имя под-паттерна конструктора как переменную.
-                    if (tc_is_tok(tck())) {
+                    if (tc_is_tok(tc_kind())) {
                         let so = load32(TVAL() + get(0, 9) * 4); let sl = load32(TLEN() + get(0, 9) * 4);
-                        tcx(); tv_add(so, sl, TY_UNK(), TY_UNK(), 0);
-                    } else { tcx(); }
-                    if (tck() == 24) { tcx(); }
+                        tc_next(); tv_add(so, sl, TY_UNK(), TY_UNK(), 0);
+                    } else { tc_next(); }
+                    if (tc_kind() == 24) { tc_next(); }
                 }
-                if (tck() == 21) { tcx(); }
+                if (tc_kind() == 21) { tc_next(); }
             }
-        } else { if (tck() == 1 || tck() == 3 || tck() == 90 || tck() == 91) { tcx(); } }
-        if (tck() == 26) { tcx(); }
+        } else { if (tc_kind() == 1 || tc_kind() == 3 || tc_kind() == 90 || tc_kind() == 91) { tc_next(); } }
+        if (tc_kind() == 26) { tc_next(); }
         rt = tc_expr();
-        if (get(0, 9) == before) { tcx(); }   // защита от зацикливания
+        if (get(0, 9) == before) { tc_next(); }   // защита от зацикливания
     }
-    if (tck() == 23) { tcx(); }
+    if (tc_kind() == 23) { tc_next(); }
     return rt;
 }
 
 // --- инструкции ---
 fn tc_stmt() -> int {
-    let k = tck();
+    let k = tc_kind();
     if (k == 10) { return tc_let(); }
     if (k == 15) { return tc_return(); }
     if (k == 12) { return tc_if(); }
     if (k == 14) { return tc_while(); }
     if (k == 16) { return tc_for(); }
-    if (k == 25) { tcx(); return 0; }
+    if (k == 100) { return tc_spawn(); }
+    if (k == 101) { return tc_yield(); }
+    if (k == 104) { return tc_select_stmt(); }
+    if (k == 105) { return tc_test(); }
+    if (k == 25) { tc_next(); return 0; }
     // выражение-инструкция (в т.ч. присваивание)
     tc_expr();
-    if (tck() == 25) { tcx(); }
+    if (tc_kind() == 25) { tc_next(); }
     return 0;
 }
 fn tc_let() -> int {
-    tcx();                        // let
+    tc_next();                        // let
     let noff = load32(TVAL() + get(0, 9) * 4); let nlen = load32(TLEN() + get(0, 9) * 4);
-    tcx();                        // IDENT
+    tc_next();                        // IDENT
     let ann = TY_UNK();
-    if (tck() == 26) { tcx(); ann = tc_ann(); }
+    if (tc_kind() == 26) { tc_next(); ann = tc_ann(); }
     let vt = TY_UNK();
-    if (tck() == 27) { tcx(); vt = tc_expr(); }
-    if (tck() == 25) { tcx(); }
+    if (tc_kind() == 27) { tc_next(); vt = tc_expr(); }
+    if (tc_kind() == 25) { tc_next(); }
     if (ann != TY_UNK() && vt != TY_UNK() && ann != vt) { tcerr("error: type mismatch"); }
     if (ann == TY_UNK()) { ann = vt; }
     tv_add(noff, nlen, ann, TY_UNK(), 0);
     return 0;
 }
 fn tc_return() -> int {
-    tcx();                        // return
+    tc_next();                        // return
     let rt = TY_UNK();
-    if (tck() != 25 && tck() != 23 && tck() != 0) { rt = tc_expr(); }
-    if (tck() == 25) { tcx(); }
+    if (tc_kind() != 25 && tc_kind() != 23 && tc_kind() != 0) { rt = tc_expr(); }
+    if (tc_kind() == 25) { tc_next(); }
     let want = load32(FRETTY() + load32(TCCUR()) * 4);
     if (rt != TY_UNK() && want != TY_UNK() && want != TY_UNIT() && rt != want) { tcerr("error: return type mismatch"); }
     return 0;
 }
 fn tc_if() -> int {
-    tcx(); if (tck() == 20) { tcx(); let c = tc_expr(); if (c != TY_BOOL() && c != TY_UNK()) { tcerr("error: condition must be bool"); } if (tck() == 21) { tcx(); } }
-    tc_enter(); if (tck() == 22) { tcx(); tc_block(); if (tck() == 23) { tcx(); } } tc_exit();
-    if (tck() == 13) { tcx(); if (tck() == 12) { tc_if(); } else { tc_enter(); if (tck() == 22) { tcx(); tc_block(); if (tck() == 23) { tcx(); } } tc_exit(); } }
+    tc_next(); if (tc_kind() == 20) { tc_next(); let c = tc_expr(); if (c != TY_BOOL() && c != TY_UNK()) { tcerr("error: condition must be bool"); } if (tc_kind() == 21) { tc_next(); } }
+    tc_enter(); if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } } tc_exit();
+    if (tc_kind() == 13) { tc_next(); if (tc_kind() == 12) { tc_if(); } else { tc_enter(); if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } } tc_exit(); } }
     return 0;
 }
 fn tc_while() -> int {
-    tcx(); if (tck() == 20) { tcx(); let c = tc_expr(); if (c != TY_BOOL() && c != TY_UNK()) { tcerr("error: condition must be bool"); } if (tck() == 21) { tcx(); } }
-    tc_enter(); if (tck() == 22) { tcx(); tc_block(); if (tck() == 23) { tcx(); } } tc_exit();
+    tc_next(); if (tc_kind() == 20) { tc_next(); let c = tc_expr(); if (c != TY_BOOL() && c != TY_UNK()) { tcerr("error: condition must be bool"); } if (tc_kind() == 21) { tc_next(); } }
+    tc_enter(); if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } } tc_exit();
     return 0;
 }
 fn tc_for() -> int {
-    tcx(); if (tck() == 20) { tcx(); }     // for (
+    tc_next(); if (tc_kind() == 20) { tc_next(); }     // for (
     tc_enter();
     // for (let x in arr) — for-in.
-    if (tck() == 10 && is_for_in_tc()) { return tc_for_in(); }
-    if (tck() == 10) { tc_let(); } else { if (tck() != 25) { tc_expr(); if (tck() == 25) { tcx(); } } else { tcx(); } }
-    if (tck() != 25) { tc_expr(); }
-    if (tck() == 25) { tcx(); }
-    if (tck() != 21) { tc_expr(); }
-    if (tck() == 21) { tcx(); }
-    if (tck() == 22) { tcx(); tc_block(); if (tck() == 23) { tcx(); } }
+    if (tc_kind() == 10 && is_for_in_tc()) { return tc_for_in(); }
+    if (tc_kind() == 10) { tc_let(); } else { if (tc_kind() != 25) { tc_expr(); if (tc_kind() == 25) { tc_next(); } } else { tc_next(); } }
+    if (tc_kind() != 25) { tc_expr(); }
+    if (tc_kind() == 25) { tc_next(); }
+    if (tc_kind() != 21) { tc_expr(); }
+    if (tc_kind() == 21) { tc_next(); }
+    if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } }
     tc_exit();
     return 0;
 }
 // `let IDENT [: T] in` — признак for-in (текущий токен — `let`).
 fn is_for_in_tc() -> bool {
-    if (tck() != 10 || !tc_is_tok(tck_at(1))) { return false; }
+    if (tc_kind() != 10 || !tc_is_tok(tck_at(1))) { return false; }
     let j = 2;
     if (tck_at(j) == 26) { j = j + 1; while (tck_at(j) != 17 && tck_at(j) != 27 && tck_at(j) != 0 && j < 40) { j = j + 1; } }
     return tck_at(j) == 17;
 }
 fn tc_for_in() -> int {
-    tcx();                        // let
+    tc_next();                        // let
     let vo = load32(TVAL() + get(0, 9) * 4); let vl = load32(TLEN() + get(0, 9) * 4);
-    tcx();                        // IDENT
-    if (tck() == 26) { tcx(); tc_ann(); }
-    if (tck() == 17) { tcx(); }    // in
+    tc_next();                        // IDENT
+    if (tc_kind() == 26) { tc_next(); tc_ann(); }
+    if (tc_kind() == 17) { tc_next(); }    // in
     let it = tc_expr();            // iterable
+    // oracle требует массив: строка в for-in — ошибка типов (а не байты).
+    if (it == TY_STR()) { tcerr("error: type mismatch"); }
     tv_add(vo, vl, TY_NUM(), TY_UNK(), 0);
-    if (tck() == 21) { tcx(); }
-    if (tck() == 22) { tcx(); tc_block(); if (tck() == 23) { tcx(); } }
+    if (tc_kind() == 21) { tc_next(); }
+    if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } }
     tc_exit();
     return 0;
 }
 
-fn tc_block() -> int {
-    while (tck() != 23 && tck() != 0) { let before = get(0, 9); tc_stmt(); if (get(0, 9) == before) { tcx(); } }
+// spawn { ... } / spawn expr; — тело проверяется в новой области, как oracle.
+fn tc_spawn() -> int {
+    tc_next();
+    tc_enter();
+    if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } }
+    else { tc_expr(); if (tc_kind() == 25) { tc_next(); } }
+    tc_exit();
     return 0;
 }
+fn tc_yield() -> int {
+    tc_next();
+    if (tc_kind() == 25) { tc_next(); }
+    return 0;
+}
+// test "name" { ... } / test("name") { ... } — тело проверяется; top-level
+// такие блоки не эмитятся (нет раннера), внутри функции — обычное тело.
+fn tc_test() -> int {
+    tc_next();
+    if (tc_kind() == 3) { tc_next(); }
+    else {
+        if (tc_kind() == 20) { tc_next(); if (tc_kind() == 3) { tc_next(); } if (tc_kind() == 21) { tc_next(); } }
+    }
+    tc_enter();
+    if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } }
+    tc_exit();
+    return 0;
+}
+// select-инструкция: проверяются все ветки (как oracle), затем default.
+fn tc_select_stmt() -> int {
+    tc_next();
+    if (tc_kind() == 22) { tc_next(); }
+    while (tc_kind() != 23 && tc_kind() != 0) {
+        let before = get(0, 9);
+        if (tc_kind() == 24) { tc_next(); }
+        if (tc_kind() == 97) { tc_next(); }
+        let hasvar = 0; let vo = 0; let vl = 0;
+        if (tc_kind() == 98) {
+            tc_next();
+            if (tc_kind() == 26) { tc_next(); }
+        } else {
+            if (tc_is_tok(tc_kind()) && tck_at(1) == 106) {
+                vo = load32(TVAL() + get(0, 9) * 4);
+                vl = load32(TLEN() + get(0, 9) * 4);
+                tc_next(); tc_next();                    // IDENT, <-
+                hasvar = 1;
+            } else { if (tc_kind() == 106) { tc_next(); } }
+            if (tc_kind() != 26) { tc_expr(); }      // выражение канала
+            if (tc_kind() == 26) { tc_next(); }
+        }
+        tc_enter();
+        if (hasvar == 1) { tv_add(vo, vl, TY_UNK(), TY_UNK(), 0); }
+        if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } }
+        tc_exit();
+        if (get(0, 9) == before) { tc_next(); }
+    }
+    if (tc_kind() == 23) { tc_next(); }
+    return 0;
+}
+// select-выражение: тип — fresh (как oracle); проверяются все ветки.
+fn tc_select_expr() -> int {
+    tc_next();
+    if (tc_kind() == 22) { tc_next(); }
+    let rt = TY_UNK();
+    while (tc_kind() != 23 && tc_kind() != 0) {
+        let before = get(0, 9);
+        if (tc_kind() == 24) { tc_next(); }
+        if (tc_kind() == 97) { tc_next(); }
+        let hasvar = 0; let vo = 0; let vl = 0;
+        if (tc_kind() == 98) {
+            tc_next();
+            if (tc_kind() == 26) { tc_next(); }
+        } else {
+            if (tc_is_tok(tc_kind()) && tck_at(1) == 106) {
+                vo = load32(TVAL() + get(0, 9) * 4);
+                vl = load32(TLEN() + get(0, 9) * 4);
+                tc_next(); tc_next();
+                hasvar = 1;
+            } else { if (tc_kind() == 106) { tc_next(); } }
+            if (tc_kind() != 26) { tc_expr(); }
+            if (tc_kind() == 26) { tc_next(); }
+        }
+        tc_enter();
+        if (hasvar == 1) { tv_add(vo, vl, TY_UNK(), TY_UNK(), 0); }
+        rt = tc_expr();
+        tc_exit();
+        if (tc_kind() == 24) { tc_next(); }
+        if (get(0, 9) == before) { tc_next(); }
+    }
+    if (tc_kind() == 23) { tc_next(); }
+    return rt;
+}
+
+fn tc_block() -> int {
+    while (tc_kind() != 23 && tc_kind() != 0) { let before = get(0, 9); tc_stmt(); if (get(0, 9) == before) { tc_next(); } }
+    return 0;
+}
+
+// ===== часть: 45d_tc_program.lat =====
+// ============================ ТАЙП-ЧЕКЕР: ПРОГРАММА ============================
+// Регистрация типов результатов функций, верхнеуровневый проход
+// (class/enum/async fn/fn/инструкции) и проверка тела одной функции.
 
 // --- регистрация сигнатур ---
 fn tc_register() -> int {
@@ -2258,51 +2771,54 @@ fn tc_program() -> int {
     // но возвращаемые типы нужны в tc_call — они в FRETTY из tc_register.
     while (get(0, 9) < total && load32(KIND() + get(0, 9) * 4) != 0) {
         let before = get(0, 9);
-        let k = tck();
+        let k = tc_kind();
         if (k == 92) { skip_class_tc(); }
         else {
             if (k == 96) { skip_enum_tc(); }
-            else { if (k == 11) { tc_fn(); } else { tc_stmt(); } }
+            else {
+                if (k == 102) { tc_next(); if (tc_kind() == 11) { tc_fn(); } }   // async fn
+                else { if (k == 11) { tc_fn(); } else { tc_stmt(); } }
+            }
         }
-        if (get(0, 9) == before) { tcx(); }   // защита от зацикливания
+        if (get(0, 9) == before) { tc_next(); }   // защита от зацикливания
     }
     return 0;
 }
 fn skip_class_tc() -> int {
     // class IDENT { ... } — пропускаем целиком (методы проверяются отдельно
     // через зарегистрированные сигнатуры).
-    tcx(); if (tc_is_tok(tck())) { tcx(); }
-    if (tck() == 22) { tcx(); let d = 1; while (d > 0 && tck() != 0) { if (tck() == 22) { d = d + 1; } else { if (tck() == 23) { d = d - 1; } } tcx(); } }
+    tc_next(); if (tc_is_tok(tc_kind())) { tc_next(); }
+    if (tc_kind() == 22) { tc_next(); let d = 1; while (d > 0 && tc_kind() != 0) { if (tc_kind() == 22) { d = d + 1; } else { if (tc_kind() == 23) { d = d - 1; } } tc_next(); } }
     return 0;
 }
 fn skip_enum_tc() -> int {
-    tcx(); if (tc_is_tok(tck())) { tcx(); }
-    if (tck() == 22) { tcx(); let d = 1; while (d > 0 && tck() != 0) { if (tck() == 22) { d = d + 1; } else { if (tck() == 23) { d = d - 1; } } tcx(); } }
+    tc_next(); if (tc_is_tok(tc_kind())) { tc_next(); }
+    if (tc_kind() == 22) { tc_next(); let d = 1; while (d > 0 && tc_kind() != 0) { if (tc_kind() == 22) { d = d + 1; } else { if (tc_kind() == 23) { d = d - 1; } } tc_next(); } }
     return 0;
 }
 fn tc_fn() -> int {
-    tcx();                        // fn
+    tc_next();                        // fn
     let ni = find_func(load32(TVAL() + get(0, 9) * 4), load32(TLEN() + get(0, 9) * 4));
-    tcx();                        // NAME
+    tc_next();                        // NAME
     tc_enter();
-    if (tck() == 20) {
-        tcx();
-        while (tck() != 21 && tck() != 0) {
-            if (tc_is_tok(tck())) {
+    if (tc_kind() == 20) {
+        tc_next();
+        while (tc_kind() != 21 && tc_kind() != 0) {
+            if (tc_is_tok(tc_kind())) {
                 let po = load32(TVAL() + get(0, 9) * 4); let pl = load32(TLEN() + get(0, 9) * 4);
-                tcx();
+                tc_next();
                 let pt = TY_UNK();
-                if (tck() == 26) { tcx(); pt = tc_ann(); }
+                if (tc_kind() == 26) { tc_next(); pt = tc_ann(); }
                 tv_add(po, pl, pt, TY_UNK(), 0);
             }
-            if (tck() == 24) { tcx(); }
+            if (tc_kind() == 24) { tc_next(); }
         }
-        if (tck() == 21) { tcx(); }
+        if (tc_kind() == 21) { tc_next(); }
     }
-    if (tck() == 28) { tcx(); tc_ann(); }
+    if (tc_kind() == 28) { tc_next(); tc_ann(); }
     store32(TCCUR(), 0);
     if (ni >= 0) { store32(TCCUR(), ni); }
-    if (tck() == 22) { tcx(); tc_block(); if (tck() == 23) { tcx(); } }
+    if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } }
     tc_exit();
     return 0;
 }
@@ -2310,27 +2826,31 @@ fn tc_fn() -> int {
 // ===== часть: 50_stmt.lat =====
 // --- инструкции ---
 fn stmts() -> int {
-    while (tkind() != 23 && tkind() != 0) {
+    while (tok_kind() != 23 && tok_kind() != 0) {
         let before = get(0, 0);
         set(0, 7, 0);              // тип-стек выравнивается на границе инструкции
         set(0, 8, -1);             // класс последнего выражения сбрасывается
         stmt();
-        if (get(0, 0) == before) { adv(); }
+        if (get(0, 0) == before) { next_token(); }
     }
     return 0;
 }
 fn stmt() -> int {
-    let k = tkind();
+    let k = tok_kind();
     if (k == 10) { return st_let(); }
     if (k == 15) { return st_return(); }
     if (k == 12) { return st_if(); }
     if (k == 14) { return st_while(); }
     if (k == 16) { return st_for(); }
-    if (is_ident_kind(k) && tkind_at(1) == 27) { return st_assign(); }
-    if (k == 94 && tkind_at(1) == 29 && tkind_at(3) == 27) { return st_field_assign(k); }
-    if (is_ident_kind(k) && tkind_at(1) == 29 && tkind_at(3) == 27) { return st_field_assign(k); }
+    if (k == 100) { return st_spawn(); }
+    if (k == 101) { return st_yield(); }
+    if (k == 104) { return st_select(); }
+    if (k == 105) { return st_test(); }
+    if (is_ident_kind(k) && tok_kind_at(1) == 27) { return st_assign(); }
+    if (k == 94 && tok_kind_at(1) == 29 && tok_kind_at(3) == 27) { return st_field_assign(k); }
+    if (is_ident_kind(k) && tok_kind_at(1) == 29 && tok_kind_at(3) == 27) { return st_field_assign(k); }
     level_or();
-    if (get(0, 5) == 1) { ev(26); }
+    if (get(0, 5) == 1) { emit_op(26); }
     expect(25);
     return 0;
 }
@@ -2340,29 +2860,29 @@ fn st_field_assign(k) -> int {
     let cls = -1;
     let base_slot = -1;
     if (k == 94) {
-        adv();                          // this
+        next_token();                          // this
         cls = load32(FNCLS() + load32(CURFI()) * 4);
         base_slot = -1;                 // this = локаль 0
     } else {
-        let boff = tval(); let blen = tlen(); adv();
+        let boff = tok_val(); let blen = tok_len(); next_token();
         cls = load32(LOCCLS() + find_local(boff, blen) * 4);
         base_slot = find_local(boff, blen);
     }
     expect(29);                        // .
-    let foff = tval(); let flen = tlen();
+    let foff = tok_val(); let flen = tok_len();
     expect_ident();
     expect(27);                        // =
     let voff = reserve();
     level_or();
-    ev(33); ev_leb(voff);              // сохраняем значение
+    emit_op(33); emit_leb(voff);              // сохраняем значение
     let off = field_off(cls, foff, flen);
     if (off < 0) { err(); }
     else {
-        ev(32);
-        if (base_slot >= 0) { ev_leb(base_slot); } else { ev_leb(0); }
-        if (off > 0) { ev(65); ev_sleb(off); ev(106); }
-        ev(32); ev_leb(voff);
-        ev(54); ev(2); ev(0);          // i32.store
+        emit_op(32);
+        if (base_slot >= 0) { emit_leb(base_slot); } else { emit_leb(0); }
+        if (off > 0) { emit_op(65); emit_sleb(off); emit_op(106); }
+        emit_op(32); emit_leb(voff);
+        emit_op(54); emit_op(2); emit_op(0);          // i32.store
         // Присваивание — выражение: оставляем записанное значение.
         // (в st)-контексте достаточно; стек инструкций выравнивается вызовом)
     }
@@ -2371,63 +2891,63 @@ fn st_field_assign(k) -> int {
 }
 
 fn st_assign() -> int {
-    let noff = tval(); let nlen = tlen();
+    let noff = tok_val(); let nlen = tok_len();
     expect_ident(); expect(27);
     level_or();
     let vt = tpop();
     let li = find_local(noff, nlen);
-    if (li < 0) { err(); } else { ev(33); ev_leb(li); set_local_tp(li, vt); }
+    if (li < 0) { err(); } else { emit_op(33); emit_leb(li); set_local_tp(li, vt); }
     expect(25); set(0, 5, 0);
     return 0;
 }
 fn st_let() -> int {
-    adv();
-    let noff = tval(); let nlen = tlen();
+    next_token();
+    let noff = tok_val(); let nlen = tok_len();
     expect_ident();
     let ann = read_ann_after_colon();
     set(0, 5, 0);
     let vt = ann;
-    if (tkind() == 27) { adv(); level_or(); vt = tpop(); if (ann != T_INT()) { vt = ann; } } else { ev(65); ev_sleb(0); }
+    if (tok_kind() == 27) { next_token(); level_or(); vt = tpop(); if (ann != T_INT()) { vt = ann; } } else { emit_op(65); emit_sleb(0); }
     expect(25);
     let idx = get(0, 3);
     add_local(noff, nlen, idx);
     set_local_tp(idx, vt);
-    ev(33); ev_leb(idx);
+    emit_op(33); emit_leb(idx);
     return 0;
 }
 fn st_return() -> int {
-    adv();
-    if (tkind() != 25) { level_or(); } else { ev(65); ev_sleb(0); }
-    ev(15);
-    if (tkind() == 25) { adv(); }
+    next_token();
+    if (tok_kind() != 25) { level_or(); } else { emit_op(65); emit_sleb(0); }
+    emit_op(15);
+    if (tok_kind() == 25) { next_token(); }
     return 0;
 }
 fn st_if() -> int {
-    adv(); expect(20); level_or(); expect(21);
-    ev(4); ev(64); expect(22); stmts(); expect(23);
-    if (tkind() == 13) {
-        adv();
-        if (tkind() == 12) { ev(5); st_if(); ev(11); return 0; }
-        ev(5); expect(22); stmts(); expect(23); ev(11); return 0;
+    next_token(); expect(20); level_or(); expect(21);
+    emit_op(4); emit_op(64); expect(22); stmts(); expect(23);
+    if (tok_kind() == 13) {
+        next_token();
+        if (tok_kind() == 12) { emit_op(5); st_if(); emit_op(11); return 0; }
+        emit_op(5); expect(22); stmts(); expect(23); emit_op(11); return 0;
     }
-    ev(11);
+    emit_op(11);
     return 0;
 }
 fn st_while() -> int {
-    adv(); expect(20);
-    ev(2); ev(64); ev(3); ev(64);
+    next_token(); expect(20);
+    emit_op(2); emit_op(64); emit_op(3); emit_op(64);
     level_or(); expect(21);
-    ev(69); ev(13); ev_leb(1);
+    emit_op(69); emit_op(13); emit_leb(1);
     expect(22); stmts(); expect(23);
-    ev(12); ev_leb(0); ev(11); ev(11);
+    emit_op(12); emit_leb(0); emit_op(11); emit_op(11);
     return 0;
 }
 // Различает `for (let x in arr)` от C-стиля `for (let x = ...)`.
 // Текущий токен — `let`; смотрим вперёд: let IDENT [ : T ] in ...
 fn is_for_in() -> bool {
-    if (tkind() != 10) { return false; }
-    if (!is_ident_kind(tkind_at(1))) { return false; }
-    let t2 = tkind_at(2);
+    if (tok_kind() != 10) { return false; }
+    if (!is_ident_kind(tok_kind_at(1))) { return false; }
+    let t2 = tok_kind_at(2);
     if (t2 == 17) { return true; }
     if (t2 != 26) { return false; }
     let j = 3;
@@ -2442,51 +2962,144 @@ fn is_for_in() -> bool {
 
 // for (let x in arr) { body } — итерация по массиву [len u32][e0..].
 fn st_for_in() -> int {
-    adv();                                   // let
-    let voff = tval(); let vlen = tlen();
+    next_token();                                   // let
+    let voff = tok_val(); let vlen = tok_len();
     expect_ident();
-    if (tkind() == 26) { adv(); skip_type(); }
+    if (tok_kind() == 26) { next_token(); skip_type(); }
     expect(17);                              // in
     level_or();                              // iterable
-    let arr = reserve(); ev(33); ev_leb(arr);
-    let idx = reserve(); ev(65); ev_sleb(0); ev(33); ev_leb(idx);
+    let arr = reserve(); emit_op(33); emit_leb(arr);
+    let idx = reserve(); emit_op(65); emit_sleb(0); emit_op(33); emit_leb(idx);
     let v = add_local(voff, vlen, get(0, 3));
     expect(21);
-    ev(2); ev(64); ev(3); ev(64);
-    ev(32); ev_leb(idx);
-    ev(32); ev_leb(arr); ev(40); ev(2); ev(0);   // len
-    ev(78);                                       // i32.ge_s
-    ev(13); ev_leb(1);                            // br_if 1 (выход)
-    ev(32); ev_leb(arr);
-    ev(32); ev_leb(idx); ev(65); ev_sleb(4); ev(108); ev(106);
-    ev(65); ev_sleb(4); ev(106);
-    ev(40); ev(2); ev(0);                         // load
-    ev(33); ev_leb(v);
+    emit_op(2); emit_op(64); emit_op(3); emit_op(64);
+    emit_op(32); emit_leb(idx);
+    emit_op(32); emit_leb(arr); emit_op(40); emit_op(2); emit_op(0);   // len
+    emit_op(78);                                       // i32.ge_s
+    emit_op(13); emit_leb(1);                            // br_if 1 (выход)
+    emit_op(32); emit_leb(arr);
+    emit_op(32); emit_leb(idx); emit_op(65); emit_sleb(4); emit_op(108); emit_op(106);
+    emit_op(65); emit_sleb(4); emit_op(106);
+    emit_op(40); emit_op(2); emit_op(0);                         // load
+    emit_op(33); emit_leb(v);
     expect(22); stmts(); expect(23);
-    ev(32); ev_leb(idx); ev(65); ev_sleb(1); ev(106); ev(33); ev_leb(idx);
-    ev(12); ev_leb(0); ev(11); ev(11);
+    emit_op(32); emit_leb(idx); emit_op(65); emit_sleb(1); emit_op(106); emit_op(33); emit_leb(idx);
+    emit_op(12); emit_leb(0); emit_op(11); emit_op(11);
+    set(0, 5, 0);
+    return 0;
+}
+
+// Пропуск токенов до закрывающей `}` текущего блока (сама `}` остаётся).
+// Используется после уже разобранной ветки select: oracle исполняет только
+// первую ветку, остальные в код не попадают.
+fn skip_to_rbrace() -> int {
+    let d = 0;
+    while (tok_kind() != 0) {
+        let k = tok_kind();
+        if (k == 22) { d = d + 1; }
+        else {
+            if (k == 23) {
+                if (d == 0) { return 0; }
+                d = d - 1;
+            }
+        }
+        next_token();
+    }
+    return 0;
+}
+
+// spawn { ... } / spawn expr; — oracle выполняет тело последовательно (inline).
+fn st_spawn() -> int {
+    next_token();
+    if (tok_kind() == 22) {
+        next_token(); stmts(); expect(23);
+    } else {
+        level_or();
+        if (get(0, 5) == 1) { emit_op(26); }      // результат выражения отбрасывается
+    }
+    if (tok_kind() == 25) { next_token(); }
+    set(0, 5, 0);
+    return 0;
+}
+
+// yield; — no-op (как в oracle: кооперативного планировщика нет).
+fn st_yield() -> int {
+    next_token();
+    expect(25);
+    return 0;
+}
+
+// test "name" { ... } / test("name") { ... } внутри функции — обычное тело
+// (на верхнем уровне не эмитится, т.к. top-level инструкции не компилируются).
+fn st_test() -> int {
+    next_token();
+    if (tok_kind() == 3) { next_token(); }
+    else {
+        if (tok_kind() == 20) {
+            next_token();
+            if (tok_kind() == 3) { next_token(); }
+            expect(21);
+        }
+    }
+    expect(22); stmts(); expect(23);
+    return 0;
+}
+
+// select { case v <- ch: { ... } default: { ... } } — oracle не вычисляет
+// выражения каналов и исполняет тело ПЕРВОЙ ветки (v связывается с 0);
+// default исполняется, только если веток нет.
+fn st_select() -> int {
+    next_token(); expect(22);
+    if (tok_kind() == 98) {
+        next_token(); expect(26);
+        expect(22); stmts(); expect(23);
+        skip_to_rbrace(); expect(23);
+        set(0, 5, 0);
+        return 0;
+    }
+    if (tok_kind() != 23) {
+        if (tok_kind() == 97) { next_token(); }
+        if (is_ident_kind(tok_kind()) && tok_kind_at(1) == 106) {
+            let voff = tok_val(); let vlen = tok_len();
+            next_token(); next_token();                    // IDENT, <-
+            let slot = get(0, 3);
+            add_local(voff, vlen, slot);
+            set_local_tp(slot, T_INT());
+            store32(LOCCLS() + slot * 4, -1);
+            emit_op(65); emit_sleb(0); emit_op(33); emit_leb(slot);
+        } else {
+            if (tok_kind() == 106) { next_token(); }
+        }
+        // Выражение канала не исполняется: эмитим и откатываем буфер.
+        let save = blen(FNB()); let tsp = get(0, 7);
+        if (tok_kind() != 26) { level_or(); }
+        store32(FNB(), save); set(0, 7, tsp);
+        expect(26);
+        expect(22); stmts(); expect(23);
+    }
+    skip_to_rbrace(); expect(23);
     set(0, 5, 0);
     return 0;
 }
 
 fn st_for() -> int {
-    adv(); expect(20);
+    next_token(); expect(20);
     if (is_for_in()) { return st_for_in(); }
-    if (tkind() == 10) { st_let(); } else { if (tkind() != 25) { level_or(); ev(26); expect(25); } else { adv(); } }
-    ev(2); ev(64); ev(3); ev(64);
-    if (tkind() != 25) { level_or(); } else { ev(65); ev_sleb(1); }
+    if (tok_kind() == 10) { st_let(); } else { if (tok_kind() != 25) { level_or(); emit_op(26); expect(25); } else { next_token(); } }
+    emit_op(2); emit_op(64); emit_op(3); emit_op(64);
+    if (tok_kind() != 25) { level_or(); } else { emit_op(65); emit_sleb(1); }
     expect(25);
-    ev(69); ev(13); ev_leb(1);
+    emit_op(69); emit_op(13); emit_leb(1);
     let step_start = get(0, 0);
-    while (tkind() != 21 && tkind() != 0) { adv(); }
+    while (tok_kind() != 21 && tok_kind() != 0) { next_token(); }
     let step_end = get(0, 0);
     expect(21);
     expect(22); stmts(); expect(23);
     let after_body = get(0, 0);
     set(0, 0, step_start);
-    if (step_start != step_end) { level_or(); ev(26); }
+    if (step_start != step_end) { level_or(); emit_op(26); }
     set(0, 0, after_body);
-    ev(12); ev_leb(0); ev(11); ev(11);
+    emit_op(12); emit_leb(0); emit_op(11); emit_op(11);
     return 0;
 }
 
@@ -2542,16 +3155,16 @@ fn fn_ret_tp(total, ftok) -> int {
 }
 // Пропускает аннотацию типа до разделителя: `,` `)` `}` `=` `;` или EOF.
 fn skip_type() -> int {
-    while (tkind() != 24 && tkind() != 21 && tkind() != 22 && tkind() != 27
-        && tkind() != 25 && tkind() != 0) { adv(); }
+    while (tok_kind() != 24 && tok_kind() != 21 && tok_kind() != 22 && tok_kind() != 27
+        && tok_kind() != 25 && tok_kind() != 0) { next_token(); }
     return 0;
 }
 // Читает аннотацию типа и возвращает тег для LOTP (T_INT/T_FLT/T_STR),
 // потребляя токены до разделителя. `: string` → T_STR и т.п.
 fn read_type_tag() -> int {
     let t = T_INT();
-    if (is_ident_kind(tkind())) {
-        let off = tval(); let ln = tlen();
+    if (is_ident_kind(tok_kind())) {
+        let off = tok_val(); let ln = tok_len();
         if (is_lit(off, ln, "string", 6)) { t = T_STR(); }
         else { if (is_lit(off, ln, "float", 5)) { t = T_FLT(); } }
     }
@@ -2560,7 +3173,7 @@ fn read_type_tag() -> int {
 }
 // Аннотация с ведущим `:` (текущий токен — 26).
 fn read_ann_after_colon() -> int {
-    if (tkind() == 26) { adv(); return read_type_tag(); }
+    if (tok_kind() == 26) { next_token(); return read_type_tag(); }
     return T_INT();
 }
 
@@ -2607,25 +3220,29 @@ fn compile_fn(fi) -> int {
     }
     expect(20);
     let idx = 0;
-    while (tkind() != 21 && tkind() != 0) {
-        let poff = tval(); let plen = tlen();
+    while (tok_kind() != 21 && tok_kind() != 0) {
+        let poff = tok_val(); let plen = tok_len();
         expect_ident();
         let slot = get(0, 3);
         // Параметры подписаны всегда i32 (mixed-float параметры не поддержаны
-        // ни oracle, ни нами); аннотацию всё равно потребляем.
-        read_ann_after_colon();
-        add_local(poff, plen, slot); set_local_tp(slot, T_INT());
+        // ни oracle, ни нами), но аннотация нужна для ТИПА локальной: строковый
+        // параметр обязан быть T_STR, иначе `s[i]` компилируется как индекс
+        // массива (4-байтовые ячейки) вместо str_char_at — так ломался текст
+        // ошибок у stage2 (tcerr_msg(s: string)).
+        let pt = read_ann_after_colon();
+        add_local(poff, plen, slot);
+        if (pt == T_STR()) { set_local_tp(slot, T_STR()); } else { set_local_tp(slot, T_INT()); }
         idx = idx + 1;
-        if (tkind() == 24) { adv(); }
+        if (tok_kind() == 24) { next_token(); }
     }
     expect(21);
-    if (tkind() == 28) { adv(); skip_type(); }
+    if (tok_kind() == 28) { next_token(); skip_type(); }
     expect(22);
     stmts();
     expect(23);
     let lb = load8(FNB() + 4 + load32(FNB()) - 1);
-    if (lb != 15) { ev(65); ev_sleb(0); }
-    ev(11);
+    if (lb != 15) { emit_op(65); emit_sleb(0); }
+    emit_op(11);
     // финальное тело: декларации локальных групп по типу (i32/f64).
     binit(BODYC());
     let nparams = load32(FNNP() + fi * 4);
@@ -2637,15 +3254,32 @@ fn compile_fn(fi) -> int {
     return 0;
 }
 
-// ===== часть: 70_module.lat =====
-// ============================ СБОРКА МОДУЛЯ ============================
-fn emit_sec(id, content) -> int {
-    bput(OUTB(), id); bleb(OUTB(), blen(content)); bcopy(OUTB(), content, 0, blen(content));
+// ===== часть: 70a_module_helpers.lat =====
+// ============================ МОДУЛЬ: ХЕЛПЕРЫ ПАМЯТИ И СТРОК ============================
+// Байткод alloc/memcopy/str_concat/str_eq/str_char_at. Каждый эмиттер пишет
+// тело в BODYC и добавляет его в CODEB по индексу nf()+k; порядок вызовов в
+// helper_bodies = порядок индексов, поэтому диспетчер фиксирован.
+
+fn helper_bodies() -> int {
+    helper_alloc(0);
+    helper_memcopy(1);
+    helper_str_concat(2);
+    helper_str_eq(3);
+    helper_str_char_at(4);
+    helper_i32_to_str(5);
+    helper_str_to_i32(6);
+    helper_f64_to_str(7);
     return 0;
 }
 
-// Тела рантайм-хелперов: alloc(1)->i32 и memcopy(3)->i32.
-fn helper_bodies() -> int {
+fn emit_helper_body(k) -> int {
+    store32(CODEOF() + (nf() + k) * 4, load32(CODEB()));
+    store32(CODELN() + (nf() + k) * 4, blen(BODYC()));
+    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+    return 0;
+}
+
+fn helper_alloc(k) -> int {
     // alloc(size)->ptr
     binit(BODYC());
     bleb(BODYC(), 1); bleb(BODYC(), 3); bput(BODYC(), 127);   // locals: 3×i32
@@ -2668,11 +3302,10 @@ fn helper_bodies() -> int {
     bput(BODYC(), 11);
     bput(BODYC(), 32); bleb(BODYC(), 1);
     bput(BODYC(), 11);
-    // append body to CODEB and record
-    store32(CODEOF() + nf() * 4, load32(CODEB()));
-    store32(CODELN() + nf() * 4, blen(BODYC()));
-    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+    return emit_helper_body(k);
+}
 
+fn helper_memcopy(k) -> int {
     // memcopy(dst,src,len)->i32 (возвращает 0)
     binit(BODYC());
     bleb(BODYC(), 1); bleb(BODYC(), 1); bput(BODYC(), 127);   // local i (idx3)
@@ -2689,10 +3322,10 @@ fn helper_bodies() -> int {
     bput(BODYC(), 11); bput(BODYC(), 11);
     bput(BODYC(), 65); bleb(BODYC(), 0);
     bput(BODYC(), 11);
-    store32(CODEOF() + (nf() + 1) * 4, load32(CODEB()));
-    store32(CODELN() + (nf() + 1) * 4, blen(BODYC()));
-    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+    return emit_helper_body(k);
+}
 
+fn helper_str_concat(k) -> int {
     // str_concat(a,b)->ptr: [len u32][utf8] с общим заголовком длины.
     // locals: params 0 a,1 b; declared 2 alen,3 blen,4 p.
     binit(BODYC());
@@ -2716,10 +3349,10 @@ fn helper_bodies() -> int {
     bput(BODYC(), 16); bleb(BODYC(), MEM_FI()); bput(BODYC(), 26);
     bput(BODYC(), 32); bleb(BODYC(), 4);
     bput(BODYC(), 11);
-    store32(CODEOF() + (nf() + 2) * 4, load32(CODEB()));
-    store32(CODELN() + (nf() + 2) * 4, blen(BODYC()));
-    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+    return emit_helper_body(k);
+}
 
+fn helper_str_eq(k) -> int {
     // str_eq(a,b)->i32 (1/0): ранние return в void-ветках (без смешанных if).
     // locals: params 0 a,1 b; declared 2 i,3 len.
     binit(BODYC());
@@ -2745,10 +3378,10 @@ fn helper_bodies() -> int {
     bput(BODYC(), 12); bleb(BODYC(), 0); bput(BODYC(), 11); bput(BODYC(), 11);
     bput(BODYC(), 65); bleb(BODYC(), 1);
     bput(BODYC(), 11);
-    store32(CODEOF() + (nf() + 3) * 4, load32(CODEB()));
-    store32(CODELN() + (nf() + 3) * 4, blen(BODYC()));
-    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+    return emit_helper_body(k);
+}
 
+fn helper_str_char_at(k) -> int {
     // str_char_at(ptr,i)->i32: байт по i в [0,len), иначе -1. Void-ветки с return.
     binit(BODYC());
     bleb(BODYC(), 0);
@@ -2758,10 +3391,15 @@ fn helper_bodies() -> int {
     bput(BODYC(), 65); bsleb(BODYC(), -1); bput(BODYC(), 15); bput(BODYC(), 11);
     bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106); bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 106); bput(BODYC(), 45); bput(BODYC(), 0); bput(BODYC(), 0);
     bput(BODYC(), 11);
-    store32(CODEOF() + (nf() + 4) * 4, load32(CODEB()));
-    store32(CODELN() + (nf() + 4) * 4, blen(BODYC()));
-    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+    return emit_helper_body(k);
+}
 
+// ===== часть: 70b_module_convert.lat =====
+// ============================ МОДУЛЬ: ХЕЛПЕРЫ КОНВЕРСИЙ ============================
+// Байткод i32_to_str/str_to_i32/f64_to_str и эмиттеры f64-констант 0.0/10.0.
+// Как и хелперы памяти, тела дописываются в CODEB по nf()+k.
+
+fn helper_i32_to_str(k) -> int {
     // i32_to_str(n)->ptr: "<n>" в [len][utf8] (как в oracle). Переносим -n.
     // locals: param 0 n; declared 1 neg,2 v,3 digits,4 i,5 p.
     binit(BODYC());
@@ -2803,10 +3441,10 @@ fn helper_bodies() -> int {
     bput(BODYC(), 12); bleb(BODYC(), 0); bput(BODYC(), 11); bput(BODYC(), 11);
     bput(BODYC(), 32); bleb(BODYC(), 5);
     bput(BODYC(), 11);
-    store32(CODEOF() + (nf() + 5) * 4, load32(CODEB()));
-    store32(CODELN() + (nf() + 5) * 4, blen(BODYC()));
-    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+    return emit_helper_body(k);
+}
 
+fn helper_str_to_i32(k) -> int {
     // str_to_i32(ptr)->i32: опциональный '-' и ASCII-цифры.
     // locals: param 0 ptr; declared 1 len,2 i,3 neg,4 acc,5 c.
     binit(BODYC());
@@ -2839,10 +3477,10 @@ fn helper_bodies() -> int {
     bput(BODYC(), 32); bleb(BODYC(), 4);
     bput(BODYC(), 11);   // end if (i32)
     bput(BODYC(), 11);   // end function
-    store32(CODEOF() + (nf() + 6) * 4, load32(CODEB()));
-    store32(CODELN() + (nf() + 6) * 4, blen(BODYC()));
-    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+    return emit_helper_body(k);
+}
 
+fn helper_f64_to_str(k) -> int {
     // f64_to_str(n)->ptr: "<int>.<6 цифр>" (фиксированные 6 знаков), как oracle.
     // param 0 n(f64); i32-локали 1 neg,2 p,3 ipart,4 s,5 i,6 digit; f64-локаль 7 frac.
     binit(BODYC());
@@ -2900,17 +3538,24 @@ fn helper_bodies() -> int {
     bput(BODYC(), 54); bput(BODYC(), 2); bput(BODYC(), 0);
     bput(BODYC(), 32); bleb(BODYC(), 2);
     bput(BODYC(), 11);
-    store32(CODEOF() + (nf() + 7) * 4, load32(CODEB()));
-    store32(CODELN() + (nf() + 7) * 4, blen(BODYC()));
-    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
-    return 0;
+    return emit_helper_body(k);
 }
-// Восемь байт f64-константы 0.0.
+
 fn f64zero() -> int { let i = 0; while (i < 8) { bput(BODYC(), 0); i = i + 1; } return 0; }
-// Восемь байт f64-константы 10.0.
+
 fn f64ten() -> int {
     bput(BODYC(), 0); bput(BODYC(), 0); bput(BODYC(), 0); bput(BODYC(), 0);
     bput(BODYC(), 0); bput(BODYC(), 0); bput(BODYC(), 36); bput(BODYC(), 64);
+    return 0;
+}
+
+// ===== часть: 70c_module_sections.lat =====
+// ============================ МОДУЛЬ: СЕКЦИИ ============================
+// Сборка type/import/func/table/memory/global/export/element/code/data-секций
+// и поиск индекса main для экспорта. Тела хелперов — в 70a/70b.
+
+fn emit_sec(id, content) -> int {
+    bput(OUTB(), id); bleb(OUTB(), blen(content)); bcopy(OUTB(), content, 0, blen(content));
     return 0;
 }
 
@@ -2919,7 +3564,21 @@ fn build_module() -> int {
     bput(OUTB(), 0); bput(OUTB(), 97); bput(OUTB(), 115); bput(OUTB(), 109);
     bput(OUTB(), 1); bput(OUTB(), 0); bput(OUTB(), 0); bput(OUTB(), 0);
     let n = nf();
+    let nl = nlam();
+    emit_type_section();
+    emit_import_section();
+    emit_func_section(n, nl);
+    emit_table_section(n, nl);
+    emit_memory_section();
+    emit_global_section();
+    emit_export_section();
+    emit_element_section(n, nl);
+    emit_code_section(n, nl);
+    emit_data_section();
+    return 0;
+}
 
+fn emit_type_section() -> int {
     // type section: (i32)->void (idx0); arity 0..8 -> i32 (idx1..9);
     // arity 0..8 -> f64 (idx10..18) для float-возвращающих функций.
     // Лямбда арности np+1 берёт тип-индекс np+2 (см. lam_tp) => np до 7.
@@ -2943,7 +3602,10 @@ fn build_module() -> int {
     // idx19: (f64)->i32 — f64_to_str.
     bput(SCRB(), 96); bleb(SCRB(), 1); bput(SCRB(), 124); bleb(SCRB(), 1); bput(SCRB(), 127);
     emit_sec(1, SCRB());
+    return 0;
+}
 
+fn emit_import_section() -> int {
     // import
     binit(SCRB());
     bleb(SCRB(), 1);
@@ -2951,7 +3613,10 @@ fn build_module() -> int {
     bleb(SCRB(), 5); bput(SCRB(),112); bput(SCRB(),114); bput(SCRB(),105); bput(SCRB(),110); bput(SCRB(),116);
     bput(SCRB(), 0); bleb(SCRB(), 0);
     emit_sec(2, SCRB());
+    return 0;
+}
 
+fn emit_func_section(n, nl) -> int {
     // func section: n user + 7 хелперов + лямбды
     let nl = nlam();
     binit(SCRB());
@@ -2977,7 +3642,10 @@ fn build_module() -> int {
     i = 0;
     while (i < nl) { bleb(SCRB(), lam_tp(i)); i = i + 1; }
     emit_sec(3, SCRB());
+    return 0;
+}
 
+fn emit_table_section(n, nl) -> int {
     // table section (id 4): funcref, если есть лямбды. Все функции модуля
     // лежат в таблице по слотам = индексам функций (0..total-1).
     if (nl > 0) {
@@ -2988,18 +3656,27 @@ fn build_module() -> int {
         bleb(SCRB(), 1 + n + 8 + nl);
         emit_sec(4, SCRB());
     }
+    return 0;
+}
 
+fn emit_memory_section() -> int {
     // memory: 16 pages
     binit(SCRB());
     bleb(SCRB(), 1); bput(SCRB(), 0); bleb(SCRB(), 64);
     emit_sec(5, SCRB());
+    return 0;
+}
 
+fn emit_global_section() -> int {
     // global: heap = 1024 + data_len
     binit(SCRB());
     bleb(SCRB(), 1); bput(SCRB(), 127); bput(SCRB(), 1);
     bput(SCRB(), 65); bleb(SCRB(), 1024 + load32(DATAB())); bput(SCRB(), 11);
     emit_sec(6, SCRB());
+    return 0;
+}
 
+fn emit_export_section() -> int {
     // export: memory + main
     binit(SCRB());
     bleb(SCRB(), 2);
@@ -3008,7 +3685,10 @@ fn build_module() -> int {
     bleb(SCRB(), 4); bput(SCRB(),109); bput(SCRB(),97); bput(SCRB(),105); bput(SCRB(),110);
     bput(SCRB(), 0); bleb(SCRB(), find_main() + 1);
     emit_sec(7, SCRB());
+    return 0;
+}
 
+fn emit_element_section(n, nl) -> int {
     // element section (id 9): все функции модуля в таблице (слот = индекс).
     if (nl > 0) {
         binit(SCRB());
@@ -3021,11 +3701,14 @@ fn build_module() -> int {
         while (q < tot) { bleb(SCRB(), q); q = q + 1; }
         emit_sec(9, SCRB());
     }
+    return 0;
+}
 
+fn emit_code_section(n, nl) -> int {
     // code section: n + 8 + nl bodies
     binit(SCRB());
     bleb(SCRB(), n + 8 + nl);
-    i = 0;
+    let i = 0;
     while (i < n + 8 + nl) {
         bleb(SCRB(), load32(CODELN() + i * 4));
         let q = 0;
@@ -3036,7 +3719,10 @@ fn build_module() -> int {
         i = i + 1;
     }
     emit_sec(10, SCRB());
+    return 0;
+}
 
+fn emit_data_section() -> int {
     // data section: одна активная сегмент-группа на каждый литерал
     if (get(0, 6) > 0) {
         binit(SCRB());
@@ -3088,6 +3774,14 @@ fn compile_program() -> int {
     let li = 0;
     while (li < nlam()) { compile_lambda(li); li = li + 1; }
     helper_bodies();
+    // Ошибка кодогена не должна давать невалидный WASM: сообщение уже в ERRB
+    // (err_named/err), возвращаем отрицательную длину — как при ошибках типов.
+    if (get(0, 4) != 0) {
+        if (blen(ERRB()) == 0) { tcerr_msg("error: compilation failed"); }
+        binit(OUTB());
+        bcopy(OUTB(), ERRB(), 0, blen(ERRB()));
+        return 0 - blen(OUTB());
+    }
     build_module();
     return blen(OUTB());
 }

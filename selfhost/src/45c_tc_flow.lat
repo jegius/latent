@@ -1,0 +1,223 @@
+// ============================ ТАЙП-ЧЕКЕР: MATCH И ИНСТРУКЦИИ ============================
+// match, ветки инструкций (let/return/if/while/for/spawn/yield/test/select)
+// и блоки; области видимости открываются и закрываются tc_enter/tc_exit.
+
+fn tc_match() -> int {
+    tc_next();                        // match
+    tc_expr();                    // scrutinee
+    if (tc_kind() == 22) { tc_next(); }
+    let rt = TY_UNK();
+    while (tc_kind() != 23 && tc_kind() != 0) {
+        let before = get(0, 9);
+        if (tc_kind() == 24) { tc_next(); }
+        if (tc_kind() == 97) { tc_next(); }
+        if (tc_kind() == 98) { tc_next(); }        // default
+        // паттерн: литерал / идентификатор / конструктор / _
+        if (tc_is_tok(tc_kind())) {
+            tc_next();
+            if (tc_kind() == 20) {
+                tc_next();
+                while (tc_kind() != 21 && tc_kind() != 0) {
+                    // Связываем имя под-паттерна конструктора как переменную.
+                    if (tc_is_tok(tc_kind())) {
+                        let so = load32(TVAL() + get(0, 9) * 4); let sl = load32(TLEN() + get(0, 9) * 4);
+                        tc_next(); tv_add(so, sl, TY_UNK(), TY_UNK(), 0);
+                    } else { tc_next(); }
+                    if (tc_kind() == 24) { tc_next(); }
+                }
+                if (tc_kind() == 21) { tc_next(); }
+            }
+        } else { if (tc_kind() == 1 || tc_kind() == 3 || tc_kind() == 90 || tc_kind() == 91) { tc_next(); } }
+        if (tc_kind() == 26) { tc_next(); }
+        rt = tc_expr();
+        if (get(0, 9) == before) { tc_next(); }   // защита от зацикливания
+    }
+    if (tc_kind() == 23) { tc_next(); }
+    return rt;
+}
+
+// --- инструкции ---
+fn tc_stmt() -> int {
+    let k = tc_kind();
+    if (k == 10) { return tc_let(); }
+    if (k == 15) { return tc_return(); }
+    if (k == 12) { return tc_if(); }
+    if (k == 14) { return tc_while(); }
+    if (k == 16) { return tc_for(); }
+    if (k == 100) { return tc_spawn(); }
+    if (k == 101) { return tc_yield(); }
+    if (k == 104) { return tc_select_stmt(); }
+    if (k == 105) { return tc_test(); }
+    if (k == 25) { tc_next(); return 0; }
+    // выражение-инструкция (в т.ч. присваивание)
+    tc_expr();
+    if (tc_kind() == 25) { tc_next(); }
+    return 0;
+}
+fn tc_let() -> int {
+    tc_next();                        // let
+    let noff = load32(TVAL() + get(0, 9) * 4); let nlen = load32(TLEN() + get(0, 9) * 4);
+    tc_next();                        // IDENT
+    let ann = TY_UNK();
+    if (tc_kind() == 26) { tc_next(); ann = tc_ann(); }
+    let vt = TY_UNK();
+    if (tc_kind() == 27) { tc_next(); vt = tc_expr(); }
+    if (tc_kind() == 25) { tc_next(); }
+    if (ann != TY_UNK() && vt != TY_UNK() && ann != vt) { tcerr("error: type mismatch"); }
+    if (ann == TY_UNK()) { ann = vt; }
+    tv_add(noff, nlen, ann, TY_UNK(), 0);
+    return 0;
+}
+fn tc_return() -> int {
+    tc_next();                        // return
+    let rt = TY_UNK();
+    if (tc_kind() != 25 && tc_kind() != 23 && tc_kind() != 0) { rt = tc_expr(); }
+    if (tc_kind() == 25) { tc_next(); }
+    let want = load32(FRETTY() + load32(TCCUR()) * 4);
+    if (rt != TY_UNK() && want != TY_UNK() && want != TY_UNIT() && rt != want) { tcerr("error: return type mismatch"); }
+    return 0;
+}
+fn tc_if() -> int {
+    tc_next(); if (tc_kind() == 20) { tc_next(); let c = tc_expr(); if (c != TY_BOOL() && c != TY_UNK()) { tcerr("error: condition must be bool"); } if (tc_kind() == 21) { tc_next(); } }
+    tc_enter(); if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } } tc_exit();
+    if (tc_kind() == 13) { tc_next(); if (tc_kind() == 12) { tc_if(); } else { tc_enter(); if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } } tc_exit(); } }
+    return 0;
+}
+fn tc_while() -> int {
+    tc_next(); if (tc_kind() == 20) { tc_next(); let c = tc_expr(); if (c != TY_BOOL() && c != TY_UNK()) { tcerr("error: condition must be bool"); } if (tc_kind() == 21) { tc_next(); } }
+    tc_enter(); if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } } tc_exit();
+    return 0;
+}
+fn tc_for() -> int {
+    tc_next(); if (tc_kind() == 20) { tc_next(); }     // for (
+    tc_enter();
+    // for (let x in arr) — for-in.
+    if (tc_kind() == 10 && is_for_in_tc()) { return tc_for_in(); }
+    if (tc_kind() == 10) { tc_let(); } else { if (tc_kind() != 25) { tc_expr(); if (tc_kind() == 25) { tc_next(); } } else { tc_next(); } }
+    if (tc_kind() != 25) { tc_expr(); }
+    if (tc_kind() == 25) { tc_next(); }
+    if (tc_kind() != 21) { tc_expr(); }
+    if (tc_kind() == 21) { tc_next(); }
+    if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } }
+    tc_exit();
+    return 0;
+}
+// `let IDENT [: T] in` — признак for-in (текущий токен — `let`).
+fn is_for_in_tc() -> bool {
+    if (tc_kind() != 10 || !tc_is_tok(tck_at(1))) { return false; }
+    let j = 2;
+    if (tck_at(j) == 26) { j = j + 1; while (tck_at(j) != 17 && tck_at(j) != 27 && tck_at(j) != 0 && j < 40) { j = j + 1; } }
+    return tck_at(j) == 17;
+}
+fn tc_for_in() -> int {
+    tc_next();                        // let
+    let vo = load32(TVAL() + get(0, 9) * 4); let vl = load32(TLEN() + get(0, 9) * 4);
+    tc_next();                        // IDENT
+    if (tc_kind() == 26) { tc_next(); tc_ann(); }
+    if (tc_kind() == 17) { tc_next(); }    // in
+    let it = tc_expr();            // iterable
+    // oracle требует массив: строка в for-in — ошибка типов (а не байты).
+    if (it == TY_STR()) { tcerr("error: type mismatch"); }
+    tv_add(vo, vl, TY_NUM(), TY_UNK(), 0);
+    if (tc_kind() == 21) { tc_next(); }
+    if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } }
+    tc_exit();
+    return 0;
+}
+
+// spawn { ... } / spawn expr; — тело проверяется в новой области, как oracle.
+fn tc_spawn() -> int {
+    tc_next();
+    tc_enter();
+    if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } }
+    else { tc_expr(); if (tc_kind() == 25) { tc_next(); } }
+    tc_exit();
+    return 0;
+}
+fn tc_yield() -> int {
+    tc_next();
+    if (tc_kind() == 25) { tc_next(); }
+    return 0;
+}
+// test "name" { ... } / test("name") { ... } — тело проверяется; top-level
+// такие блоки не эмитятся (нет раннера), внутри функции — обычное тело.
+fn tc_test() -> int {
+    tc_next();
+    if (tc_kind() == 3) { tc_next(); }
+    else {
+        if (tc_kind() == 20) { tc_next(); if (tc_kind() == 3) { tc_next(); } if (tc_kind() == 21) { tc_next(); } }
+    }
+    tc_enter();
+    if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } }
+    tc_exit();
+    return 0;
+}
+// select-инструкция: проверяются все ветки (как oracle), затем default.
+fn tc_select_stmt() -> int {
+    tc_next();
+    if (tc_kind() == 22) { tc_next(); }
+    while (tc_kind() != 23 && tc_kind() != 0) {
+        let before = get(0, 9);
+        if (tc_kind() == 24) { tc_next(); }
+        if (tc_kind() == 97) { tc_next(); }
+        let hasvar = 0; let vo = 0; let vl = 0;
+        if (tc_kind() == 98) {
+            tc_next();
+            if (tc_kind() == 26) { tc_next(); }
+        } else {
+            if (tc_is_tok(tc_kind()) && tck_at(1) == 106) {
+                vo = load32(TVAL() + get(0, 9) * 4);
+                vl = load32(TLEN() + get(0, 9) * 4);
+                tc_next(); tc_next();                    // IDENT, <-
+                hasvar = 1;
+            } else { if (tc_kind() == 106) { tc_next(); } }
+            if (tc_kind() != 26) { tc_expr(); }      // выражение канала
+            if (tc_kind() == 26) { tc_next(); }
+        }
+        tc_enter();
+        if (hasvar == 1) { tv_add(vo, vl, TY_UNK(), TY_UNK(), 0); }
+        if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } }
+        tc_exit();
+        if (get(0, 9) == before) { tc_next(); }
+    }
+    if (tc_kind() == 23) { tc_next(); }
+    return 0;
+}
+// select-выражение: тип — fresh (как oracle); проверяются все ветки.
+fn tc_select_expr() -> int {
+    tc_next();
+    if (tc_kind() == 22) { tc_next(); }
+    let rt = TY_UNK();
+    while (tc_kind() != 23 && tc_kind() != 0) {
+        let before = get(0, 9);
+        if (tc_kind() == 24) { tc_next(); }
+        if (tc_kind() == 97) { tc_next(); }
+        let hasvar = 0; let vo = 0; let vl = 0;
+        if (tc_kind() == 98) {
+            tc_next();
+            if (tc_kind() == 26) { tc_next(); }
+        } else {
+            if (tc_is_tok(tc_kind()) && tck_at(1) == 106) {
+                vo = load32(TVAL() + get(0, 9) * 4);
+                vl = load32(TLEN() + get(0, 9) * 4);
+                tc_next(); tc_next();
+                hasvar = 1;
+            } else { if (tc_kind() == 106) { tc_next(); } }
+            if (tc_kind() != 26) { tc_expr(); }
+            if (tc_kind() == 26) { tc_next(); }
+        }
+        tc_enter();
+        if (hasvar == 1) { tv_add(vo, vl, TY_UNK(), TY_UNK(), 0); }
+        rt = tc_expr();
+        tc_exit();
+        if (tc_kind() == 24) { tc_next(); }
+        if (get(0, 9) == before) { tc_next(); }
+    }
+    if (tc_kind() == 23) { tc_next(); }
+    return rt;
+}
+
+fn tc_block() -> int {
+    while (tc_kind() != 23 && tc_kind() != 0) { let before = get(0, 9); tc_stmt(); if (get(0, 9) == before) { tc_next(); } }
+    return 0;
+}

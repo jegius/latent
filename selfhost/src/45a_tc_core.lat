@@ -1,0 +1,93 @@
+// ============================ ТАЙП-ЧЕКЕР: ЯДРО ============================
+// Теги типов, канал ошибок (ERRB), курсор токенов, таблица переменных
+// со слоями видимости и разбор аннотаций типов.
+
+// ============================ ТАЙП-ЧЕКЕР ============================
+// Отдельный проход после лексера/регистрации: строит таблицу переменных с
+// типами и проверяет аннотации, возвраты, арность вызовов, условия. При
+// ошибке выставляет status=1 и пишет сообщение в ERRB; кодоген тогда
+// пропускается, а хост получает текст ошибки вместо WASM.
+
+// Тег типа (совместим с oracle: числа = NUM, int/float взаимозаменяемы).
+fn TY_UNK() -> int { return 0; }
+fn TY_NUM() -> int { return 1; }
+fn TY_BOOL() -> int { return 2; }
+fn TY_STR() -> int { return 3; }
+fn TY_UNIT() -> int { return 4; }
+fn TY_ARRAY() -> int { return 5; }
+fn TY_FN() -> int { return 6; }
+fn TY_NAMED() -> int { return 7; }
+
+// Копирует строку-сообщение в ERRB как [len][bytes], читая символы через
+// индексацию (s[i]) — так oracle-инференс не связывает параметр с числом.
+fn tcerr_msg(s: string) -> int {
+    let n = len(s);
+    store32(ERRB(), n);
+    let i = 0;
+    while (i < n) { store8(ERRB() + 4 + i, s[i]); i = i + 1; }
+    return 0;
+}
+fn tcerr(msg: string) -> int {
+    if (get(0, 4) == 0) { tcerr_msg(msg); set(0, 4, 1); }
+    return 0;
+}
+// Ошибка с подстановкой имени: pre + <имя из исходника> + post.
+// Пишет [len][utf8] в ERRB и включает статус; используется кодогеном для
+// ошибок с именем конструкции (undefined variable/function/method, builtin).
+fn err_named(pre: string, off, ln, post: string) -> int {
+    if (get(0, 4) == 0) {
+        binit(ERRB());
+        let i = 0;
+        while (i < len(pre)) { bput(ERRB(), pre[i]); i = i + 1; }
+        i = 0;
+        while (i < ln) { bput(ERRB(), load8(INPUT() + 4 + off + i)); i = i + 1; }
+        i = 0;
+        while (i < len(post)) { bput(ERRB(), post[i]); i = i + 1; }
+    }
+    set(0, 4, 1);
+    return 0;
+}
+fn tc_kind() -> int { return load32(KIND() + get(0, 9) * 4); }
+fn tck_at(d) -> int { return load32(KIND() + (get(0, 9) + d) * 4); }
+fn tc_next() -> int { return set(0, 9, get(0, 9) + 1); }
+fn tc_is_tok(k) -> bool { return k == 2 || (k >= 10 && k <= 19); }
+
+// --- таблица переменных типов ---
+fn tv_add(off, ln, ty, aux, np) -> int {
+    let i = get(0, 10);
+    store32(TV_OFF() + i * 4, off); store32(TV_LEN() + i * 4, ln);
+    store32(TV_TY() + i * 4, ty); store32(TV_AUX() + i * 4, aux);
+    store32(TV_NP() + i * 4, np); store32(TV_NEST() + i * 4, get(0, 11));
+    set(0, 10, i + 1);
+    return i;
+}
+fn tv_find(off, ln) -> int {
+    let i = get(0, 10) - 1;
+    while (i >= 0) {
+        if (name_eq(off, ln, load32(TV_OFF() + i * 4), load32(TV_LEN() + i * 4))) { return i; }
+        i = i - 1;
+    }
+    return -1;
+}
+fn tc_enter() -> int { return set(0, 11, get(0, 11) + 1); }
+fn tc_exit() -> int {
+    let d = get(0, 11);
+    while (get(0, 10) > 0 && load32(TV_NEST() + (get(0, 10) - 1) * 4) >= d) { set(0, 10, get(0, 10) - 1); }
+    set(0, 11, d - 1);
+    return 0;
+}
+
+// --- аннотация типа -> тег ---
+fn tc_ann() -> int {
+    let k = tc_kind();
+    if (tc_is_tok(k)) {
+        let off = load32(TVAL() + get(0, 9) * 4); let ln = load32(TLEN() + get(0, 9) * 4);
+        tc_next();
+        if (is_lit(off, ln, "int", 3) || is_lit(off, ln, "float", 5)) { return TY_NUM(); }
+        if (is_lit(off, ln, "bool", 4)) { return TY_BOOL(); }
+        if (is_lit(off, ln, "string", 6)) { return TY_STR(); }
+        if (is_lit(off, ln, "void", 4) || is_lit(off, ln, "unit", 4)) { return TY_UNIT(); }
+        return TY_NAMED();
+    }
+    return TY_UNK();
+}

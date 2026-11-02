@@ -1,0 +1,251 @@
+// ============================ ТАЙП-ЧЕКЕР: ВЫРАЖЕНИЯ ============================
+// Вывод типа выражения по токенам: литералы, вызовы и арность, постфиксные
+// операции, лямбды и бинарные уровни приоритета.
+
+// --- вычисление типа выражения по токенам ---
+// Упрощённый, но достаточный для приёмки/отклонения: возвращает тег.
+fn tc_expr() -> int {
+    // Присваивание в переменную: IDENT = expr (не в поле/индекс).
+    if (tc_is_tok(tc_kind()) && tck_at(1) == 27) {
+        let noff = load32(TVAL() + get(0, 9) * 4); let nlen = load32(TLEN() + get(0, 9) * 4);
+        tc_next(); tc_next();                    // IDENT '='
+        let vt = tc_expr();
+        let vi = tv_find(noff, nlen);
+        if (vi >= 0) {
+            let want = load32(TV_TY() + vi * 4);
+            if (want != TY_UNK() && vt != TY_UNK() && want != vt) { tcerr("error: type mismatch"); }
+        }
+        return vt;
+    }
+    let t = tc_binary();
+    // тернарный `?` не поддерживается языком
+    return t;
+}
+fn tc_primary() -> int {
+    let k = tc_kind();
+    if (k == 1) { tc_next(); return TY_NUM(); }
+    if (k == 4) { tc_next(); return TY_NUM(); }   // литерал float
+    if (k == 3) { tc_next(); return TY_STR(); }
+    if (k == 90 || k == 91) { tc_next(); return TY_BOOL(); }
+    if (k == 107) { tc_next(); return TY_UNK(); }          // null
+    if (k == 103) { tc_next(); return tc_unary_operand(); } // await — passthrough
+    if (k == 106) { tc_next(); tc_unary_operand(); return TY_UNK(); }   // <-ch
+    if (k == 20) { tc_next(); let t = tc_expr(); if (tc_kind() == 21) { tc_next(); } return t; }
+    if (k == 80) {               // литерал массива
+        tc_next();
+        while (tc_kind() != 81 && tc_kind() != 0) { tc_expr(); if (tc_kind() == 24) { tc_next(); } }
+        if (tc_kind() == 81) { tc_next(); }
+        return TY_ARRAY();
+    }
+    if (k == 31) { tc_next(); tc_unary_operand(); return TY_NUM(); }   // -x
+    if (k == 53) { tc_next(); tc_unary_operand(); return TY_BOOL(); }  // !x
+    if (k == 94) { tc_next(); return TY_NAMED(); }   // this
+    if (k == 93) {                                // new Class
+        tc_next(); tc_next();                             // new IDENT
+        if (tc_kind() == 20) { tc_arglist(); }
+        return TY_NAMED();
+    }
+    if (k == 95) { return tc_match(); }
+    if (k == 104) { return tc_select_expr(); }
+    if (k == 11) { return tc_lambda(); }
+    if (tc_is_tok(k)) {
+        let off = load32(TVAL() + get(0, 9) * 4); let ln = load32(TLEN() + get(0, 9) * 4);
+        // ai_generate!("prompt") — AI-примитив (в кодогене — host-ошибка).
+        if (tck_at(1) == 53 && is_lit(off, ln, "ai_generate", 11)) {
+            tc_next(); tc_next();                       // ai_generate, '!'
+            if (tc_kind() == 20) { tc_next(); if (tc_kind() == 3) { tc_next(); } if (tc_kind() == 21) { tc_next(); } }
+            return TY_STR();
+        }
+        // channel<T>() — generic-параметр потребляем, тип не важен (host-ошибка).
+        if (tck_at(1) == 42 && is_lit(off, ln, "channel", 7)) {
+            tc_next(); tc_next();                       // channel, <
+            while (tc_kind() != 43 && tc_kind() != 0) { tc_next(); }
+            if (tc_kind() == 43) { tc_next(); }
+            if (tc_kind() == 20) { tc_arglist(); }
+            return TY_UNK();
+        }
+        // вызов функции?
+        if (tck_at(1) == 20) { tc_next(); return tc_call(off, ln); }
+        // 0-арный enum-вариант
+        if (variant_tag(off, ln) >= 0) { tc_next(); return TY_NAMED(); }
+        tc_next();
+        let vi = tv_find(off, ln);
+        if (vi >= 0) { return load32(TV_TY() + vi * 4); }
+        let fi = find_func(off, ln);
+        if (fi >= 0) { return TY_FN(); }
+        // Внутри лямбды свободное имя может быть захватом внешней переменной —
+        // не считаем это ошибкой (захваты вычисляются отдельным проходом).
+        if (get(0, 12) == 0) { err_named("error: undefined variable: ", off, ln, ""); }
+        return TY_UNK();
+    }
+    return TY_UNK();
+}
+fn tc_unary_operand() -> int { return tc_primary(); }
+
+fn tc_arglist() -> int {
+    // текущий токен — '('
+    tc_next();
+    while (tc_kind() != 21 && tc_kind() != 0) { tc_expr(); if (tc_kind() == 24) { tc_next(); } }
+    if (tc_kind() == 21) { tc_next(); }
+    return 0;
+}
+
+// Тип вызова: арность + возвращаемый тип.
+fn tc_call(off, ln) -> int {
+    // встроенные — вариативные, проверяем только аргументы
+    if (is_builtin_tyname(off, ln)) { tc_arglist(); return tc_builtin_ret(off, ln); }
+    if (variant_tag(off, ln) >= 0) { tc_arglist(); return TY_NAMED(); }
+    let fi = find_func(off, ln);
+    if (fi < 0) {
+        // Локаль/параметр, вызываемый как функция (замыкание или колбэк):
+        // принимаем без строгой проверки типа результата.
+        let vi = tv_find(off, ln);
+        if (vi >= 0) { tc_arglist(); return TY_UNK(); }
+        err_named("error: undefined function: ", off, ln, "");
+        tc_arglist();
+        return TY_UNK();
+    }
+    let want = load32(FNNP() + fi * 4);
+    // считаем аргументы
+    let cnt = 0;
+    tc_next();                       // '('
+    while (tc_kind() != 21 && tc_kind() != 0) {
+        tc_expr();
+        cnt = cnt + 1;
+        if (tc_kind() == 24) { tc_next(); }
+    }
+    if (tc_kind() == 21) { tc_next(); }
+    if (cnt != want) { tcerr("error: arity mismatch"); }
+    return load32(FRETTY() + fi * 4);
+}
+
+fn is_builtin_tyname(off, ln) -> bool {
+    // Host-builtins (AI/tensor/каналы) принимаем при типизации: осмысленную
+    // ошибку про host-рантайм выдаёт кодоген — как в oracle.
+    if (is_host_builtin(off, ln)) { return true; }
+    if (is_lit(off, ln, "print", 5)) { return true; }
+    if (is_lit(off, ln, "len", 3)) { return true; }
+    if (is_lit(off, ln, "push", 4)) { return true; }
+    if (is_lit(off, ln, "str", 3)) { return true; }
+    if (is_lit(off, ln, "int", 3)) { return true; }
+    if (is_lit(off, ln, "float", 5)) { return true; }
+    if (is_lit(off, ln, "sqrt", 4)) { return true; }
+    if (is_lit(off, ln, "int", 3)) { return true; }
+    if (is_lit(off, ln, "assert", 6)) { return true; }
+    if (is_lit(off, ln, "assert_eq", 9)) { return true; }
+    if (is_lit(off, ln, "alloc", 5)) { return true; }
+    if (is_lit(off, ln, "load8", 5)) { return true; }
+    if (is_lit(off, ln, "load32", 6)) { return true; }
+    if (is_lit(off, ln, "store8", 6)) { return true; }
+    if (is_lit(off, ln, "store32", 7)) { return true; }
+    if (is_lit(off, ln, "memcopy", 7)) { return true; }
+    return false;
+}
+fn tc_builtin_ret(off, ln) -> int {
+    if (is_host_builtin(off, ln)) { return TY_UNK(); }
+    if (is_lit(off, ln, "len", 3)) { return TY_NUM(); }
+    if (is_lit(off, ln, "str", 3)) { return TY_STR(); }
+    if (is_lit(off, ln, "int", 3)) { return TY_NUM(); }
+    if (is_lit(off, ln, "float", 5)) { return TY_NUM(); }
+    if (is_lit(off, ln, "sqrt", 4)) { return TY_NUM(); }
+    if (is_lit(off, ln, "alloc", 5)) { return TY_NUM(); }
+    if (is_lit(off, ln, "load8", 5)) { return TY_NUM(); }
+    if (is_lit(off, ln, "load32", 6)) { return TY_NUM(); }
+    return TY_UNIT();
+}
+
+// Операторы: результат по oracle (числа/сравнения/логика/биты).
+fn tc_binary() -> int { return tc_bin(0); }
+
+// Уровни по возрастанию приоритета: or,and,eq,cmp,bit,shift,add,mul,postfix.
+fn tc_bin(level) -> int {
+    if (level >= 8) { return tc_postfix(); }
+    let base = tc_bin(level + 1);
+    while (is_op_at(level, tc_kind())) {
+        let op = tc_kind(); tc_next();
+        let lt = base;
+        let rt = tc_bin(level + 1);
+        // "+" над строкой (любой стороной) даёт строку, как в oracle.
+        if (op == 30 && (lt == TY_STR() || rt == TY_STR())) { base = TY_STR(); }
+        else { base = op_result(op); }
+    }
+    return base;
+}
+fn is_op_at(level, k) -> bool {
+    if (level == 0) { return k == 47; }                          // ||
+    if (level == 1) { return k == 46; }                          // &&
+    if (level == 2) { return k == 40 || k == 41; }               // == !=
+    if (level == 3) { return k == 42 || k == 43 || k == 44 || k == 45; }
+    if (level == 4) { return k == 48 || k == 49 || k == 50; }
+    if (level == 5) { return k == 51 || k == 52; }
+    if (level == 6) { return k == 30 || k == 31; }               // + -
+    if (level == 7) { return k == 32 || k == 33 || k == 34; }    // * / %
+    return false;
+}
+fn op_result(op) -> int {
+    if (op == 40 || op == 41) { return TY_BOOL(); }
+    if (op == 42 || op == 43 || op == 44 || op == 45) { return TY_BOOL(); }
+    if (op == 46 || op == 47) { return TY_BOOL(); }
+    if (op == 48 || op == 49 || op == 50) { return TY_NUM(); }
+    if (op == 51 || op == 52) { return TY_NUM(); }
+    return TY_NUM();
+}
+fn tc_postfix() -> int {
+    let t = tc_primary();
+    while (true) {
+        let k = tc_kind();
+        if (k == 80) {                       // индексация
+            tc_next(); tc_expr();
+            if (tc_kind() == 81) { tc_next(); }
+            t = TY_NUM();
+        } else {
+            if (k == 29) {                   // .field / .method()
+                tc_next();
+                if (tc_is_tok(tc_kind())) { tc_next(); }
+                if (tc_kind() == 20) { tc_next(); while (tc_kind() != 21 && tc_kind() != 0) { tc_expr(); if (tc_kind() == 24) { tc_next(); } } if (tc_kind() == 21) { tc_next(); } t = TY_NUM(); }
+                else { t = TY_NUM(); }
+            } else { return t; }
+        }
+    }
+    return t;
+}
+
+fn tc_lambda() -> int {
+    tc_next();                        // fn
+    set(0, 12, get(0, 12) + 1);   // внутри лямбды свободные имена — захваты
+    tc_enter();                   // область параметров лямбды
+    if (tc_kind() == 20) {
+        tc_next();
+        while (tc_kind() != 21 && tc_kind() != 0) {
+            if (tc_is_tok(tc_kind())) {
+                let po = load32(TVAL() + get(0, 9) * 4); let pl = load32(TLEN() + get(0, 9) * 4);
+                tc_next();
+                let pt = TY_UNK();
+                if (tc_kind() == 26) { tc_next(); pt = tc_ann(); }
+                tv_add(po, pl, pt, TY_UNK(), 0);
+            }
+            if (tc_kind() == 24) { tc_next(); }
+        }
+        if (tc_kind() == 21) { tc_next(); }
+    }
+    if (tc_kind() == 28) { tc_next(); tc_ann(); }
+    if (tc_kind() == 99) { tc_next(); tc_expr(); }
+    else {
+        if (tc_kind() == 22) { tc_next(); tc_block(); if (tc_kind() == 23) { tc_next(); } }
+    }
+    tc_exit();
+    set(0, 12, get(0, 12) - 1);
+    return TY_FN();
+}
+fn skip_braces() -> int {
+    if (tc_kind() != 22) { return 0; }
+    let d = 0;
+    while (tc_kind() != 0) {
+        let k = tc_kind();
+        if (k == 22) { d = d + 1; }
+        else { if (k == 23) { d = d - 1; } }
+        tc_next();
+        if (d == 0) { return 0; }
+    }
+    return 0;
+}

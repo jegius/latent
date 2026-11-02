@@ -1,0 +1,183 @@
+// --- эмиссия: match, select, new ---
+// Ветвления по образцу (числа/строки/конструкторы/`_`), select-выражение
+// (исполняется первая ветка) и создание объекта класса с init/new.
+
+// match scrut { case pat: expr, ... }: цепочка IF/ELSE, значение на стеке.
+// scrut сохраняется в локаль; каждый паттерн — условие, тело — ветвь THEN.
+fn level_match() -> int {
+    next_token();
+    let scrut = reserve();
+    level_or(); ev_set(scrut);
+    expect(22);                        // {
+    let out = reserve();               // результат match
+    emit_match_arms(scrut, out);
+    expect(23);                        // }
+    ev_get(out);
+    set(0, 5, 1); tp(T_INT());
+    return 0;
+}
+
+// select-выражение: oracle исполняет тело ПЕРВОЙ ветки (переменная = 0),
+// default — только если веток нет; выражения каналов не вычисляются.
+fn level_select() -> int {
+    next_token(); expect(22);                 // select {
+    let out = reserve();
+    if (tok_kind() == 98) {               // default: expr
+        next_token(); expect(26);
+        level_or(); ev_set(out);
+        skip_to_rbrace(); expect(23);
+        ev_get(out);
+        set(0, 5, 1); tp(T_INT()); set(0, 8, -1);
+        return 0;
+    }
+    if (tok_kind() == 23) {               // пустой select
+        ev_i32(0); ev_set(out);
+        expect(23);
+        ev_get(out);
+        set(0, 5, 1); tp(T_INT()); set(0, 8, -1);
+        return 0;
+    }
+    if (tok_kind() == 97) { next_token(); }      // case
+    if (is_ident_kind(tok_kind()) && tok_kind_at(1) == 106) {
+        let voff = tok_val(); let vlen = tok_len();
+        next_token(); next_token();                  // IDENT, <-
+        let slot = get(0, 3);
+        add_local(voff, vlen, slot);
+        set_local_tp(slot, T_INT());
+        store32(LOCCLS() + slot * 4, -1);
+        ev_i32(0); ev_set(slot);
+    } else {
+        if (tok_kind() == 106) { next_token(); }
+    }
+    // Выражение канала не исполняется: эмитим и откатываем буфер.
+    let save = blen(FNB()); let tsp = get(0, 7);
+    if (tok_kind() != 26) { level_or(); }
+    store32(FNB(), save); set(0, 7, tsp);
+    expect(26);
+    level_or(); ev_set(out);
+    skip_to_rbrace(); expect(23);
+    ev_get(out);
+    set(0, 5, 1); tp(T_INT()); set(0, 8, -1);
+    return 0;
+}
+
+fn emit_match_arms(scrut, out) -> int {
+    while (tok_kind() != 23 && tok_kind() != 0) {
+        if (tok_kind() == 24) { next_token(); }   // запятая между ветками
+        if (tok_kind() == 97) { next_token(); }   // case
+        set(0, 7, 0);
+        // wildcard `_` или `default`
+        if (tok_kind() == 98) { next_token(); expect(26); level_or(); ev_set(out); return 0; }
+        if (is_ident_kind(tok_kind()) && ttext_is(tok_val(), tok_len(), "_", 1) && tok_kind_at(1) == 26) {
+            next_token(); expect(26); level_or(); ev_set(out); return 0;
+        }
+        // паттерн
+        let poff = tok_val(); let plen = tok_len();
+        let isvar = is_ident_kind(tok_kind());
+        if (isvar) {
+            next_token();
+            if (tok_kind() == 20) {
+                // Конструктор: Tag(sub...)
+                emit_ctor_test(poff, plen, scrut);
+                emit_op(4); emit_op(64);              // if
+                emit_bind_fields(scrut);
+                expect(26); level_or(); ev_set(out);
+                emit_op(5);                      // else
+                emit_match_arms(scrut, out);
+                emit_op(11);                     // end
+                return 0;
+            }
+            if (tok_kind() == 26) {
+                // Связывание: pat: expr
+                expect(26);
+                ev_get(scrut); ev_set(scrut);
+                level_or(); ev_set(out);
+                return 0;
+            }
+        }
+        // числовой литерал
+        if (tok_kind() == 1) {
+            let v = tok_val(); next_token(); expect(26);
+            ev_get(scrut); ev_i32(v); emit_op(70); emit_op(4); emit_op(64);
+            level_or(); ev_set(out);
+            emit_op(5); emit_match_arms(scrut, out); emit_op(11);
+            return 0;
+        }
+        // строковый литерал — сравнение по содержимому (str_eq), как oracle
+        if (tok_kind() == 3) {
+            let q = tok_val(); let ql = tok_len();
+            let addr = str_addr(q + 1, ql - 2);
+            next_token(); expect(26);
+            ev_get(scrut); ev_i32(addr);
+            ev_call(SEQ_FI()); emit_op(4); emit_op(64);
+            level_or(); ev_set(out);
+            emit_op(5); emit_match_arms(scrut, out); emit_op(11);
+            return 0;
+        }
+        err(); return 0;
+    }
+    ev_i32(0); ev_set(out);
+    return 0;
+}
+// Условие «scrut это вариант Tag»: возвращает i32-условие на стеке.
+fn emit_ctor_test(off, ln, scrut) -> int {
+    let tag = variant_tag(off, ln);
+    let ar = variant_arity(off, ln);
+    if (ar == 0) {
+        ev_get(scrut); ev_i32(tag); emit_op(70);
+    } else {
+        ev_get(scrut); ev_load32(); ev_i32(tag); emit_op(70);
+    }
+    return 0;
+}
+// Связывает под-паттерны конструктора из полей scrut (уже проверен THEN).
+fn emit_bind_fields(scrut) -> int {
+    // Имена под-паттернов идут сразу за именем конструктора в скобках.
+    expect(20);
+    let i = 0;
+    while (tok_kind() != 21 && tok_kind() != 0) {
+        if (is_ident_kind(tok_kind())) {
+            let noff = tok_val(); let nlen = tok_len(); next_token();
+            let slot = get(0, 3);
+            add_local(noff, nlen, slot); set_local_tp(slot, T_INT()); store32(LOCCLS() + slot * 4, -1);
+            ev_get(scrut); ev_i32(4 + i * 4); emit_op(106); ev_load32();
+            ev_set(slot);
+        } else { next_token(); }
+        i = i + 1;
+        if (tok_kind() == 24) { next_token(); }
+    }
+    expect(21);
+    return 0;
+}
+fn ttext_is(off, ln, s, sn) -> bool { return is_lit(off, ln, s, sn); }
+
+// new Class(args): bump-alloc(CLSZ); вызвать Class_init/_new (this первым).
+fn level_new() -> int {
+    next_token();
+    let noff = tok_val(); let nlen = tok_len();
+    expect_ident();
+    let cls = class_idx_by_name(noff, nlen);
+    if (cls < 0) { err(); tp(T_INT()); return 0; }
+    let sz = load32(CLSZ() + cls * 4);
+    let p = reserve();
+    ev_i32(sz); ev_call(ALLOC_FI()); ev_set(p);
+    expect(20);
+    let ctor = find_method_named(cls, "init", 4);
+    if (ctor < 0) { ctor = find_method_named(cls, "new", 3); }
+    if (ctor >= 0) {
+        ev_get(p);                    // this — первый аргумент
+        while (tok_kind() != 21 && tok_kind() != 0) {
+            set(0, 7, 0);
+            level_or();
+            if (tok_kind() == 24) { next_token(); }
+        }
+        ev_call(ctor + 1);
+        if (fn_has_result(ctor)) { emit_op(26); }
+    } else {
+        while (tok_kind() != 21 && tok_kind() != 0) { set(0, 7, 0); level_or(); if (tok_kind() == 24) { next_token(); } }
+    }
+    expect(21);
+    ev_get(p);
+    set(0, 5, 1); tp(T_INT()); set(0, 8, cls);
+    return 0;
+}

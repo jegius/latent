@@ -49,16 +49,16 @@ fn fn_ret_tp(total, ftok) -> int {
 }
 // Пропускает аннотацию типа до разделителя: `,` `)` `}` `=` `;` или EOF.
 fn skip_type() -> int {
-    while (tkind() != 24 && tkind() != 21 && tkind() != 22 && tkind() != 27
-        && tkind() != 25 && tkind() != 0) { adv(); }
+    while (tok_kind() != 24 && tok_kind() != 21 && tok_kind() != 22 && tok_kind() != 27
+        && tok_kind() != 25 && tok_kind() != 0) { next_token(); }
     return 0;
 }
 // Читает аннотацию типа и возвращает тег для LOTP (T_INT/T_FLT/T_STR),
 // потребляя токены до разделителя. `: string` → T_STR и т.п.
 fn read_type_tag() -> int {
     let t = T_INT();
-    if (is_ident_kind(tkind())) {
-        let off = tval(); let ln = tlen();
+    if (is_ident_kind(tok_kind())) {
+        let off = tok_val(); let ln = tok_len();
         if (is_lit(off, ln, "string", 6)) { t = T_STR(); }
         else { if (is_lit(off, ln, "float", 5)) { t = T_FLT(); } }
     }
@@ -67,7 +67,7 @@ fn read_type_tag() -> int {
 }
 // Аннотация с ведущим `:` (текущий токен — 26).
 fn read_ann_after_colon() -> int {
-    if (tkind() == 26) { adv(); return read_type_tag(); }
+    if (tok_kind() == 26) { next_token(); return read_type_tag(); }
     return T_INT();
 }
 
@@ -114,25 +114,29 @@ fn compile_fn(fi) -> int {
     }
     expect(20);
     let idx = 0;
-    while (tkind() != 21 && tkind() != 0) {
-        let poff = tval(); let plen = tlen();
+    while (tok_kind() != 21 && tok_kind() != 0) {
+        let poff = tok_val(); let plen = tok_len();
         expect_ident();
         let slot = get(0, 3);
         // Параметры подписаны всегда i32 (mixed-float параметры не поддержаны
-        // ни oracle, ни нами); аннотацию всё равно потребляем.
-        read_ann_after_colon();
-        add_local(poff, plen, slot); set_local_tp(slot, T_INT());
+        // ни oracle, ни нами), но аннотация нужна для ТИПА локальной: строковый
+        // параметр обязан быть T_STR, иначе `s[i]` компилируется как индекс
+        // массива (4-байтовые ячейки) вместо str_char_at — так ломался текст
+        // ошибок у stage2 (tcerr_msg(s: string)).
+        let pt = read_ann_after_colon();
+        add_local(poff, plen, slot);
+        if (pt == T_STR()) { set_local_tp(slot, T_STR()); } else { set_local_tp(slot, T_INT()); }
         idx = idx + 1;
-        if (tkind() == 24) { adv(); }
+        if (tok_kind() == 24) { next_token(); }
     }
     expect(21);
-    if (tkind() == 28) { adv(); skip_type(); }
+    if (tok_kind() == 28) { next_token(); skip_type(); }
     expect(22);
     stmts();
     expect(23);
     let lb = load8(FNB() + 4 + load32(FNB()) - 1);
-    if (lb != 15) { ev(65); ev_sleb(0); }
-    ev(11);
+    if (lb != 15) { emit_op(65); emit_sleb(0); }
+    emit_op(11);
     // финальное тело: декларации локальных групп по типу (i32/f64).
     binit(BODYC());
     let nparams = load32(FNNP() + fi * 4);

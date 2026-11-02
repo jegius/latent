@@ -244,8 +244,8 @@ fn compile_lambda(li) -> int {
         let slot = get(0, 3);
         add_local(cap_name_off(li, ci), cap_name_len(li, ci), slot);
         set_local_tp(slot, T_INT());
-        ev(32); ev_leb(0); ev(65); ev_sleb(ci * 4); ev(106); ev(40); ev(2); ev(0);
-        ev(33); ev_leb(slot);
+        emit_op(32); emit_leb(0); emit_op(65); emit_sleb(ci * 4); emit_op(106); emit_op(40); emit_op(2); emit_op(0);
+        emit_op(33); emit_leb(slot);
         ci = ci + 1;
     }
     // Тело.
@@ -255,11 +255,11 @@ fn compile_lambda(li) -> int {
         expect(23);
     } else {
         level_or();
-        ev(15);   // return
+        emit_op(15);   // return
     }
     let lb = load8(FNB() + 4 + load32(FNB()) - 1);
-    if (lb != 15) { ev(65); ev_sleb(0); }
-    ev(11);
+    if (lb != 15) { emit_op(65); emit_sleb(0); }
+    emit_op(11);
     // финальное тело: nlocals = все слоты минус (env + np)
     binit(BODYC());
     let nparams = np + 1;

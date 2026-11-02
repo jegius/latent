@@ -1,0 +1,134 @@
+// --- эмиссия: постфиксные операции ---
+// Индексация `a[i]` (байт строки vs элемент массива), `.length`, доступ к
+// полю класса и вызов метода (push/pop/length/to_str/to_int).
+
+// Постфиксные операции: индексация a[i] и поле .length.
+fn level_postfix() -> int {
+    let base = get(0, 7);
+    level_primary();
+    while (true) {
+        let k = tok_kind();
+        if (k == 80) {
+            let ot = load32(TSTK() + base * 4);
+            next_token(); level_or(); expect(81);
+            if (ot == T_STR()) {
+                // Индексация строки → байт-символ (str_char_at), не элемент массива.
+                ev_call(SCHR_FI());
+            } else {
+                ev_i32(4); emit_op(108);   // idx*4
+                emit_op(106);                        // obj + idx*4
+                ev_i32(4); emit_op(106);    // + 4 (после заголовка длины)
+                ev_load32();           // i32.load
+            }
+            set(0, 5, 1);
+            set(0, 7, base); tp(T_INT());
+        } else {
+            if (k == 29) {
+                next_token();
+                let a = tok_val(); let al = tok_len();
+                expect_ident();
+                if (tok_kind() == 20) { level_method(a, al, base); }
+                else {
+                    if (is_lit(a, al, "length", 6)) { ev_load32(); set(0, 5, 1); set(0, 7, base); tp(T_INT()); }
+                    else {
+                        let cls = get(0, 8);
+                        if (cls >= 0) {
+                            // Доступ к полю класса: obj + offset → load.
+                            let off = field_off(cls, a, al);
+                            if (off < 0) { err(); }
+                            else {
+                                if (off > 0) { ev_i32(off); emit_op(106); }
+                                ev_load32();
+                                set(0, 5, 1); set(0, 7, base); tp(T_INT());
+                            }
+                        } else { err(); }
+                    }
+                }
+            } else { return 0; }
+        }
+    }
+    return 0;
+}
+// Метод-вызов obj.name(args). Объект уже лежит на стеке (из level_postfix);
+// base — позиция его типа в TSTK. Поддерживаются: push(x), pop(), length(),
+// to_str()/to_int() с учётом статического типа получателя (как oracle).
+fn level_method(off, ln, base) -> int {
+    // Метод класса: объект уже на стеке → сохранить как this, затем вызвать.
+    let cls = get(0, 8);
+    if (cls >= 0 && (tok_kind_at(0) == 20)) {
+        if (emit_class_method(cls, off, ln, base) == 1) { return 0; }
+    }
+    if (is_lit(off, ln, "push", 4)) { return level_push_method(base); }
+    if (is_lit(off, ln, "pop", 3)) { return level_pop_method(base); }
+    if (is_lit(off, ln, "length", 6)) { return level_length_method(base); }
+    if (is_lit(off, ln, "to_str", 6) || is_lit(off, ln, "toString", 8)) { return level_to_str_method(base); }
+    if (is_lit(off, ln, "to_int", 6) || is_lit(off, ln, "toInt", 5)) { return level_to_int_method(base); }
+    err_named("error: method '", off, ln, "' requires host runtime (engine #2)");
+    set(0, 5, 0);
+    return 0;
+}
+
+// Вызов метода класса: сохраняет объект как this и передаёт его первым
+// аргументом; возвращает 1, если метод найден (0 — не метод класса).
+fn emit_class_method(cls, off, ln, base) -> int {
+    let mi = find_method(cls, off, ln);
+    if (mi < 0) { return 0; }
+    let tl = reserve(); ev_set(tl);
+    let tbase = get(0, 7);
+    expect(20);
+    ev_get(tl);              // this первым
+    while (tok_kind() != 21 && tok_kind() != 0) {
+        set(0, 7, tbase);
+        level_or();
+        if (tok_kind() == 24) { next_token(); }
+    }
+    expect(21);
+    ev_call(mi + 1);
+    set(0, 5, 1); set(0, 7, base); tp(load32(FNRET() + mi * 4)); set(0, 8, -1);
+    return 1;
+}
+
+fn level_push_method(base) -> int {
+    let al = reserve(); ev_set(al);
+    expect(20); level_or(); expect(21);
+    let xl = reserve(); ev_set(xl);
+    emit_push_seq(al, xl);
+    set(0, 5, 1); set(0, 7, base); tp(T_INT());
+    return 0;
+}
+
+fn level_pop_method(base) -> int {
+    let al = reserve(); ev_set(al);
+    expect(20); expect(21);
+    emit_pop_seq(al);
+    set(0, 5, 1); set(0, 7, base); tp(T_INT());
+    return 0;
+}
+
+fn level_length_method(base) -> int {
+    expect(20); expect(21);
+    ev_load32();
+    set(0, 5, 1); set(0, 7, base); tp(T_INT());
+    return 0;
+}
+
+// to_str() по статическому типу получателя: float → f64_to_str, иначе
+// int → i32_to_str, строка — без изменений (как oracle).
+fn level_to_str_method(base) -> int {
+    expect(20); expect(21);
+    let rt = load32(TSTK() + base * 4);
+    if (rt == T_FLT()) { ev_call(F64S_FI()); }
+    else { if (rt != T_STR()) { ev_call(I32S_FI()); } }
+    set(0, 5, 1); set(0, 7, base); tp(T_STR());
+    return 0;
+}
+
+// to_int(): строка → str_to_i32, float → i32.trunc_f64_s, int — как есть.
+fn level_to_int_method(base) -> int {
+    expect(20); expect(21);
+    let rt = load32(TSTK() + base * 4);
+    if (rt == T_STR()) { ev_call(S2I_FI()); }
+    else { if (rt == T_FLT()) { emit_op(I32_TRUNC_F64_OP()); } }
+    set(0, 5, 1); set(0, 7, base); tp(T_INT());
+    return 0;
+}

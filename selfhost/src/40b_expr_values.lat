@@ -1,0 +1,142 @@
+// --- эмиссия: host-builtin'ы, вызов по индексу, float-литералы ---
+// Host-конструкции (AI/каналы) дают ошибку с именем builtin'а; здесь же
+// вычисление значения float-литерала без кодирования битов IEEE754 и
+// повышение int→f64 для смешанной арифметики.
+
+// Встроенные, которым нужен host-рантайм движка №1 (HOST_BUILTINS в oracle):
+// oracle даёт по ним понятную ошибку кодогена — повторяем её с именем.
+fn is_host_builtin(off, ln) -> bool {
+    if (is_lit(off, ln, "channel", 7)) { return true; }
+    if (is_lit(off, ln, "tensor", 6)) { return true; }
+    if (is_lit(off, ln, "semantic", 8)) { return true; }
+    if (is_lit(off, ln, "matmul", 6)) { return true; }
+    if (is_lit(off, ln, "cosine_similarity", 17)) { return true; }
+    if (is_lit(off, ln, "dot", 3)) { return true; }
+    if (is_lit(off, ln, "magnitude", 9)) { return true; }
+    if (is_lit(off, ln, "zeros", 5)) { return true; }
+    if (is_lit(off, ln, "ones", 4)) { return true; }
+    if (is_lit(off, ln, "snapshot", 8)) { return true; }
+    if (is_lit(off, ln, "ai_contract", 11)) { return true; }
+    if (is_lit(off, ln, "enforce_contract", 16)) { return true; }
+    if (is_lit(off, ln, "ai_infer", 8)) { return true; }
+    if (is_lit(off, ln, "ai_embed", 8)) { return true; }
+    if (is_lit(off, ln, "ai_stream", 9)) { return true; }
+    if (is_lit(off, ln, "stream_next", 11)) { return true; }
+    return false;
+}
+
+// channel<T>(args): generic-параметр отбрасывается (как в oracle), далее —
+// обычная host-ошибка с именем builtin'а.
+fn emit_channel_generic(off, ln) -> int {
+    next_token(); next_token();                        // channel, <
+    while (tok_kind() != 43 && tok_kind() != 0) { next_token(); }
+    if (tok_kind() == 43) { next_token(); }
+    return emit_host_builtin(off, ln);
+}
+
+// Разбирает аргументы host-builtin'а и сообщает об ошибке с его именем:
+// движок №2 не имеет host-рантайма (AI/tensor/каналы).
+fn emit_host_builtin(off, ln) -> int {
+    let base = get(0, 7);
+    expect(20);
+    while (tok_kind() != 21 && tok_kind() != 0) {
+        set(0, 7, base);
+        level_or();
+        if (tok_kind() == 24) { next_token(); }
+    }
+    expect(21);
+    err_named("error: builtin '", off, ln, "' requires host runtime (engine #2)");
+    set(0, 5, 0);
+    set(0, 7, base);
+    return 0;
+}
+
+fn emit_call_named(fidx, is_print) -> int {
+    let base = get(0, 7);
+    expect(20);
+    let argc = 0;
+    while (tok_kind() != 21 && tok_kind() != 0) {
+        level_or(); argc = argc + 1;
+        if (tok_kind() == 24) { next_token(); }
+    }
+    expect(21);
+    ev_call(fidx);
+    set(0, 7, base);
+    if (is_print == 1) { set(0, 5, 0); }
+    else {
+        set(0, 5, 1);
+        // fidx = find_func(...)+1, функция index = fidx-1.
+        tp(load32(FNRET() + (fidx - 1) * 4));
+    }
+    return 0;
+}
+
+// Литерал с плавающей точкой `I.F`, `IeN`, `I.FeN`: значение = mant / 10^k *
+// 10^exp. Целочисленно-значные литералы (по oracle: f64.fract()==0) эмитятся
+// как i32.const и имеют тип int — это наблюдаемо через str(2.0) → "2".
+// Дробные — как f64-арифметика без кодирования битов IEEE754.
+// Возвращает T_INT или T_FLT (тип литерала).
+fn emit_float_lit(off, ln) -> int {
+    // Позиция экспоненты (e/E), -1 если её нет.
+    let epos = -1; let i = 0;
+    while (i < ln) {
+        let c = load8(INPUT() + 4 + off + i);
+        if (c == 101 || c == 69) { epos = i; i = ln; } else { i = i + 1; }
+    }
+    let mend = ln; if (epos >= 0) { mend = epos; }
+    // Мантисса: целые/дробные цифры, k — число цифр после точки.
+    let mant = 0; let k = 0; let dot = 0;
+    i = 0;
+    while (i < mend) {
+        let c = load8(INPUT() + 4 + off + i);
+        if (c == 46) { dot = 1; }
+        else {
+            mant = mant * 10 + (c - 48);
+            if (dot == 1) { k = k + 1; }
+        }
+        i = i + 1;
+    }
+    // Экспонента (со знаком).
+    let exp = 0; let esign = 1;
+    if (epos >= 0) {
+        i = epos + 1;
+        if (i < ln && load8(INPUT() + 4 + off + i) == 45) { esign = -1; i = i + 1; }
+        else { if (i < ln && load8(INPUT() + 4 + off + i) == 43) { i = i + 1; } }
+        while (i < ln) { exp = exp * 10 + (load8(INPUT() + 4 + off + i) - 48); i = i + 1; }
+        exp = exp * esign;
+    }
+    if (exp >= k) {
+        ev_i32(mant * pow10(exp - k));
+        return T_INT();
+    }
+    let d = k - exp;
+    let p = pow10(d);
+    if (mant % p == 0) { ev_i32(mant / p); return T_INT(); }
+    ev_i32(mant); emit_op(183);      // mant → f64
+    ev_i32(p); emit_op(183);         // 10^d → f64
+    emit_op(163);                             // f64.div
+    return T_FLT();
+}
+// Меняет местами/повышает два верхних операнда в локалях: когда один int,
+// другой float — int конвертируется в f64, чтобы f64-операция была валидна.
+// Значения уже на стеке как [l, r]; сохраняем в локали и перекладываем.
+fn promote_pair(base, lt, rt) -> int {
+    // Каждый операнд сохраняем в локаль СВОЕГО типа (иначе local.set невалиден),
+    // затем повторно кладём на стек, конвертируя int→f64.
+    let rl = reserve_any(rt); ev_set(rl);
+    let ll = reserve_any(lt); ev_set(ll);
+    ev_get(ll); if (lt != T_FLT()) { emit_op(F64_CONV_I32_OP()); }
+    ev_get(rl); if (rt != T_FLT()) { emit_op(F64_CONV_I32_OP()); }
+    set(0, 7, base);
+    return 0;
+}
+// Резерв слота под конкретный тип операнда (int → i32, иначе f64).
+fn reserve_any(t) -> int {
+    if (t == T_FLT()) { return reserve_flt(); }
+    return reserve();
+}
+fn pow10(k) -> int {
+    let v = 1; let i = 0;
+    while (i < k) { v = v * 10; i = i + 1; }
+    return v;
+}

@@ -1,0 +1,16 @@
+{
+  "purpose": "seed-компилятор для Rust-free bootstrap (selfhost/bootstrap-wasm.mjs)",
+  "origin": "исходно собран latentc (Rust) из selfhost/shc.lat; дальше — self-compiled: seed.wasm компилирует shc.lat сам в себя (Rust в сборке не участвует)",
+  "howToUpdate": "node selfhost/bootstrap-wasm.mjs --refresh-seed (после node selfhost/build.mjs; без Rust)",
+  "schemaVersion": 2,
+  "compilerVersion": "0.1.0",
+  "seedRevision": 1,
+  "seedBytes": 42001,
+  "seedSha256": "e98e4ea3ba0c0d4401e0183d886f3537f25bfbd020464152bde63ce31fb5fe51",
+  "shcBytes": 169579,
+  "shcSha256": "12491433f7b9bcf77a8cd0668ca5aed31104a4119c43f41d076c5007159a1d18",
+  "fixedPoint": true,
+  "updatedAt": "2026-11-02T10:03:12.860Z",
+  "verifiedAt": "2026-11-02",
+  "note": "seed — доверенная начальная точка. Проверка: sha256 в seed.json / node selfhost/bootstrap-wasm.mjs --verify-seed. Rust для сборки компилятора и пользовательских программ не требуется."
+}

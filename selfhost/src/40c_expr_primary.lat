@@ -1,0 +1,143 @@
+// --- эмиссия: первичные выражения и замыкания ---
+// Литералы, идентификаторы, `await`, `null`, лямбда-литерал (создание env
+// и closure-объекта) и косвенный вызов замыкания.
+
+fn level_primary() -> int {
+    let k = tok_kind();
+    if (k == 1) { ev_i32(tok_val()); next_token(); set(0, 5, 1); tp(T_INT()); return 0; }
+    if (k == 4) {
+        let t = emit_float_lit(tok_val(), tok_len()); next_token(); set(0, 5, 1); tp(t);
+        return 0;
+    }
+    if (k == 90) { ev_i32(1); next_token(); set(0, 5, 1); tp(T_INT()); return 0; }
+    if (k == 91) { ev_i32(0); next_token(); set(0, 5, 1); tp(T_INT()); return 0; }
+    if (k == 107) { ev_i32(0); next_token(); set(0, 5, 1); tp(T_INT()); return 0; }   // null ≡ 0
+    if (k == 3) {
+        let q = tok_val(); let ql = tok_len();
+        let addr = str_addr(q + 1, ql - 2);
+        ev_i32(addr); next_token(); set(0, 5, 1); tp(T_STR()); return 0;
+    }
+    if (k == 20) { next_token(); level_or(); expect(21); return 0; }
+    if (k == 80) { return level_array(); }
+    if (k == 31) { next_token(); ev_i32(0); level_unary(); emit_op(107); set(0, 5, 1); return 0; }
+    if (k == 53) { next_token(); level_unary(); emit_op(69); set(0, 5, 1); return 0; }
+    if (k == 94) { next_token(); ev_get(0); set(0, 5, 1); tp(T_INT()); set(0, 8, load32(FNCLS() + load32(CURFI()) * 4)); return 0; }
+    if (k == 93) { return level_new(); }
+    if (k == 95) { return level_match(); }
+    if (k == 104) { return level_select(); }
+    if (k == 11) { return level_lambda(); }
+    // await — прозрачное разворачивание значения (Promise в WASM нет).
+    if (k == 103) { next_token(); return level_unary(); }
+    // <-ch — приём из канала: host-рантайм движка №1.
+    if (k == 106) { return level_receive(); }
+    if (is_ident_kind(k)) { return level_ident(); }
+    err(); set(0, 5, 1); tp(T_INT()); set(0, 8, -1); return 0;
+}
+
+// <-ch: выражение разбирается целиком, но каналы требуют host-рантайма №1.
+fn level_receive() -> int {
+    next_token(); level_unary();
+    err_named("error: channel operations require host runtime (engine #1)", 0, 0, "");
+    set(0, 5, 1); tp(T_INT()); set(0, 8, -1);
+    return 0;
+}
+
+// Идентификатор: AI-примитив, generic-канал, 0-арный вариант, вызов функции,
+// локальная переменная — или ошибка «undefined variable» с именем.
+fn level_ident() -> int {
+    let off = tok_val(); let ln = tok_len();
+    if (tok_kind_at(1) == 53 && is_lit(off, ln, "ai_generate", 11)) {
+        return emit_ai_generate_error();
+    }
+    if (tok_kind_at(1) == 42 && is_lit(off, ln, "channel", 7)) {
+        return emit_channel_generic(off, ln);
+    }
+    // 0-арный enum-вариант как значение (без скобок).
+    if (tok_kind_at(1) != 20 && find_local(off, ln) < 0 && find_func(off, ln) < 0
+        && variant_tag(off, ln) >= 0) {
+        ev_i32(variant_tag(off, ln)); next_token();
+        set(0, 5, 1); tp(T_INT()); set(0, 8, -1); return 0;
+    }
+    next_token();
+    if (tok_kind() == 20) { return emit_call(off, ln); }
+    let li = find_local(off, ln);
+    if (li >= 0) {
+        ev_get(li); set(0, 5, 1); tp(local_tp(li));
+        set(0, 8, load32(LOCCLS() + li * 4));
+        return 0;
+    }
+    err_named("error: undefined variable: ", off, ln, "");
+    set(0, 5, 1); tp(T_INT()); set(0, 8, -1);
+    return 0;
+}
+
+// ai_generate!("prompt") — AI-примитив, требует host-рантайма.
+fn emit_ai_generate_error() -> int {
+    next_token(); next_token();                  // ai_generate !
+    expect(20);
+    if (tok_kind() == 3) { next_token(); } else { err(); }
+    expect(21);
+    err_named("error: AI primitives require host runtime (engine #1)", 0, 0, "");
+    set(0, 5, 1); tp(T_INT()); set(0, 8, -1);
+    return 0;
+}
+
+// Литерал лямбды `fn(params) => expr` / `fn(params) { ... }` → closure-указатель
+// [table_slot i32][env_ptr i32]. Лямбда уже вынесена в отдельную функцию
+// (scan_lambdas); здесь создаётся env с захватами и сам closure-объект.
+fn level_lambda() -> int {
+    let li = lambda_at(get(0, 0));
+    if (li < 0) { err(); return 0; }
+    let nc = cap_count(li);
+    // env = alloc(4*nc) или 0
+    let env = reserve();
+    if (nc > 0) {
+        ev_i32(4 * nc); ev_call(ALLOC_FI()); ev_set(env);
+    } else {
+        ev_i32(0); ev_set(env);
+    }
+    let c = 0;
+    while (c < nc) {
+        let locali = find_local(cap_name_off(li, c), cap_name_len(li, c));
+        if (locali >= 0) {
+            ev_get(env); ev_i32(c * 4); emit_op(106);
+            ev_get(locali);
+            ev_store32();
+        }
+        c = c + 1;
+    }
+    // closure = alloc(8); [0]=table_slot(=индекс функции); [4]=env
+    let cl = reserve();
+    ev_i32(8); ev_call(ALLOC_FI()); ev_set(cl);
+    ev_get(cl); ev_i32(lam_fn(li)); ev_store32();
+    ev_get(cl); ev_i32(4); emit_op(106); ev_get(env); ev_store32();
+    ev_get(cl);
+    // Пропускаем тело лямбды до его конца (оно уже скомпилировано отдельно).
+    set(0, 0, lam_body_end(li));
+    set(0, 5, 1); tp(T_INT()); set(0, 8, -1);
+    return 0;
+}
+
+// Косвенный вызов замыкания: callee — локаль, хранящая closure-указатель.
+// events: env в локали, аргументы, индекс таблицы; всё через call_indirect.
+fn emit_indirect_call(callee_slot) -> int {
+    let base = get(0, 7);
+    expect(20);                   // '('
+    // env = [closure+4]: адрес сначала, затем load.
+    ev_get(callee_slot); ev_i32(4); emit_op(106); ev_load32();
+    let envl = reserve(); ev_set(envl);
+    ev_get(envl);         // env — первый аргумент
+    let argc = 0;
+    while (tok_kind() != 21 && tok_kind() != 0) {
+        set(0, 7, base);
+        level_or();
+        argc = argc + 1;
+        if (tok_kind() == 24) { next_token(); }
+    }
+    expect(21);
+    // table index = [closure+0]
+    ev_get(callee_slot); ev_load32();
+    emit_op(17); emit_leb(argc + 2); emit_op(0);    // call_indirect: тип арности argc+1 (env)
+    set(0, 5, 1); set(0, 7, base); tp(T_INT()); set(0, 8, -1);
+    return 0;
+}

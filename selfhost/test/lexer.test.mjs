@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { SELFHOST, buildStage1, readTokens } from "./harness.mjs";
+import { LEXER_SNIPPETS } from "./corpus.mjs";
 
 const T = {
   EOF: 0,
@@ -114,46 +115,18 @@ describe("tokenize: пунктуация", () => {
       : buildStage1();
   });
   const kinds = (src) => readTokens(stage1, src).kinds;
-  const single = (ch, kind) => {
+  // Сниппеты — из общего корпуса (selfhost/test/corpus.mjs), чтобы
+  // coverage-runner прогонял ровно те же входы, что и атомарные тесты.
+  for (const [ch, kind] of LEXER_SNIPPETS.singles) {
     test(`пункт ${JSON.stringify(ch)} -> ${kind}`, () => {
       assert.deepEqual(kinds(ch), [kind, T.EOF]);
     });
-  };
-
-  single("(", T.LPAREN);
-  single(")", T.RPAREN);
-  single("{", T.LBRACE);
-  single("}", T.RBRACE);
-  single(",", T.COMMA);
-  single(";", T.SEMI);
-  single(":", T.COLON);
-  single("=", T.ASSIGN);
-  single("+", T.PLUS);
-  single("-", T.MINUS);
-  single("*", T.STAR);
-  single("/", T.SLASH);
-  single("%", T.PERCENT);
-  single("<", T.LT);
-  single(">", T.GT);
-  single("&", T.AMP);
-  single("|", T.PIPE);
-  single("^", T.CARET);
-  single("!", T.BANG);
-
-  const twin = (ch, kind) => {
+  }
+  for (const [ch, kind] of LEXER_SNIPPETS.twins) {
     test(`пункт ${JSON.stringify(ch)} -> ${kind}`, () => {
       assert.deepEqual(kinds(ch), [kind, T.EOF]);
     });
-  };
-  twin("==", T.EQ);
-  twin("!=", T.NEQ);
-  twin("<=", T.LE);
-  twin(">=", T.GE);
-  twin("&&", T.AND);
-  twin("||", T.OR);
-  twin("<<", T.SHL);
-  twin(">>", T.SHR);
-  twin("->", T.ARROW);
+  }
 });
 
 describe("tokenize: комментарии и пробелы", () => {

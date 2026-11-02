@@ -1,4 +1,4 @@
-// Bootstrap-харнесс самохостящегося компилятора Latent.
+// Bootstrap-харнесс самохостящегося компилятора Latent (Rust-путь).
 //
 //   stage1 = latentc (Rust) компилирует selfhost/shc.lat
 //   stage2 = stage1 компилирует selfhost/shc.lat   (self-compiled)
@@ -6,68 +6,69 @@
 //
 // Фиксированная точка: stage2 === stage3.
 //
-// ABI компилятора: хост пишет исходник как [len u32 LE][utf8] по адресу
-// INPUT_ADDR (вынесен в 128K-область выше рабочих буферов), вызывает main();
-// готовый WASM лежит как [len u32 LE][bytes] по адресу 65536.
+// Rust нужен ТОЛЬКО для сборки stage1 из исходника. Дальше компилятор
+// воспроизводит себя сам; для сборки без Rust используйте bootstrap-wasm.mjs
+// (seed.wasm -> stage2 -> stage3).
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
+import { compileWith, bytesEqual } from "./wasm-compiler.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
 const CLI = process.env.LATENTC || join(root, "target/debug/latentc");
 const SRC = join(here, "shc.lat");
-const INPUT_ADDR = 3145728;
-const OUTPUT_ADDR = 65536;
 
-// Компилирует исходник уже собранным компилятором (wasm) и возвращает байты.
-function selfCompile(wasmBytes, source) {
-  let inst;
-  const mod = new WebAssembly.Module(wasmBytes);
-  inst = new WebAssembly.Instance(mod, { env: { print: () => {} } });
-  const enc = new TextEncoder().encode(source);
-  // Вход лежит выше рабочих областей: наращиваем память до записи.
-  const need = Math.ceil((INPUT_ADDR + 4 + enc.length) / 65536);
-  const have = inst.exports.memory.buffer.byteLength / 65536;
-  if (need > have) { inst.exports.memory.grow(need - have); }
-  new DataView(inst.exports.memory.buffer).setUint32(INPUT_ADDR, enc.length, true);
-  new Uint8Array(inst.exports.memory.buffer).set(enc, INPUT_ADDR + 4);
-  const ret = inst.exports.main();
-  const dv = new DataView(inst.exports.memory.buffer);
-  const len = dv.getUint32(OUTPUT_ADDR, true);
-  const bytes = new Uint8Array(dv.buffer).slice(OUTPUT_ADDR + 4, OUTPUT_ADDR + 4 + len);
-  // Отрицательный результат — ошибка компиляции: байты это текст сообщения.
-  if (ret < 0) {
-    throw new Error(`compile error: ${new TextDecoder().decode(bytes)}`);
+/** Обновляет seed.wasm (Rust-free bootstrap) и selfhost/seed.json. */
+export function updateSeed(stage2, source) {
+  writeFileSync(join(here, "seed.wasm"), stage2);
+  const sha = (buf) => createHash("sha256").update(buf).digest("hex");
+  const meta = {
+    purpose: "seed-компилятор для Rust-free bootstrap (selfhost/bootstrap-wasm.mjs)",
+    origin: "собран latentc (Rust) из selfhost/shc.lat по цепочке bootstrap.mjs (stage1 -> stage2)",
+    howToUpdate: "node selfhost/bootstrap.mjs --update-seed",
+    seedBytes: stage2.length,
+    seedSha256: sha(stage2),
+    shcSha256: sha(Buffer.from(source, "utf8")),
+    verifiedAt: new Date().toISOString().slice(0, 10),
+    note: "После появления seed.wasm Rust для сборки компилятора не требуется: seed -> stage2 -> stage3.",
+  };
+  writeFileSync(join(here, "seed.json"), JSON.stringify(meta, null, 2) + "\n");
+  console.log(`seed.wasm обновлён: ${stage2.length} байт (sha256 ${meta.seedSha256.slice(0, 16)}…)`);
+}
+
+export function bootstrapWithRust({ cli = CLI, src = SRC, selfhostDir = here } = {}) {
+  const source = readFileSync(src, "utf8");
+  const stage1Path = join(selfhostDir, "stage1.wasm");
+  execFileSync(cli, ["compile", src, stage1Path], { stdio: "inherit" });
+  const stage1 = readFileSync(stage1Path);
+  if (!WebAssembly.validate(stage1)) throw new Error("stage1 невалиден");
+  console.log(`stage1.wasm: ${stage1.length} байт (собран latentc)`);
+
+  const stage2 = compileWith(stage1, source).wasm;
+  writeFileSync(join(selfhostDir, "stage2.wasm"), stage2);
+  console.log(`stage2.wasm: ${stage2.length} байт (self-compiled)`);
+  if (!WebAssembly.validate(stage2)) {
+    throw new Error("stage2 невалиден — компилятор неверно компилирует сам себя");
   }
-  return bytes;
+
+  const stage3 = compileWith(stage2, source).wasm;
+  writeFileSync(join(selfhostDir, "stage3.wasm"), stage3);
+  console.log(`stage3.wasm: ${stage3.length} байт`);
+
+  const fixed = bytesEqual(stage2, stage3);
+  console.log(fixed
+    ? "FIXED POINT: stage2 === stage3"
+    : "stage2 !== stage3 (фиксированная точка не достигнута)");
+  return { stage1, stage2, stage3, fixed };
 }
 
-function bytesEqual(a, b) {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
+// Точка входа: сравниваем URL-формы путей (Windows-совместимо), чтобы модуль
+// можно было импортировать из тестов без побочной сборки.
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  const { stage2, fixed } = bootstrapWithRust();
+  if (process.argv.includes("--update-seed")) updateSeed(stage2, readFileSync(SRC, "utf8"));
+  if (!fixed) process.exitCode = 1;
 }
-
-const source = readFileSync(SRC, "utf8");
-
-execFileSync(CLI, ["compile", SRC, join(here, "stage1.wasm")], { stdio: "inherit" });
-const stage1 = readFileSync(join(here, "stage1.wasm"));
-if (!WebAssembly.validate(stage1)) throw new Error("stage1 невалиден");
-console.log(`stage1.wasm: ${stage1.length} байт (собран latentc)`);
-
-const stage2 = selfCompile(stage1, source);
-writeFileSync(join(here, "stage2.wasm"), stage2);
-console.log(`stage2.wasm: ${stage2.length} байт (self-compiled)`);
-if (!WebAssembly.validate(stage2)) {
-  throw new Error("stage2 невалиден — компилятор неверно компилирует сам себя");
-}
-
-const stage3 = selfCompile(stage2, source);
-writeFileSync(join(here, "stage3.wasm"), stage3);
-console.log(`stage3.wasm: ${stage3.length} байт`);
-
-console.log(bytesEqual(stage2, stage3)
-  ? "FIXED POINT: stage2 === stage3"
-  : "stage2 !== stage3 (фиксированная точка не достигнута)");

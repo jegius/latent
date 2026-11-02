@@ -1,16 +1,16 @@
 // ============================ ПАРСЕР ============================
-fn tkind() -> int { return load32(KIND() + get(0, 0) * 4); }
-fn tkind_at(off) -> int { return load32(KIND() + (get(0, 0) + off) * 4); }
-fn tval() -> int { return load32(TVAL() + get(0, 0) * 4); }
-fn tlen() -> int { return load32(TLEN() + get(0, 0) * 4); }
-fn adv() -> int { return set(0, 0, get(0, 0) + 1); }
+fn tok_kind() -> int { return load32(KIND() + get(0, 0) * 4); }
+fn tok_kind_at(off) -> int { return load32(KIND() + (get(0, 0) + off) * 4); }
+fn tok_val() -> int { return load32(TVAL() + get(0, 0) * 4); }
+fn tok_len() -> int { return load32(TLEN() + get(0, 0) * 4); }
+fn next_token() -> int { return set(0, 0, get(0, 0) + 1); }
 fn err() -> int { return set(0, 4, 1); }
 fn is_ident_kind(k) -> bool { return k == 2 || (k >= 10 && k <= 19); }
 
-fn expect(k) -> int { if (tkind() == k) { return adv(); } err(); return 0; }
+fn expect(k) -> int { if (tok_kind() == k) { return next_token(); } err(); return 0; }
 fn expect_ident() -> int {
-    let k = tkind();
-    if (k == 2 || (k >= 10 && k <= 19)) { return adv(); }
+    let k = tok_kind();
+    if (k == 2 || (k >= 10 && k <= 19)) { return next_token(); }
     err(); return 0;
 }
 
@@ -94,10 +94,24 @@ fn add_str(off, ln) -> int {
     store32(STRL() + get(0, 6) * 4, ln);
     store32(STRA() + get(0, 6) * 4, addr);
     set(0, 6, get(0, 6) + 1);
-    // blob: [len u32 LE][bytes]
-    bput(DATAB(), ln & 255); bput(DATAB(), (ln >> 8) & 255); bput(DATAB(), (ln >> 16) & 255); bput(DATAB(), (ln >> 24) & 255);
-    let i = 0;
-    while (i < ln) { bput(DATAB(), load8(INPUT() + 4 + off + i)); i = i + 1; }
+    // Blob: [len u32 LE][bytes]. Escape-последовательности (\n \t \\ \")
+    // разворачиваются, как в oracle; длина считается уже по байтам результата.
+    let u = 0; let i = 0;
+    while (i < ln) {
+        if (load8(INPUT() + 4 + off + i) == 92 && i + 1 < ln) { u = u + 1; i = i + 2; }
+        else { u = u + 1; i = i + 1; }
+    }
+    bput(DATAB(), u & 255); bput(DATAB(), (u >> 8) & 255); bput(DATAB(), (u >> 16) & 255); bput(DATAB(), (u >> 24) & 255);
+    i = 0;
+    while (i < ln) {
+        let c = load8(INPUT() + 4 + off + i);
+        if (c == 92 && i + 1 < ln) {
+            let e = load8(INPUT() + 4 + off + i + 1);
+            if (e == 110) { bput(DATAB(), 10); }
+            else { if (e == 116) { bput(DATAB(), 9); } else { bput(DATAB(), e); } }
+            i = i + 2;
+        } else { bput(DATAB(), c); i = i + 1; }
+    }
     return addr;
 }
 fn str_addr(off, ln) -> int {

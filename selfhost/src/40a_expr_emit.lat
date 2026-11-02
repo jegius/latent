@@ -1,0 +1,268 @@
+// --- эмиссия: опкоды, встроенные вызовы, print ---
+// Отвечает за «словарь» эмиттера: байт/LEB в буфер функции, разбор
+// аргументов встроенных (память, строки, конверсии, assert, print) и
+// диспетчеризацию вызова по имени. Pratt-уровни и объектные выражения —
+// в соседних частях 40b..40g.
+
+// --- эмиссия опкодов: два слоя ---
+// Чистый слой: буфер передаётся параметром, результат зависит только от
+// аргументов и содержимого памяти — никаких фиксированных адресов.
+fn emit_byte(b, op) -> int { return bput(b, op); }
+fn emit_i32_to(b, v) -> int { emit_byte(b, 65); return bsleb(b, v); }      // i32.const
+fn emit_get_from(b, l) -> int { emit_byte(b, 32); return bleb(b, l); }     // local.get
+fn emit_set_in(b, l) -> int { emit_byte(b, 33); return bleb(b, l); }       // local.set
+fn emit_call_in(b, fi) -> int { emit_byte(b, 16); return bleb(b, fi); }    // call
+fn emit_load32_from(b) -> int { emit_byte(b, 40); emit_byte(b, 2); return emit_byte(b, 0); }
+fn emit_store32_to(b) -> int { emit_byte(b, 54); emit_byte(b, 2); return emit_byte(b, 0); }
+
+// Императивная граница: текущий буфер тела функции (FNB) — состояние
+// компилятора, поэтому эти обёртки не «чистые» и сосредоточены только здесь.
+fn emit_op(b) -> int { return emit_byte(FNB(), b); }
+fn emit_leb(v) -> int { return bleb(FNB(), v); }
+fn emit_sleb(v) -> int { return bsleb(FNB(), v); }
+fn ev_i32(v) -> int { return emit_i32_to(FNB(), v); }
+fn ev_get(l) -> int { return emit_get_from(FNB(), l); }
+fn ev_set(l) -> int { return emit_set_in(FNB(), l); }
+fn ev_call(fi) -> int { return emit_call_in(FNB(), fi); }
+fn ev_load32() -> int { return emit_load32_from(FNB()); }
+fn ev_store32() -> int { return emit_store32_to(FNB()); }
+fn nf() -> int { return get(0, 2); }
+fn ALLOC_FI() -> int { return get(0, 2) + 1; }
+fn MEM_FI() -> int { return get(0, 2) + 2; }
+fn SCAT_FI() -> int { return get(0, 2) + 3; }   // str_concat(a,b)->ptr
+fn SEQ_FI() -> int { return get(0, 2) + 4; }    // str_eq(a,b)->i32
+fn SCHR_FI() -> int { return get(0, 2) + 5; }   // str_char_at(ptr,idx)->i32
+fn I32S_FI() -> int { return get(0, 2) + 6; }   // i32_to_str(n)->ptr
+fn S2I_FI() -> int { return get(0, 2) + 7; }    // str_to_i32(ptr)->i32
+fn F64S_FI() -> int { return get(0, 2) + 8; }   // f64_to_str(n)->ptr
+fn NHELP() -> int { return 8; }                 // alloc+memcopy+3 str+3 conv
+
+fn emit_bi1(fi, opcode, align) -> int {
+    let base = get(0, 7);
+    expect(20); level_or(); expect(21);
+    if (opcode == 0) { ev_call(fi); } else { emit_op(opcode); emit_op(align); emit_op(0); }
+    set(0, 5, 1);
+    set(0, 7, base); tp(T_INT());
+    return 0;
+}
+fn emit_bi2(fi, opcode, align, produces) -> int {
+    let base = get(0, 7);
+    expect(20); level_or();
+    if (tok_kind() == 24) { next_token(); }
+    level_or(); expect(21);
+    if (opcode == 0) { ev_call(fi); } else { emit_op(opcode); emit_op(align); emit_op(0); }
+    set(0, 5, produces);
+    set(0, 7, base);
+    if (produces == 1) { tp(T_INT()); }
+    return 0;
+}
+fn emit_memcopy() -> int {
+    let base = get(0, 7);
+    expect(20); level_or();
+    if (tok_kind() == 24) { next_token(); }
+    level_or();
+    if (tok_kind() == 24) { next_token(); }
+    level_or(); expect(21);
+    ev_call(MEM_FI());
+    set(0, 5, 1);
+    set(0, 7, base); tp(T_INT());
+    return 0;
+}
+
+fn emit_call(off, ln) -> int {
+    if (is_lit(off, ln, "print", 5)) { return emit_print(); }
+    if (is_host_builtin(off, ln)) { return emit_host_builtin(off, ln); }
+    if (is_lit(off, ln, "alloc", 5)) { return emit_bi1(ALLOC_FI(), 0, 0); }
+    if (is_lit(off, ln, "memcopy", 7)) { return emit_memcopy(); }
+    if (is_lit(off, ln, "load8", 5)) { return emit_bi1(0, 45, 0); }
+    if (is_lit(off, ln, "load32", 6)) { return emit_bi1(0, 40, 2); }
+    if (is_lit(off, ln, "store8", 6)) { return emit_bi2(0, 58, 0, 0); }
+    if (is_lit(off, ln, "store32", 7)) { return emit_bi2(0, 54, 2, 0); }
+    if (is_lit(off, ln, "len", 3)) { return emit_len(); }
+    if (is_lit(off, ln, "push", 4)) { return emit_push_call(); }
+    if (is_lit(off, ln, "assert", 6)) { return emit_assert(); }
+    if (is_lit(off, ln, "assert_eq", 9)) { return emit_assert_eq(); }
+    if (is_lit(off, ln, "str", 3)) { return emit_str_conv(); }
+    if (is_lit(off, ln, "int", 3)) { return emit_int_conv(); }
+    if (is_lit(off, ln, "float", 5)) { return emit_float_conv(); }
+    if (is_lit(off, ln, "sqrt", 4)) { return emit_sqrt(); }
+    let fi = find_func(off, ln);
+    if (fi < 0) {
+        // Конструктор enum-варианта: Tag(args) → [tag i32][fields...].
+        let tag = variant_tag(off, ln);
+        if (tag >= 0) { return emit_variant(tag, variant_arity(off, ln)); }
+        // Локаль, хранящая замыкание → косвенный вызов.
+        let li = find_local(off, ln);
+        if (li >= 0) { return emit_indirect_call(li); }
+        err_named("error: undefined function: ", off, ln, "");
+        return 0;
+    }
+    return emit_call_named(fi + 1, 0);
+}
+
+// Tag(args) → указатель на [tag i32][field0]... 0-арный — сам тег.
+fn emit_variant(tag, ar) -> int {
+    let base = get(0, 7);
+    expect(20);
+    if (ar == 0) {
+        while (tok_kind() != 21 && tok_kind() != 0) { set(0, 7, base); level_or(); if (tok_kind() == 24) { next_token(); } }
+        expect(21);
+        ev_i32(tag);
+        set(0, 5, 1); set(0, 7, base); tp(T_INT()); return 0;
+    }
+    let p = reserve();
+    ev_i32(4 + ar * 4); ev_call(ALLOC_FI()); ev_set(p);
+    let i = 0;
+    while (tok_kind() != 21 && tok_kind() != 0) {
+        set(0, 7, base);
+        ev_get(p); ev_i32(4 + i * 4); emit_op(106);
+        level_or();
+        ev_store32();
+        i = i + 1;
+        if (tok_kind() == 24) { next_token(); }
+    }
+    expect(21);
+    ev_get(p); ev_i32(tag); ev_store32();
+    ev_get(p);
+    set(0, 5, 1); set(0, 7, base); tp(T_INT());
+    return 0;
+}
+
+// len(x) -> длина из заголовка [len u32][...] (общее представление строк/массивов).
+fn emit_len() -> int {
+    let base = get(0, 7);
+    expect(20); level_or(); expect(21);
+    ev_load32();
+    set(0, 5, 1);
+    set(0, 7, base); tp(T_INT());
+    return 0;
+}
+
+// assert(cond): if !cond { unreachable }.
+fn emit_assert() -> int {
+    let base = get(0, 7);
+    expect(20); level_or(); expect(21);
+    emit_op(69); emit_op(4); emit_op(64); emit_op(0); emit_op(11);
+    set(0, 5, 0);
+    set(0, 7, base);
+    return 0;
+}
+
+// assert_eq(a, b): if a != b { unreachable } (i32-равенство, как в oracle).
+fn emit_assert_eq() -> int {
+    let base = get(0, 7);
+    expect(20); level_or();
+    if (tok_kind() == 24) { next_token(); }
+    level_or(); expect(21);
+    emit_op(70); emit_op(69); emit_op(4); emit_op(64); emit_op(0); emit_op(11);
+    set(0, 5, 0);
+    set(0, 7, base);
+    return 0;
+}
+
+// str(x): строка остаётся, число конвертируется в строку (i32_to_str).
+fn emit_str_conv() -> int {
+    let base = get(0, 7);
+    expect(20);
+    if (tok_kind() == 21) { next_token(); ev_i32(0); set(0, 5, 1); set(0, 7, base); tp(T_STR()); return 0; }
+    level_or();
+    let xt = load32(TSTK() + base * 4);
+    expect(21);
+    if (xt == T_FLT()) { ev_call(F64S_FI()); }
+    else { if (xt != T_STR()) { ev_call(I32S_FI()); } }
+    set(0, 5, 1); set(0, 7, base); tp(T_STR());
+    return 0;
+}
+// int(x): строку парсим (str_to_i32), число как есть (f64-усечение не поддержано).
+fn emit_int_conv() -> int {
+    let base = get(0, 7);
+    expect(20);
+    if (tok_kind() == 21) { next_token(); ev_i32(0); set(0, 5, 1); set(0, 7, base); tp(T_INT()); return 0; }
+    level_or();
+    let xt = load32(TSTK() + base * 4);
+    expect(21);
+    if (xt == T_STR()) { ev_call(S2I_FI()); }
+    else { if (xt == T_FLT()) { emit_op(I32_TRUNC_F64_OP()); } }
+    set(0, 5, 1); set(0, 7, base); tp(T_INT());
+    return 0;
+}
+
+// float(x): int → f64 (f64.convert_i32_s); строку парсим (str_to_i32) и
+// конвертируем; float оставляем как есть — как oracle.
+fn emit_float_conv() -> int {
+    let base = get(0, 7);
+    expect(20);
+    if (tok_kind() == 21) { next_token(); ev_i32(0); emit_op(F64_CONV_I32_OP()); set(0, 5, 1); set(0, 7, base); tp(T_FLT()); return 0; }
+    level_or();
+    let xt = load32(TSTK() + base * 4);
+    expect(21);
+    if (xt == T_STR()) { ev_call(S2I_FI()); emit_op(F64_CONV_I32_OP()); }
+    else { if (xt != T_FLT()) { emit_op(F64_CONV_I32_OP()); } }
+    set(0, 5, 1); set(0, 7, base); tp(T_FLT());
+    return 0;
+}
+// sqrt(x): f64.sqrt; не-float операнд сначала конвертим.
+fn emit_sqrt() -> int {
+    let base = get(0, 7);
+    expect(20);
+    if (tok_kind() == 21) { next_token(); ev_i32(0); emit_op(F64_CONV_I32_OP()); emit_op(159); set(0, 5, 1); set(0, 7, base); tp(T_FLT()); return 0; }
+    level_or();
+    let xt = load32(TSTK() + base * 4);
+    expect(21);
+    if (xt != T_FLT()) { emit_op(F64_CONV_I32_OP()); }
+    emit_op(159);                             // f64.sqrt
+    set(0, 5, 1); set(0, 7, base); tp(T_FLT());
+    return 0;
+}
+
+// push(arr, x): arr[len]=x; arr.len=len+1; результат — arr.
+// Стек после разбора: [arr, x].
+fn emit_push_call() -> int {
+    let base = get(0, 7);
+    expect(20); level_or();
+    if (tok_kind() == 24) { next_token(); }
+    level_or(); expect(21);
+    let xl = reserve(); ev_set(xl);
+    let al = reserve(); ev_set(al);
+    emit_push_seq(al, xl);
+    set(0, 5, 1);
+    set(0, 7, base); tp(T_INT());
+    return 0;
+}
+
+// Общая последовательность push для уже сохранённых в локалях arr/x.
+fn emit_push_seq(al, xl) -> int {
+    ev_get(al); ev_get(al); ev_load32(); ev_i32(4); emit_op(108); emit_op(106); ev_i32(4); emit_op(106); ev_get(xl); ev_store32();
+    ev_get(al); ev_get(al); ev_load32(); ev_i32(1); emit_op(106); ev_store32();
+    ev_get(al);
+    return 0;
+}
+
+// Общая последовательность pop для arr в локали: len--; результат arr[len].
+fn emit_pop_seq(al) -> int {
+    ev_get(al); ev_get(al); ev_load32(); ev_i32(1); emit_op(107); ev_store32();
+    ev_get(al); ev_get(al); ev_load32(); ev_i32(4); emit_op(108); emit_op(106); ev_i32(4); emit_op(106); ev_load32();
+    return 0;
+}
+// print(a, b, ...) — каждый аргумент конвертируется в строку и печатается
+// отдельной строкой (как в oracle): int → i32_to_str, float → f64_to_str,
+// строка — как есть.
+fn emit_print() -> int {
+    let base = get(0, 7);
+    expect(20);
+    while (tok_kind() != 21 && tok_kind() != 0) {
+        set(0, 7, base);
+        level_or();
+        let t = load32(TSTK() + base * 4);
+        if (t == T_FLT()) { ev_call(F64S_FI()); }
+        else { if (t != T_STR()) { ev_call(I32S_FI()); } }
+        ev_call(0);                 // call env.print (импорт, индекс 0)
+        set(0, 5, 0);
+        set(0, 7, base);
+        if (tok_kind() == 24) { next_token(); }
+    }
+    expect(21);
+    set(0, 5, 0);
+    set(0, 7, base);
+    return 0;
+}
