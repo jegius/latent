@@ -65,6 +65,10 @@ export function formatValue(value) {
     if (Array.isArray(value)) return '[' + value.map(v => formatValue(v)).join(', ') + ']';
     if (typeof value === 'boolean') return value ? 'true' : 'false';
     if (value && value.__promise) return formatValue(value.value);
+    if (value && value.__tag && value.__enum && Array.isArray(value.__enumArgs)) {
+        if (value.__enumArgs.length === 0) return value.__tag;
+        return `${value.__tag}(${value.__enumArgs.map(formatValue).join(', ')})`;
+    }
     if (value && value.__tag) return value.value === undefined
         ? value.__tag : `${value.__tag}(${formatValue(value.value)})`;
     if (value && value.__semantic) return `Semantic(${value.text})`;

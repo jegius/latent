@@ -8,12 +8,17 @@ export const declarationMethods = {
     parseProgram() {
         const functions = {};
         const classes = {};
+        const enums = {};
         const tests = [];
+        // statements — исходный порядок объявлений (нужен линковщику модулей:
+        // import/export/function/class/enum сохраняются как узлы AST).
+        const statements = [];
         while (!this.check(TokenType.EOF)) {
             const decl = this.parseDeclaration();
-            this.registerDeclaration(decl, functions, classes, tests);
+            statements.push(decl);
+            this.registerDeclaration(decl, functions, classes, tests, enums);
         }
-        return { type: 'Program', functions, classes, tests };
+        return { type: 'Program', functions, classes, enums, tests, statements };
     },
 
     /**
@@ -23,6 +28,9 @@ export const declarationMethods = {
      */
     parseDeclaration() {
         if (this.check(TokenType.Punct, '@')) return this.parseDecorator();
+        if (this.check(TokenType.Keyword, 'import')) return this.parseImportDeclaration();
+        if (this.check(TokenType.Keyword, 'export')) return this.parseExportDeclaration();
+        if (this.check(TokenType.Keyword, 'enum')) return this.parseEnumDeclaration();
         if (this.check(TokenType.Keyword, 'class')) return this.parseClass();
         if (this.isAsyncFn()) return this.parseFunction();
         if (this.check(TokenType.Keyword, 'fn')) return this.parseFunction();
@@ -30,13 +38,19 @@ export const declarationMethods = {
     },
 
     /** Регистрирует верхнеуровневое объявление в соответствующих таблицах. */
-    registerDeclaration(decl, functions, classes, tests) {
+    registerDeclaration(decl, functions, classes, tests, enums) {
+        if (!decl || typeof decl !== 'object') return;
         if (decl.type === 'Decorator') {
-            this.registerDeclaration(decl.target, functions, classes, tests);
+            this.registerDeclaration(decl.target, functions, classes, tests, enums);
+            return;
+        }
+        if (decl.type === 'Export') {
+            this.registerDeclaration(decl.declaration, functions, classes, tests, enums);
             return;
         }
         if (decl.type === 'Function') functions[decl.name] = decl;
         else if (decl.type === 'Class') classes[decl.name] = decl;
+        else if (decl.type === 'Enum') enums[decl.name] = decl;
         else if (decl.type === 'Test') tests.push(decl);
     },
 
@@ -176,9 +190,14 @@ export const declarationMethods = {
 
     parseBlock() {
         this.expect(TokenType.Punct, '{');
+        this.blockDepth++;
         const statements = [];
-        while (!this.check(TokenType.Punct, '}') && !this.check(TokenType.EOF)) {
-            statements.push(this.parseDeclaration());
+        try {
+            while (!this.check(TokenType.Punct, '}') && !this.check(TokenType.EOF)) {
+                statements.push(this.parseDeclaration());
+            }
+        } finally {
+            this.blockDepth--;
         }
         this.expect(TokenType.Punct, '}');
         return { type: 'Block', statements };

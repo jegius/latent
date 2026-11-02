@@ -59,6 +59,33 @@ export function analyzeCode(source) {
 }
 
 /**
+ * Суммарные метрики многофайлового проекта (для вкладки AI Insights).
+ * Сложность берётся «худшая» из файлов.
+ * @param {Array<{code?:string, source?:string}>} files
+ * @returns {object}
+ */
+export function analyzeProject(files) {
+    const total = {
+        functions: 0, loops: 0, conditionals: 0, arrays: 0,
+        recursiveCalls: 0, aiCalls: 0, lines: 0, tokens: 0,
+        functionNames: [], complexity: 'O(1)',
+    };
+    const rank = { 'O(1)': 0, 'O(n)': 1, 'O(n log n)': 2, 'O(n²)': 3, 'O(n) — O(2^n)': 4 };
+    let worst = -1;
+    for (const file of files || []) {
+        const stats = analyzeCode(String(file.code ?? file.source ?? ''));
+        for (const key of ['functions', 'loops', 'conditionals', 'arrays',
+            'recursiveCalls', 'aiCalls', 'lines', 'tokens']) {
+            total[key] += stats[key] || 0;
+        }
+        total.functionNames.push(...stats.functionNames);
+        const fileRank = rank[stats.complexity] ?? 0;
+        if (fileRank > worst) { worst = fileRank; total.complexity = stats.complexity; }
+    }
+    return total;
+}
+
+/**
  * Считает вызовы функции `name` внутри её собственного тела (рекурсия).
  * @param {object} node — узел AST
  * @param {string} name — имя функции

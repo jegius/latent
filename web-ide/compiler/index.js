@@ -23,7 +23,7 @@ export {
     clearAICache, getAICacheSize, persistentAICache, aiCacheKey,
 } from './ai-config.js';
 export { checkAIGateway, aiInferRemote } from './lazy-ai.js';
-export { analyzeCode, countSelfCalls } from './analysis.js';
+export { analyzeCode, analyzeProject, countSelfCalls } from './analysis.js';
 export { extractCode, deterministicRepair, collectAIPrompts } from './repair-core.js';
 export { repairCode } from './lazy-ai.js';
 export {
@@ -33,4 +33,7 @@ export {
 } from './host-features.js';
 export { loadWasmCompiler } from './loader.js';
 export { loadCompiler, compile, checkSyntax, getVersion } from './loader.js';
-export { runLatent } from './run.js';
+export { runLatent, runLatentProject } from './run.js';
+export { ModuleError, normalizeModulePath, resolveImportPath, resolveModuleGraph, sourceHasModuleSyntax, ModuleCache, sharedModuleCache, hashString } from './modules.js';
+export { linkModuleProject, clearLinkedModuleCache } from './modules-link.js';
+export { MANIFEST_MAGIC, buildModuleManifest, encodeModuleManifest, decodeModuleManifest, projectHash } from './modules-manifest.js';

@@ -19,7 +19,14 @@ export function evaluate(interp, expr, env) {
         case 'Bool': return expr.value;
         case 'Null': return null;
         case 'Array': return expr.elements.map(e => evaluate(interp, e, env));
-        case 'Ident': return env.get(expr.name);
+        case 'Ident': {
+            if (env.has(expr.name)) return env.get(expr.name);
+            // 0-арный enum-вариант используется как значение (`Red`).
+            if (interp.isEnumVariant(expr.name)) {
+                return interp.createEnumVariant(expr.name, []);
+            }
+            return env.get(expr.name);
+        }
         case 'This': return env.get('this');
 
         case 'Unary': {
@@ -182,6 +189,13 @@ function matchPattern(pattern, value, binds) {
             return true;
         case 'Constructor': {
             if (!(value && value.__tag === pattern.name)) return false;
+            // Объявленный enum: связываем каждое поле варианта (Rect(w, h)).
+            if (value.__enum) {
+                if (value.__enumArgs.length !== pattern.args.length) return false;
+                return pattern.args.every(
+                    (sub, i) => matchPattern(sub, value.__enumArgs[i], binds));
+            }
+            // Встроенные Ok/Err/Some: одно поле, как раньше.
             if (pattern.args.length === 1) {
                 return matchPattern(pattern.args[0], value.value, binds);
             }

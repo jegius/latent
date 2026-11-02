@@ -18,6 +18,7 @@ import { installHotkeys } from './hotkeys.js';
 import { loadExampleCatalog, loadExampleById } from './examples.js';
 import { fileControllerMethods } from './controllers/file-controller.js';
 import { commandControllerMethods } from './controllers/command-controller.js';
+import { wasmControllerMethods } from './controllers/wasm-controller.js';
 import { aiSettingsControllerMethods } from './controllers/ai-settings-controller.js';
 
 /**
@@ -254,7 +255,8 @@ class LatentIDEController {
 
 // Подмешиваем обработчики из контроллеров
 Object.assign(LatentIDEController.prototype,
-    fileControllerMethods, commandControllerMethods, aiSettingsControllerMethods);
+    fileControllerMethods, commandControllerMethods, wasmControllerMethods,
+    aiSettingsControllerMethods);
 
 // Запуск IDE: лениво грузим каталог примеров (манифест) и только один
 // стартовый исходник. Остальные .lat подтягиваются по клику через

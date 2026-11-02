@@ -14,13 +14,20 @@ export class Interpreter {
     constructor(program, output) {
         this.functions = program.functions || {};
         this.classes = program.classes || {};
+        this.enums = program.enums || {};
         this.tests = program.tests || [];
+        // Имя main после линковки модулей (например, m1$main); для однофайловой
+        // программы остаётся 'main'.
+        this.mainName = program.mainName || 'main';
         this.output = output; // колбэк для print
         this.globals = new Environment();
         this.aiEnabled = false;
         this.aiCache = null; // Map<prompt, response>, заполняется pre-fetch'ем
         this.streams = new Map(); // handle -> { tokens, pos }
         this.nextStreamHandle = 1;
+        // Конструкторы enum-вариантов: имя варианта → { enumName, arity }.
+        this.enumVariants = new Map();
+        this.registerEnums(this.enums);
         // Планировщик горутин: очередь готовых к выполнению задач
         this.taskQueue = [];
         this.spawnCount = 0;
@@ -33,11 +40,46 @@ export class Interpreter {
 
     enableAI() { this.aiEnabled = true; }
 
+    /** Регистрирует варианты всех enum-объявлений в таблице конструкторов. */
+    registerEnums(enums) {
+        for (const node of Object.values(enums || {})) this.registerEnum(node);
+    }
+
+    /** Регистрирует варианты одного enum (в т.ч. вложенного объявления). */
+    registerEnum(node) {
+        if (!node || !Array.isArray(node.variants)) return;
+        for (const variant of node.variants) {
+            this.enumVariants.set(variant.name, {
+                enumName: node.name,
+                arity: Array.isArray(variant.fields) ? variant.fields.length : 0,
+            });
+        }
+    }
+
+    /** true, если имя — конструктор enum-варианта. */
+    isEnumVariant(name) { return this.enumVariants.has(name); }
+
+    /** Создаёт значение enum-варианта; проверяет арность (как Rust codegen). */
+    createEnumVariant(name, args) {
+        const info = this.enumVariants.get(name);
+        if (!info) return undefined;
+        if (args.length !== info.arity) {
+            throw new Error(
+                `Enum variant '${name}' expects ${info.arity} field(s), got ${args.length}`);
+        }
+        return {
+            __tag: name,
+            __enum: true,
+            __enumArgs: args.slice(),
+            value: args.length === 0 ? undefined : args.length === 1 ? args[0] : args.slice(),
+        };
+    }
+
     run() {
-        if (!this.functions.main) {
+        if (!this.functions[this.mainName]) {
             throw new Error("Function 'main' not found");
         }
-        const result = this.callFunction('main', []);
+        const result = this.callFunction(this.mainName, []);
         // Дожидаемся завершения всех оставшихся горутин
         this.runScheduler();
         if (this.taskQueue.length > 0) {
@@ -82,7 +124,11 @@ export class Interpreter {
         if (builtin) return builtin.call(this, args);
 
         const fn = this.functions[name];
-        if (!fn) throw new Error(`Undefined function '${name}'`);
+        if (!fn) {
+            // Имя может быть конструктором enum-варианта (`Circle(2)`).
+            if (this.enumVariants.has(name)) return this.createEnumVariant(name, args);
+            throw new Error(`Undefined function '${name}'`);
+        }
 
         const env = new Environment(this.globals);
         fn.params.forEach((param, i) => env.define(param, args[i]));

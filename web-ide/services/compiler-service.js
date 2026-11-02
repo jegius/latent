@@ -7,6 +7,9 @@ import {
     detectHostFeatures, detectAIFeatures, describeFeatures,
     ENGINE1_LABEL,
 } from '../compiler/host-features.js';
+import {
+    isProjectInput, compilerProjectMethods,
+} from './compiler-service-project.js';
 
 /** Первая строка диагностики — для короткого сообщения в UI. */
 function firstLine(message) {
@@ -36,6 +39,8 @@ export class CompilerService {
         /** @type {?{compile: (s: string) => Uint8Array}} движок №2, если загружен */
         this.wasmCompiler = null;
         this.wasmCompilerTried = false;
+        /** @type {Map<string, Uint8Array>} кэш проектов движка №2 (хэш → bytecode) */
+        this.projectCache = new Map();
     }
     /**
      * Компилирует исходный код и возвращает байткод.
@@ -93,6 +98,9 @@ export class CompilerService {
      *     hostFeatures: string[], fallback: boolean, note: string|null}>}
      */
     async compileForRun(source) {
+        if (isProjectInput(source)) {
+            return this.compileForRunProject(source.files, source.entry);
+        }
         const host = detectHostFeatures(source);
         const wasmAvailable = !!this.wasmCompiler;
 
@@ -140,6 +148,9 @@ export class CompilerService {
      * @returns {Promise<RunResult>}
      */
     async compileAndRun(source, withAI = false) {
+        if (isProjectInput(source)) {
+            return this.compileAndRunProject(source.files, source.entry, withAI);
+        }
         const compiled = await this.compileForRun(source);
         const ai = detectAIFeatures(source);
         const autoAI = !withAI && ai.required;
@@ -192,6 +203,10 @@ export class CompilerService {
      * @returns {Promise<RunResult & {repaired: boolean, attempts: number, finalSource: string}>}
      */
     async compileAndRunWithRepair(source, withAI = true, maxAttempts = 3) {
+        if (isProjectInput(source)) {
+            return this.compileAndRunWithRepairProject(
+                source.files, source.entry, withAI, maxAttempts);
+        }
         let currentSource = source;
         let attempts = 0;
         const repairLog = [];
@@ -263,3 +278,8 @@ export class CompilerService {
         return lines.join('\n');
     }
 }
+
+// Многофайловые проекты: методы compileForRunProject/compileAndRunProject/
+// compileAndRunWithRepairProject/checkSyntaxProject/compileWithEngine2Project
+// (вынесены в отдельный модуль, чтобы файл оставался < 300 строк).
+Object.assign(CompilerService.prototype, compilerProjectMethods);

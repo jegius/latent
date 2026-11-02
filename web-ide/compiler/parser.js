@@ -9,6 +9,7 @@ import { matchMethods } from './parser-match.js';
 import { declarationMethods } from './parser-declarations.js';
 import { statementMethods } from './parser-statements.js';
 import { concurrencyMethods } from './parser-concurrency.js';
+import { moduleMethods } from './parser-modules.js';
 
 export class Parser extends ParserBase {}
 
@@ -19,4 +20,5 @@ Object.assign(
     declarationMethods,
     statementMethods,
     concurrencyMethods,
+    moduleMethods,
 );

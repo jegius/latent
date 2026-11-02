@@ -1,46 +1,64 @@
-// controllers/command-controller.js — команды компиляции, движка №2, шаринга и примеров.
-// Единственная ответственность: обработчики Run/Check/WASM/Share/Example.
+// controllers/command-controller.js — команды компиляции, шаринга и примеров.
+// Единственная ответственность: обработчики Run/Check/Share/Example.
+// Команды движка №2 (Engine #2/WASM) — в wasm-controller.js.
 // Методы применяются к прототипу LatentIDEController (миксин).
 
 import { loadExampleById } from '../examples.js';
 import { Modal } from '../views/modal-view.js';
-import {
-    detectHostFeatures, isHostRuntimeError, explainEngine2HostLimit,
-    ENGINE1_LABEL, ENGINE2_LABEL,
-} from '../compiler/host-features.js';
+import { ENGINE1_LABEL } from '../compiler/host-features.js';
+import { projectUsesModules } from '../services/compiler-service-project.js';
 
 export const commandControllerMethods = {
     /**
-     * Компилирует и запускает код, обновляет все вкладки вывода.
+     * Компилирует и запускает код (активный файл = entry проекта).
      * @param {boolean} withAI
      */
     async handleCompile(withAI) {
         const source = this.editor.getCode();
+        const project = this.buildProject();
+        let useProject = false;
 
         try {
+            useProject = projectUsesModules(project.files, project.entry);
             this.outputView.setStatus(withAI ? 'Compiling with AI...' : 'Compiling...');
             this.outputView.clearConsole();
 
             const {
                 result, logs, bytecode, analysis, repaired, attempts, finalSource,
-                repairLog, notes, engineLabel,
+                repairLog, notes, engineLabel, modules, modulePaths,
             } = withAI
-                ? await this.compilerService.compileAndRunWithRepair(source, true)
-                : await this.compilerService.compileAndRun(source, false);
+                ? (useProject
+                    ? await this.compilerService.compileAndRunWithRepairProject(
+                        project.files, project.entry, true)
+                    : await this.compilerService.compileAndRunWithRepair(source, true))
+                : (useProject
+                    ? await this.compilerService.compileAndRunProject(
+                        project.files, project.entry, false)
+                    : await this.compilerService.compileAndRun(source, false));
 
             this.outputView.setStatus(withAI ? 'Running with AI...' : 'Running...');
 
             // Self-repair: если код был исправлен моделью — обновляем редактор
-            if (repaired && finalSource && finalSource !== source) {
+            if (repaired && finalSource && finalSource !== source && !useProject) {
                 this.editor.setCode(finalSource);
                 this.workspace.updateCode(this.workspace.activeId, finalSource);
                 this.outputView.appendConsole(
                     `[Self-repair] Fixed after ${attempts} attempt(s):\n${repairLog.join('\n')}\n\n`);
+            } else if (repaired && finalSource && useProject) {
+                this.editor.setCode(finalSource);
+                this.workspace.updateCode(this.workspace.activeId, finalSource);
+                this.outputView.appendConsole(
+                    `[Self-repair] Fixed entry file after ${attempts} attempt(s):\n` +
+                    `${repairLog.join('\n')}\n\n`);
             }
 
             // Пояснения о выборе движка/фолбэке — до вывода программы.
             for (const note of notes || []) {
                 this.outputView.appendConsole(`[engine] ${note}\n`);
+            }
+            if (useProject && modules) {
+                this.outputView.appendConsole(
+                    `[modules] ${modules} file(s): ${(modulePaths || []).join(', ')}\n`);
             }
             for (const line of logs) {
                 this.outputView.appendConsole(line + '\n');
@@ -70,94 +88,20 @@ export const commandControllerMethods = {
         }
     },
 
-    /**
-     * Компилирует код нативным движком №2 (Rust→WASM) и показывает байткод.
-     * Это явный выбор engine #2: если программа host-зависима, показываем
-     * понятное пояснение и предлагаем запустить её в engine #1 (кнопкой).
-     */
-    async handleBuildWasm() {
-        this.outputView.setStatus('Loading engine #2...', 'info');
-        const ok = await this.compilerService.ensureWasmCompiler();
-        this.refreshEngineStatus(ENGINE1_LABEL);
-        if (!ok) {
-            this.outputView.setStatus('Engine #2 unavailable — check compiler.wasm', 'error');
-            return;
-        }
-        const source = this.editor.getCode();
-        const host = detectHostFeatures(source);
-        if (host.host) {
-            await this.offerRunInEngine1(host.features, null);
-            return;
-        }
-        try {
-            const bytecode = this.compilerService.compileWithEngine2(source);
-            this.outputView.switchTab('wasm');
-            this.outputView.setWasmOutput(
-                `Compiled by engine #2 (Rust → WASM)\n` +
-                this.compilerService.formatBytecode(bytecode));
-            this.refreshEngineStatus(ENGINE2_LABEL);
-            this.outputView.setStatus('✓ Compiled with engine #2', 'success');
-        } catch (e) {
-            if (isHostRuntimeError(e)) {
-                await this.offerRunInEngine1(detectHostFeatures(source).features, e);
-                return;
-            }
-            this.outputView.switchTab('wasm');
-            this.outputView.setWasmOutput(`Engine #2 error:\n${e.message}`);
-            this.refreshEngineStatus(ENGINE2_LABEL);
-            this.outputView.setStatus('✗ Engine #2 error', 'error');
-        }
-    },
-
-    /**
-     * Объясняет ограничение engine #2 и предлагает запуск в engine #1.
-     * @param {string[]} features — host-фичи, найденные в программе
-     * @param {Error|null} error — диагностика engine #2 (если была)
-     */
-    async offerRunInEngine1(features, error) {
-        const explanation = explainEngine2HostLimit(features);
-        this.outputView.switchTab('wasm');
-        this.outputView.setWasmOutput(
-            explanation + (error ? `\n\nEngine #2: ${error.message}` : ''));
-        this.refreshEngineStatus(ENGINE1_LABEL);
-        this.outputView.setStatus(`${ENGINE1_LABEL} — host-фичи`, 'info');
-        const runInEngine1 = await Modal.confirm({
-            title: 'Engine #2 не поддерживает host-фичи',
-            message: `${explanation}\n\nЗапустить программу в engine #1 (host runtime)?`,
-            confirmText: 'Run in engine #1',
-            cancelText: 'Остаться в Engine #2',
-        });
-        if (runInEngine1) await this.handleCompile(false);
-    },
-
-    /** Обновляет индикатор движка исполнения в статус-баре. */
-    refreshEngineStatus(engineLabel = ENGINE1_LABEL) {
-        const el = document.getElementById('status-engine');
-        if (!el) return;
-        el.textContent = engineLabel;
-    },
-
+    /** Проверяет синтаксис активного файла и линковку проекта. */
     async handleCheckSyntax() {
-        const source = this.editor.getCode();
+        const project = this.buildProject();
         try {
-            await this.compilerService.checkSyntax(source);
+            const useProject = projectUsesModules(project.files, project.entry);
+            if (useProject) {
+                await this.compilerService.checkSyntaxProject(project.files, project.entry);
+            } else {
+                await this.compilerService.checkSyntax(this.editor.getCode());
+            }
             this.outputView.setStatus('✓ Syntax OK', 'success');
         } catch (e) {
             this.outputView.setStatus(`✗ ${e.message}`, 'error');
-        }
-    },
-
-    async handleWasmTab() {
-        if (this.compilerService.hasWasmCompiler() || this.wasmTabChecked) return;
-        this.wasmTabChecked = true;
-        this.outputView.setStatus('Loading WASM compiler (engine #2)...', 'info');
-        const ok = await this.compilerService.ensureWasmCompiler();
-        this.refreshEngineStatus();
-        if (ok) {
-            this.outputView.setStatus('✓ WASM compiler loaded (engine #2)', 'success');
-        } else {
-            this.outputView.setStatus(
-                'WASM compiler unavailable — showing engine #1 bytecode', 'info');
+            this.outputView.appendConsole(`Check failed: ${e.message}\n`);
         }
     },
 
@@ -238,6 +182,7 @@ export const commandControllerMethods = {
             message: 'Latent IDE · web · engine #1 (host runtime) · v0.1.0\n'
                 + 'Движок №1 исполняет полный язык: каналы, select/spawn, AI, тензоры, контракты.\n'
                 + 'Движок №2: Rust-компилятор → WebAssembly (подмножество без host-фич).\n'
+                + 'Модули: активный файл = entry; import/export, enum и многофайловые проекты.\n'
                 + 'Host-программы автоматически исполняются в engine #1.\n'
                 + 'Ctrl/⌘+Enter — Run, Ctrl/⌘+Shift+Enter — Run with AI, Ctrl/⌘+S — Save.',
         });

@@ -60,13 +60,32 @@ export class WorkspaceService {
     }
 
     /**
+     * Уникальное имя в workspace: `main-2.lat`, если `main.lat` уже занят.
+     * Уникальность важна для модулей: два файла с одним путём нельзя
+     * однозначно залинковать.
+     * @param {string} name
+     * @param {string|null} [exceptId] — файл, который переименовываем
+     * @returns {string}
+     */
+    uniqueName(name, exceptId = null) {
+        const base = WorkspaceService.normalizeName(name);
+        const taken = (candidate) => this.files.some(
+            (f) => f.name === candidate && f.id !== exceptId);
+        if (!taken(base)) return base;
+        const stem = base.slice(0, -'.lat'.length);
+        let index = 2;
+        while (taken(`${stem}-${index}.lat`)) index++;
+        return `${stem}-${index}.lat`;
+    }
+
+    /**
      * Создаёт новый файл.
      * @param {string} name
      * @param {string} [code]
      * @returns {LatentFile}
      */
     createFile(name, code = '') {
-        const fileName = WorkspaceService.normalizeName(name);
+        const fileName = this.uniqueName(name);
         const file = {
             id: nextId(),
             name: fileName,
@@ -105,7 +124,7 @@ export class WorkspaceService {
     renameFile(id, name) {
         const file = this.getFile(id);
         if (!file) return false;
-        file.name = WorkspaceService.normalizeName(name);
+        file.name = this.uniqueName(name, id);
         this.save();
         return true;
     }

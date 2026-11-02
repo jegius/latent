@@ -79,6 +79,18 @@ test('renameFile нормализует имя', () => {
     assert.equal(ws.getFile(a.id).name, 'renamed.lat');
 });
 
+test('имена файлов уникальны (важно для путей модулей)', () => {
+    const ws = new WorkspaceService({ storage: memStorage() });
+    const a = ws.createFile('main');
+    const b = ws.createFile('main');
+    assert.equal(a.name, 'main.lat');
+    assert.equal(b.name, 'main-2.lat');
+    ws.renameFile(b.id, 'main');
+    assert.equal(ws.getFile(b.id).name, 'main-2.lat', 'не перетирает существующий main.lat');
+    ws.renameFile(b.id, 'other');
+    assert.equal(ws.getFile(b.id).name, 'other.lat');
+});
+
 test('персистентность через storage', () => {
     const store = memStorage();
     const ws1 = new WorkspaceService({ storage: store });

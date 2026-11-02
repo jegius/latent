@@ -5,6 +5,25 @@
 import { Modal } from '../views/modal-view.js';
 
 export const fileControllerMethods = {
+    /**
+     * Собирает project-input для компиляции: все .lat-файлы workspace,
+     * активный файл — entry. Код активного файла берётся из редактора
+     * (источник истины при наборе), остальные — из workspace.
+     * @returns {{files:Array<{name:string,code:string}>, entry:string}}
+     */
+    buildProject() {
+        const active = this.workspace.getActive();
+        const activeCode = this.editor.getCode();
+        const files = this.workspace.files.map((file) => ({
+            name: file.name,
+            code: file.id === this.workspace.activeId ? activeCode : file.code,
+        }));
+        return {
+            files,
+            entry: active ? active.name : (files[0] ? files[0].name : 'main.lat'),
+        };
+    },
+
     refreshFileTree() {
         this.fileTreeView.render(this.workspace.files, this.workspace.activeId);
         if (this.examples && this.examples.length) {

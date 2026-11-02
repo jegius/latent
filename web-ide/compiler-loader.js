@@ -17,12 +17,17 @@ export {
     // AI-конфигурация и гейтвей
     configureAI, getAIConfig, clearAICache, getAICacheSize, checkAIGateway,
     // Анализ и ремонт
-    analyzeCode, repairCode, extractCode, deterministicRepair,
+    analyzeCode, analyzeProject, repairCode, extractCode, deterministicRepair,
     // Определение host-фич и метки движков
     detectHostFeatures, detectAIFeatures, isHostRuntimeError,
     describeFeatures, explainEngine2HostLimit, ENGINE1_LABEL, ENGINE2_LABEL,
     // Загрузчики движков
     loadCompiler, compile, checkSyntax, getVersion, loadWasmCompiler,
-    // Запуск программы
-    runLatent,
+    // Запуск программы (однофайловой и многофайловой)
+    runLatent, runLatentProject, linkModuleProject, clearLinkedModuleCache,
+    // Резолвер модулей и манифест LPF1 для движка №2
+    ModuleError, normalizeModulePath, resolveImportPath, resolveModuleGraph,
+    sourceHasModuleSyntax, ModuleCache, sharedModuleCache,
+    MANIFEST_MAGIC, buildModuleManifest, encodeModuleManifest,
+    decodeModuleManifest, projectHash,
 } from './compiler/index.js';

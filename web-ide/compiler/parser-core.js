@@ -7,6 +7,9 @@ export class ParserBase {
     constructor(tokens) {
         this.tokens = tokens;
         this.pos = 0;
+        // Глубина вложенности блоков: import/export разрешены только на
+        // верхнем уровне модуля (blockDepth === 0).
+        this.blockDepth = 0;
     }
 
     peek(offset = 0) { return this.tokens[this.pos + offset]; }

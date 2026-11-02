@@ -128,6 +128,11 @@ export function execute(interp, stmt, env) {
             interp.classes[stmt.name] = stmt;
             break;
         }
+        case 'Enum': {
+            // Вложенное enum-объявление: регистрируем его варианты-конструкторы.
+            interp.registerEnum(stmt);
+            break;
+        }
         case 'Assert': {
             const args = stmt.args.map(a => evaluate(interp, a, env));
             if (!isTruthy(args[0])) {

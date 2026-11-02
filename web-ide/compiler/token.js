@@ -20,7 +20,9 @@ export const KEYWORDS = new Set([
     'fn', 'let', 'if', 'else', 'while', 'for', 'in', 'return',
     'true', 'false', 'null', 'print',
     // OOP
-    'class', 'new', 'this',
+    'class', 'new', 'this', 'enum',
+    // модули (файловые import/export)
+    'import', 'export', 'from', 'as',
     // async
     'async', 'await',
     // конкурентность
@@ -40,5 +42,5 @@ export const KEYWORDS = new Set([
 export const SOFT_KEYWORDS = new Set([
     'test', 'assert', 'assert_eq', 'forall', 'snapshot',
     'ai_contract', 'enforce_contract', 'tensor', 'semantic',
-    'case', 'default',
+    'case', 'default', 'from', 'as',
 ]);

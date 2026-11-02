@@ -47,14 +47,14 @@ pnpm run preview      # локальный просмотр dist/ (http://localh
 
 | Файл | Размер | gzip |
 |---|---:|---:|
-| `dist/assets/compiler-*.wasm` | 465.44 kB | 134.85 kB |
-| `dist/assets/core-*.js` | 40.32 kB | 11.58 kB |
-| `dist/assets/index-*.js` (entry) | 37.96 kB | 11.19 kB |
+| `dist/assets/compiler-*.wasm` | 630.34 kB | 177.82 kB |
+| `dist/assets/core-*.js` | 57.21 kB | 16.63 kB |
+| `dist/assets/index-*.js` (entry) | 45.77 kB | 13.17 kB |
 | `dist/assets/examples-*.js` | 32.19 kB | 9.03 kB |
 | `dist/assets/editor-*.js` | 13.70 kB | 4.26 kB |
 | `dist/assets/ai-*.js` | 4.76 kB | 2.24 kB |
 | `dist/assets/formatter-service-*.js` | 3.46 kB | 1.37 kB |
-| `dist/assets/engine2-*.js` | 1.88 kB | 0.79 kB |
+| `dist/assets/engine2-*.js` | 2.39 kB | 0.94 kB |
 | `dist/assets/index-*.css` | 12.86 kB | 3.05 kB |
 
 Как это читать:
@@ -100,6 +100,71 @@ node scripts/sync-playground.mjs --check
 | **№1** | Tree-walking интерпретатор на JS. Полная семантика языка: классы/OOP, pattern matching, async/await, каналы, goroutines, select/yield, тензоры, AI-примитивы, тесты и контракты, self-repair. | `compiler/` |
 | **№2** | Настоящий компилятор Latent (Rust) → WebAssembly. Загружается лениво, кэшируется через Cache API. | `compiler.wasm` |
 
+## Модули и многофайловые проекты
+
+Дерево файлов workspace — это проект: **активный файл = entry**, остальные
+`.lat`-файлы доступны через `import`. Поддерживаются `fn`, `class` и `enum`.
+
+```latent
+// math.lat
+export fn square(x: int) -> int { return x * x; }
+
+export enum Shape { Circle(int), Rect(int, int) }
+
+// main.lat
+import { square, Shape } from "./math.lat";
+import { square as sq } from "./math.lat";
+
+fn main() -> int {
+    let s = Circle(2);
+    return match s { case Circle(r): { return square(r) + sq(r); } default: 0 };
+}
+```
+
+Правила v1:
+
+- `import { name, name as alias } from "./path.lat";` и
+  `import "./path.lat";` (подключить модуль). Путь — только относительный,
+  расширение `.lat` обязательно; `..` разрешён, но выход за корень workspace —
+  ошибка.
+- `export` — только перед top-level `fn`/`class`/`enum`. Варианты enum
+  становятся видимы вместе с импортированным enum-типом (`Circle(2)` работает
+  без отдельного импорта варианта).
+- Циклы импорта разрешены (линковка двухфазная); каждый файл загружается один
+  раз по каноническому пути (`./lib/../math.lat` → `math.lat`).
+- Ошибки — с путём и строкой: файл не найден, символ не экспортирован,
+  дубликат импортированного имени, импорт/экспорт не на top-level, абсолютный
+  путь или путь без `.lat`. В консоли playground они показываются как
+  `main.lat:3: ...`.
+
+Как это устроено:
+
+| Часть | Модуль |
+|---|---|
+| Резолвер путей, DFS, циклы, ошибки, кэш разбора | `compiler/modules.js` |
+| Двухфазная линковка и манглинг имён `<moduleIdx>$<name>` | `compiler/modules-link.js`, `compiler/modules-rewrite.js` |
+| Манифест `LPF1` для движка №2 и хэш проекта | `compiler/modules-manifest.js` |
+| Запуск проекта в движке №1 | `compiler/run.js` → `runLatentProject` |
+| Интеграция в сервис/UI | `services/compiler-service-project.js`, `controllers/wasm-controller.js` |
+
+- **Движок №1** линкует модули нативно (общий парсер JS, отдельный от Rust),
+  кэширует разобранные модули по хэшу содержимого и исполняет проект целиком,
+  включая host-фичи (каналы, AI, тензоры, `test`).
+- **Движок №2** получает все `.lat`-файлы workspace одним манифестом `LPF1`
+  (`magic "LPF1"`, `u32 file_count`, файлы `path/src`, `u32 entry_index`) в
+  `latent_compile_files`; результат кэшируется по хэшу набора файлов.
+  Поставляемый `compiler.wasm` уже экспортирует этот C-ABI (проверяется
+  `supportsModules`). Если загружена старая сборка без ABI, кнопка **Engine #2**
+  честно сообщает «engine #2 пока без модулей» и предлагает **Run in engine #1**;
+  однофайловый `latent_compile` продолжает работать как раньше.
+- `Run` / `Run with AI` / `Check` / `Engine #2` / `Format` работают с активным
+  файлом как entry; для `Format` форматируется активный файл (модули не
+  переписываются). При импорте отсутствующего файла ошибка подсказывает
+  создать его через `＋` в дереве проекта.
+- `enum` в движке №1: конструкторы проверяют арность (как Rust codegen), в
+  `match` связываются все поля варианта (`case Rect(w, h)`), 0-арные варианты
+  используются как значения.
+
 ### Поддержка фич по движкам
 
 | Фича | Движок №1 (JS) | Движок №2 (Rust→WASM) |
@@ -108,6 +173,8 @@ node scripts/sync-playground.mjs --check
 | функции, рекурсия, лямбды `fn(x) => …`, замыкания | ✅ | ✅ (частично: лямбды) |
 | массивы, индексация, `push`/`pop`/`length`, `len` | ✅ | ✅ |
 | `class` / `new` / `this` (поля, `init`, методы) | ✅ | ✅ (структуры) |
+| `enum` (варианты-конструкторы, `match`) | ✅ | ✅ |
+| `import`/`export` (файловые модули) | ✅ | ✅ (C-ABI `latent_compile_files`, манифест `LPF1`) |
 | `match`/`case`/`default` (литералы, `_`, связки, `Ok`/`Err`) | ✅ | ✅ |
 | `async`/`await` (Promise) | ✅ | ✅ (await — passthrough) |
 | `channel`, `spawn`, `<-` (send/recv), `select`, `yield` | ✅ | ⚠️ только суррогаты; `channel`/`<-` — host-ошибка |
@@ -170,7 +237,7 @@ IDE автоматически подгружает движок №2 при п�
 
 ```bash
 cd web-ide
-node --test "test/*.test.js" "test/*.test.mjs"      # 368 тестов
+node --test "test/*.test.js" "test/*.test.mjs"      # 414 тестов
 node --experimental-test-coverage --test "test/*.test.js" "test/*.test.mjs"   # покрытие
 # либо через npm/pnpm-скрипты:
 pnpm test          # node --test (JS + bundling .mjs)
@@ -178,8 +245,8 @@ pnpm coverage      # node --experimental-test-coverage
 pnpm run check:structure   # аудит SOLID/декомпозиции (файлы < 300 строк, тонкие фасады)
 ```
 
-Текущее покрытие (node v24, `--experimental-test-coverage`): **99.53% строк,
-96.92% ветвей, 98.39% функций** (модули движка/сервисов; подробная таблица —
+Текущее покрытие (node v24, `--experimental-test-coverage`): **97.51% строк,
+91.47% ветвей, 98.52% функций** (модули движка/сервисов; подробная таблица —
 `docs/docs/specs/webide-architecture.md`).
 
 Покрытие: лексер/парсер/интерпретатор движка №1 (включая `assert_eq` со
@@ -203,7 +270,8 @@ web-ide/
 ├── compiler/             движок №1 по зонам ответственности
 │   ├── token.js · lexer.js · parser-core.js · parser-declarations.js
 │   ├── parser-statements.js · parser-expressions.js · parser-match.js
-│   ├── parser-concurrency.js · parser.js
+│   ├── parser-concurrency.js · parser-modules.js · parser.js
+│   ├── modules.js · modules-link.js · modules-rewrite.js · modules-manifest.js
 │   ├── environment.js · oop.js · value-utils.js
 │   ├── interpreter.js · interpreter-statements.js
 │   ├── interpreter-expressions.js · interpreter-builtins.js · interpreter-ai.js
@@ -217,14 +285,14 @@ web-ide/
 │                         index.js
 ├── examples.js           barrel-фасад примеров (async API)
 ├── hot-reload.js         дебаунсер автоперезапуска
-├── controllers/          file-, command-, ai-settings-controller
+├── controllers/          file-, command-, wasm-, ai-settings-controller
 ├── views/                canvas-editor (barrel), output-view, toolbar-view,
 │   │                     ai-settings-view, file-tree-view, menubar-view
 │   └── editor/           theme, metrics, renderer, input (ввод/textarea),
 │                         pointer (мышь/скролл), navigation (стрелки/правка),
 │                         line-tokenizer
-├── services/             compiler-service, ai-settings-service,
-│                         workspace-service, share-service
+├── services/             compiler-service (+ compiler-service-project),
+│                         ai-settings-service, workspace-service, share-service
 ├── test/                 node:test (*.test.js + bundling.test.mjs — без запуска vite)
 ├── scripts/              check-structure.mjs (аудит SRP/декомпозиции)
 └── styles/               base, menubar, toolbar, panels, editor,

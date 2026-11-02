@@ -65,25 +65,52 @@ export async function loadWasmCompiler(opts = {}) {
         const { instance } = await WebAssembly.instantiate(bytes, imports);
         const exports = instance.exports;
 
-        // Реальный ABI движка №2 (см. src/lib.rs): latent_alloc / latent_compile.
-        if (typeof exports.latent_compile === 'function' && exports.memory) {
-            const compile = (source) => {
-                const enc = new TextEncoder().encode(source);
-                const srcPtr = exports.latent_alloc(enc.length || 1);
-                new Uint8Array(exports.memory.buffer).set(enc, srcPtr);
-                const resPtr = exports.latent_compile(srcPtr, enc.length);
+        // Реальный ABI движка №2 (см. src/lib.rs): latent_alloc / latent_compile
+        // и опциональный модульный latent_compile_files (манифест "LPF1").
+        const hasCompile = typeof exports.latent_compile === 'function';
+        const hasCompileFiles = typeof exports.latent_compile_files === 'function';
+        if ((hasCompile || hasCompileFiles) && exports.memory) {
+            /** Читает [status u32][len u32][payload] и освобождает буфер. */
+            const readCompileResult = (resPtr, statusErrorPrefix) => {
                 const view = new DataView(exports.memory.buffer);
                 const status = view.getUint32(resPtr, true);
                 const len = view.getUint32(resPtr + 4, true);
                 const payload = new Uint8Array(exports.memory.buffer, resPtr + 8, len).slice();
-                // Освобождаем входной и выходной буферы
-                try { exports.latent_free(srcPtr, enc.length || 1); } catch (e) { /* ignore */ }
                 try { exports.latent_free(resPtr, 8 + len); } catch (e) { /* ignore */ }
                 if (status !== 1) {
-                    throw new Error(new TextDecoder().decode(payload));
+                    throw new Error(
+                        (statusErrorPrefix ? `${statusErrorPrefix}: ` : '') +
+                        new TextDecoder().decode(payload));
                 }
                 return payload;
             };
+
+            const compile = hasCompile
+                ? (source) => {
+                    const enc = new TextEncoder().encode(source);
+                    const srcPtr = exports.latent_alloc(enc.length || 1);
+                    new Uint8Array(exports.memory.buffer).set(enc, srcPtr);
+                    const resPtr = exports.latent_compile(srcPtr, enc.length);
+                    // Освобождаем входной буфер; выходной — внутри readCompileResult
+                    try { exports.latent_free(srcPtr, enc.length || 1); } catch (e) { /* ignore */ }
+                    return readCompileResult(resPtr);
+                }
+                : () => { throw new Error('Engine #2: latent_compile is not exported'); };
+
+            // Модульный ABI: JS кодирует манифест LPF1, C-ABI только читает байты.
+            const compileFiles = hasCompileFiles
+                ? (manifest) => {
+                    const bytes = manifest instanceof Uint8Array
+                        ? manifest
+                        : new Uint8Array(manifest);
+                    const manifestPtr = exports.latent_alloc(bytes.length || 1);
+                    new Uint8Array(exports.memory.buffer).set(bytes, manifestPtr);
+                    const resPtr = exports.latent_compile_files(manifestPtr, bytes.length);
+                    try { exports.latent_free(manifestPtr, bytes.length || 1); } catch (e) { /* ignore */ }
+                    return readCompileResult(resPtr);
+                }
+                : null;
+
             let version = 'latent-wasm';
             if (typeof exports.latent_version === 'function') {
                 try {
@@ -94,7 +121,14 @@ export async function loadWasmCompiler(opts = {}) {
                         new Uint8Array(exports.memory.buffer, vPtr + 4, vLen));
                 } catch (e) { /* ignore */ }
             }
-            return { compile, source: 'wasm', version };
+            return {
+                compile,
+                compileFiles,
+                supportsModules: hasCompileFiles,
+                moduleAbi: hasCompileFiles ? 'LPF1' : null,
+                source: 'wasm',
+                version,
+            };
         }
 
         if (typeof exports.compile !== 'function') {
@@ -123,7 +157,13 @@ export async function loadWasmCompiler(opts = {}) {
             return new Uint8Array(result || []);
         };
 
-        return { compile, source: 'wasm' };
+        return {
+            compile,
+            compileFiles: null,
+            supportsModules: false,
+            moduleAbi: null,
+            source: 'wasm',
+        };
     } catch (e) {
         return null;
     }
