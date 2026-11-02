@@ -1,0 +1,86 @@
+name: Docs & Playground → GitHub Pages
+
+# Публикация сайта документации Latent и web IDE (playground) на GitHub Pages.
+#
+# Что публикуется:
+#   https://<owner>.github.io/latent/            — документация (Docusaurus)
+#   https://<owner>.github.io/latent/playground/ — web IDE (web-ide/ как статика)
+#
+# Playground собирается из web-ide/ скриптом scripts/sync-playground.mjs и НЕ
+# хранится в git: единственный источник правды — каталог web-ide/.
+#
+# Требования в настройках репозитория: Settings → Pages → Source = GitHub Actions.
+
+on:
+  push:
+    branches: [main, part10-toolchain]
+    paths-ignore:
+      - "editors/idea/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Сборка документации и playground
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Зависимости документации
+        working-directory: docs
+        run: pnpm install --frozen-lockfile
+
+      - name: Playground из web-ide/
+        run: node scripts/sync-playground.mjs
+
+      - name: Проверка примеров из документации
+        run: node docs/scripts/validate-examples.mjs
+
+      - name: Сборка сайта
+        working-directory: docs
+        run: pnpm run build
+
+      - name: Проверка артефакта (docs + playground)
+        run: |
+          test -f docs/build/index.html
+          test -f docs/build/playground/index.html
+          test -f docs/build/playground/compiler.wasm
+          test -f docs/build/llms.txt
+          echo "Artifact OK: $(du -sh docs/build | cut -f1)"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/build
+
+  deploy:
+    name: Публикация на GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

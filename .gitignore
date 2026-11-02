@@ -1,5 +1,7 @@
-docs/
+# Rust
 target/
+
+# IDE (локальные настройки)
 .idea/
 .gm/
 
@@ -10,3 +12,30 @@ target/
 
 # Сгенерированные bootstrap-артефакты self-hosted компилятора
 selfhost/stage*.wasm
+
+# --- Сайт документации (Docusaurus) ---
+docs/node_modules/
+docs/.docusaurus/
+docs/build/
+docs/.cache-loader/
+# Playground — генерируется scripts/sync-playground.mjs из web-ide/ при сборке
+docs/static/playground/
+
+# --- Редакторы / плагины ---
+editors/vscode/node_modules/
+editors/vscode/*.vsix
+editors/idea/build/
+editors/idea/.gradle/
+editors/idea/.intellijPlatform/
+editors/idea/out/
+editors/idea/local.properties
+
+# --- Tooling ---
+tooling/latent-lsp/node_modules/
+mcp/docs-mcp/node_modules/
+
+# --- Покрытие тестами ---
+coverage/
+lcov.info
+*.profraw
+*.profdata

@@ -1,0 +1,97 @@
+name: CI
+
+# Проверки качества Latent: Rust-компилятор, self-hosted bootstrap, web IDE,
+# документация (примеры + сборка), MCP-сервер документации, LSP.
+#
+# Запускается на push/PR в main и part10-toolchain.
+
+on:
+  push:
+    branches: [main, part10-toolchain]
+  pull_request:
+    branches: [main, part10-toolchain]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust-компилятор
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: llvm-tools-preview
+      - name: cargo test
+        run: cargo test --all-targets
+      - name: Сборка WASM-движка
+        run: cargo build --release --target wasm32-unknown-unknown
+      - name: Установка cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+      - name: Покрытие Rust (порог 90%)
+        run: cargo llvm-cov --all-targets --summary-only --fail-under-lines 90
+
+  selfhost:
+    name: Self-hosted компилятор
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: cargo build --bin latentc
+        run: cargo build --bin latentc
+      - name: Сборка shc.lat
+        run: node selfhost/build.mjs
+      - name: Bootstrap и фиксированная точка
+        run: node selfhost/bootstrap.mjs
+      - name: Регресс-тесты selfhost
+        run: node --test "selfhost/test/*.test.mjs"
+
+  webide:
+    name: Web IDE (JS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Тесты и покрытие ≥90%
+        run: node --experimental-test-coverage --test "web-ide/test/*.test.js"
+
+  docs:
+    name: Документация
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Зависимости
+        working-directory: docs
+        run: pnpm install --frozen-lockfile
+      - name: Проверка примеров из доки
+        run: node docs/scripts/validate-examples.mjs
+      - name: Сборка сайта
+        working-directory: docs
+        run: pnpm run build
+
+  tooling:
+    name: MCP и LSP
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: MCP-сервер документации
+        run: node --test "mcp/docs-mcp/test/*.test.mjs"
+      - name: LSP-сервер
+        run: node --test "tooling/latent-lsp/test/*.test.mjs"
