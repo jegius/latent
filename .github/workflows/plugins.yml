@@ -1,0 +1,69 @@
+name: Plugins (VS Code + IntelliJ IDEA)
+
+# Сборка артефактов редакторских плагинов Latent:
+#   * VS Code — .vsix (npx @vscode/vsce package);
+#   * IntelliJ IDEA — zip-дистрибутив (./gradlew buildPlugin).
+#
+# Артефакты прикладываются к запуску workflow и доступны для скачивания.
+
+on:
+  push:
+    branches: [main, part10-toolchain]
+    paths:
+      - "editors/**"
+      - ".github/workflows/plugins.yml"
+  pull_request:
+    branches: [main, part10-toolchain]
+    paths:
+      - "editors/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vscode:
+    name: VS Code extension (.vsix)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Тесты расширения
+        run: node --test test/*.test.mjs
+      - name: Сборка .vsix
+        run: npx --yes @vscode/vsce@latest package --no-dependencies --out latent-1.0.0.vsix
+      - name: Upload .vsix
+        uses: actions/upload-artifact@v4
+        with:
+          name: latent-vscode-vsix
+          path: editors/vscode/latent-1.0.0.vsix
+          if-no-files-found: error
+
+  idea:
+    name: IntelliJ IDEA plugin (zip)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editors/idea
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Сборка плагина
+        run: ./gradlew --no-daemon buildPlugin
+      - name: Тесты плагина
+        run: ./gradlew --no-daemon test
+      - name: Upload plugin zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: latent-idea-plugin
+          path: editors/idea/build/distributions/*.zip
+          if-no-files-found: error

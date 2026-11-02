@@ -1,0 +1,87 @@
+<idea-plugin>
+    <id>dev.latent.idea</id>
+    <name>Latent</name>
+    <version>1.0.0</version>
+    <vendor url="https://github.com/jegius/latent">Latent Language</vendor>
+
+    <description><![CDATA[
+        <p>Полноценная поддержка языка программирования <b>Latent</b> в IntelliJ IDEA.</p>
+        <ul>
+            <li>файлы <code>.lat</code>, подсветка синтаксиса и настраиваемая цветовая схема;</li>
+            <li>автодополнение: 37 ключевых слов, типы, builtins из единого
+                <code>language.json</code>, объявления текущего файла, live templates;</li>
+            <li>аннотации ошибок: незакрытые строки/комментарии, неверные escape и числа,
+                неизвестные символы, несогласованные скобки;</li>
+            <li>Structure View (функции, классы с методами, enum с вариантами),
+                сворачивание блоков и комментариев, парные скобки, отступы по Enter,
+                автозакрытие кавычек;</li>
+            <li>запуск: конфигурация «Latent» компилирует файл через <code>latentc</code>
+                (fallback — <code>web-ide/compiler.wasm</code>) и исполняет WASM в Node.js.</li>
+        </ul>
+    ]]></description>
+
+    <change-notes><![CDATA[
+        <h3>1.0.0</h3>
+        <ul>
+            <li>Первая версия: лексер, подсветка, completion, аннотатор, folding,
+                structure view, настройки и конфигурация запуска Latent.</li>
+        </ul>
+    ]]></change-notes>
+
+    <idea-version since-build="233" until-build="243.*"/>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <fileType name="Latent"
+                  language="Latent"
+                  implementationClass="dev.latent.idea.LatentFileType"
+                  extensions="lat"/>
+
+        <lang.parserDefinition language="Latent"
+                               implementationClass="dev.latent.idea.psi.LatentParserDefinition"/>
+
+        <lang.syntaxHighlighterFactory language="Latent"
+                                       implementationClass="dev.latent.idea.highlight.LatentSyntaxHighlighterFactory"/>
+
+        <lang.commenter language="Latent"
+                        implementationClass="dev.latent.idea.editor.LatentCommenter"/>
+
+        <lang.braceMatcher language="Latent"
+                           implementationClass="dev.latent.idea.editor.LatentBraceMatcher"/>
+
+        <lang.foldingBuilder language="Latent"
+                             implementationClass="dev.latent.idea.folding.LatentFoldingBuilder"/>
+
+        <lang.structureViewBuilder language="Latent"
+                                   implementationClass="dev.latent.idea.structureview.LatentStructureViewBuilder"/>
+
+        <completion.contributor language="Latent"
+                                implementationClass="dev.latent.idea.completion.LatentCompletionContributor"/>
+
+        <annotator language="Latent"
+                   implementationClass="dev.latent.idea.annotator.LatentAnnotator"/>
+
+        <quoteHandler fileType="Latent"
+                      implementationClass="dev.latent.idea.editor.LatentQuoteHandler"/>
+
+        <enterHandlerDelegate implementation="dev.latent.idea.editor.LatentEnterHandler"/>
+
+        <colorSettingsPage implementation="dev.latent.idea.highlight.LatentColorSettingsPage"/>
+
+        <fileTemplateGroup implementation="dev.latent.idea.templates.LatentFileTemplateGroupFactory"/>
+        <internalFileTemplate name="Latent Main.lat"/>
+
+        <defaultLiveTemplates file="/liveTemplates/Latent.xml"/>
+        <liveTemplateContext implementation="dev.latent.idea.templates.LatentTemplateContextType"/>
+
+        <configurationType implementation="dev.latent.idea.run.LatentRunConfigurationType"/>
+        <runConfigurationProducer implementation="dev.latent.idea.run.LatentRunConfigurationProducer"/>
+
+        <applicationService serviceImplementation="dev.latent.idea.settings.LatentSettings"/>
+        <applicationConfigurable instance="dev.latent.idea.settings.LatentConfigurable"
+                                 id="dev.latent.idea.settings"
+                                 displayName="Latent"
+                                 parentId="tools"/>
+    </extensions>
+</idea-plugin>

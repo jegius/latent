@@ -1,0 +1,4 @@
+fn main() -> int {
+    print("Hello, Latent!");
+    return 0;
+}
