@@ -35,15 +35,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 
       - name: pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 11
           run_install: false
@@ -60,6 +60,9 @@ jobs:
 
       - name: Playground в статику сайта
         run: node scripts/sync-playground.mjs
+
+      - name: Сборка ассетов демо (wasm, vendor-интерпретатор, selfhost seed)
+        run: node docs/static/demos/build-demos.mjs
 
       - name: Проверка примеров из документации
         run: node docs/scripts/validate-examples.mjs
@@ -79,10 +82,15 @@ jobs:
           test -f docs/build/llms-en.txt
           test -f docs/build/demos/index.html
           test -f docs/build/demos/bench/index.html
+          test -f docs/build/demos/concurrency/index.html
+          test -f docs/build/demos/ai/index.html
+          test -f docs/build/demos/selfhost/index.html
+          test -f docs/build/demos/sandbox/index.html
+          test -f docs/build/demos/modules/index.html
           echo "Artifact OK: $(du -sh docs/build | cut -f1), chunks: $(ls docs/build/playground/assets 2>/dev/null | wc -l)"
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: docs/build
 
@@ -98,4 +106,4 @@ jobs:
         run: echo "Deploying docs and playground to GitHub Pages"
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

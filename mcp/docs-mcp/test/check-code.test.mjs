@@ -486,14 +486,12 @@ test('check_code: пустой код и комментарии компилир
     assert.deepEqual(await compiler.check('fn main() -> int { let s = "привет"; return 0; }'), { ok: true, errors: [] });
 });
 
-test('check_code: BOM в начале исходника даёт лексическую ошибку с локацией', { skip: !hasCompiler && 'compiler.wasm отсутствует' }, async () => {
+test('check_code: BOM в начале исходника поддерживается (BOM-safe лексер)', { skip: !hasCompiler && 'compiler.wasm отсутствует' }, async () => {
+    // Регрессия: компилятор теперь BOM-safe (как и CLI): UTF-8 BOM в начале
+    // файла не считается лексической ошибкой, программа компилируется.
     const compiler = createCompiler({ wasmPath: REAL_WASM });
     const result = await compiler.check('\uFEFFfn main() -> int { return 1; }');
-    assert.equal(result.ok, false);
-    assert.equal(result.errors.length, 1);
-    assert.equal(result.errors[0].line, 1);
-    assert.equal(Number.isInteger(result.errors[0].column), true);
-    assert.match(result.errors[0].message, /Неожиданный символ/);
+    assert.deepEqual(result, { ok: true, errors: [] });
 });
 
 test('check_code: незавершённая строка — лексическая ошибка', { skip: !hasCompiler && 'compiler.wasm отсутствует' }, async () => {

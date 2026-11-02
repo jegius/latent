@@ -29,8 +29,8 @@ jobs:
       run:
         working-directory: editors/vscode
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Тесты расширения
@@ -38,7 +38,7 @@ jobs:
       - name: Сборка .vsix
         run: npx --yes @vscode/vsce@latest package --no-dependencies --out latent-1.0.0.vsix
       - name: Upload .vsix
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: latent-vscode-vsix
           path: editors/vscode/latent-1.0.0.vsix
@@ -51,18 +51,18 @@ jobs:
       run:
         working-directory: editors/idea
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       - name: Сборка плагина
         run: chmod +x gradlew && ./gradlew --no-daemon buildPlugin
       - name: Тесты плагина
         run: ./gradlew --no-daemon test
       - name: Upload plugin zip
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: latent-idea-plugin
           path: editors/idea/build/distributions/*.zip

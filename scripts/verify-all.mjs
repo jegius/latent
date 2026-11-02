@@ -10,7 +10,7 @@
 //   node scripts/verify-all.mjs                 # все быстрые проверки
 //   node scripts/verify-all.mjs --docs-build    # + сборка Docusaurus (долго)
 //   node scripts/verify-all.mjs --golden        # + golden-WASM (нужен latentc)
-//   node scripts/verify-all.mjs --coverage      # + JS-покрытие web-ide и MCP
+//   node scripts/verify-all.mjs --coverage      # + JS-покрытие web-ide, MCP и LSP
 
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -79,23 +79,33 @@ run("MCP: тесты", `"${NODE}" --test mcp/docs-mcp/test/*.test.mjs`, { tailLi
 
 // --- редакторы --------------------------------------------------------------
 run("VS Code: тесты", `"${NODE}" --test editors/vscode/test/*.test.mjs`, { tailLines: 6 });
+run("IDEA: встроенные compiler.wasm", `"${NODE}" scripts/check-embedded-wasm.mjs`);
 
 // --- документация -----------------------------------------------------------
 run("docs: проверка примеров", `"${NODE}" docs/scripts/validate-examples.mjs`, { tailLines: 8 });
 if (args.has("--docs-build")) {
-  // pnpm задаётся LATENT_PNPM (путь к pnpm.mjs) или ищется в PATH.
-  const pnpm = process.env.LATENT_PNPM || "pnpm";
-  run("docs: сборка Docusaurus", `cd docs && "${NODE}" "${pnpm}" run build`, { tailLines: 10 });
+  // pnpm задаётся LATENT_PNPM (путь к pnpm.mjs, запускается через Node) или
+  // ищется в PATH (тогда это обычная команда, без подстановки Node).
+  const pnpm = process.env.LATENT_PNPM;
+  const command = pnpm
+    ? `cd docs && "${NODE}" "${pnpm}" run build`
+    : "cd docs && pnpm run build";
+  run("docs: сборка Docusaurus", command, { tailLines: 10 });
 }
 
 // --- опциональные тяжёлые проверки -----------------------------------------
 if (args.has("--golden")) {
-  if (hasLatentc) run("Rust: golden WASM", `"${NODE}" scripts/check-golden.mjs`, { tailLines: 8 });
-  else skip("Rust: golden WASM", "нет target/debug/latentc");
+  if (hasLatentc) {
+    run("Rust: golden WASM", `"${NODE}" scripts/check-golden.mjs`, { tailLines: 8 });
+    run("Rust: интеграция .lat → WASM → main()", `"${NODE}" scripts/integration.mjs`, { tailLines: 4 });
+  } else {
+    skip("Rust: golden WASM", "нет target/debug/latentc");
+  }
 }
 if (args.has("--coverage")) {
   run("web-ide: покрытие", `"${NODE}" --experimental-test-coverage --test web-ide/test/*.test.js`, { tailLines: 4 });
   run("MCP: покрытие", `"${NODE}" --experimental-test-coverage --test mcp/docs-mcp/test/*.test.mjs`, { tailLines: 4 });
+  run("LSP: покрытие ≥90% строк", `"${NODE}" --experimental-test-coverage --test --test-coverage-lines=90 tooling/latent-lsp/test/*.test.mjs`, { tailLines: 4 });
 }
 
 // --- сводка -----------------------------------------------------------------

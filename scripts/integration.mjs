@@ -9,12 +9,16 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = new URL("..", import.meta.url).pathname;
-const CLI = join(ROOT, "target/debug/latentc");
+// fileURLToPath, а не .pathname: на Windows pathname даёт «/C:/…» с ведущим
+// слэшем, из-за чего путь к latentc.exe не находился.
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const CLI = process.env.LATENTC
+  || join(ROOT, "target", "debug", process.platform === "win32" ? "latentc.exe" : "latentc");
 
 if (!existsSync(CLI)) {
-  console.error(`latentc not found at ${CLI}; run 'cargo build --bin latentc'`);
+  console.error(`latentc not found at ${CLI}; run 'cargo build --bin latentc' or set LATENTC=<path>`);
   process.exit(2);
 }
 

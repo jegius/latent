@@ -20,7 +20,7 @@ jobs:
     name: Rust-компилятор
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -38,13 +38,15 @@ jobs:
     name: Self-hosted компилятор
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: cargo build --bin latentc
         run: cargo build --bin latentc
+      - name: Golden-набор (строго, без SKIP)
+        run: node scripts/check-golden.mjs --strict
       - name: Сборка shc.lat
         run: node selfhost/build.mjs
       - name: Bootstrap и фиксированная точка
@@ -59,8 +61,8 @@ jobs:
       # Rust/latentc в этом job не используются: тесты и CLI не должны его найти.
       LATENTC: /nonexistent/latentc
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: "Окружение: Rust не используется"
@@ -93,11 +95,11 @@ jobs:
     name: Web IDE (JS)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 11
       - name: Тесты и покрытие ≥90%
@@ -116,16 +118,18 @@ jobs:
     name: Документация
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 11
       - name: Зависимости
         working-directory: docs
         run: pnpm install --frozen-lockfile
+      - name: Ассеты демо (wasm, vendor, selfhost seed)
+        run: node docs/static/demos/build-demos.mjs
       - name: Проверка примеров из доки
         run: node docs/scripts/validate-examples.mjs
       - name: Сборка сайта
@@ -136,11 +140,25 @@ jobs:
     name: MCP и LSP
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: MCP-сервер документации
         run: node --test mcp/docs-mcp/test/*.test.mjs
-      - name: LSP-сервер
-        run: node --test tooling/latent-lsp/test/*.test.mjs
+      - name: "LSP-сервер: тесты и покрытие ≥90% строк"
+        run: node --experimental-test-coverage --test --test-coverage-lines=90 tooling/latent-lsp/test/*.test.mjs
+
+  idea:
+    name: IntelliJ IDEA (встроенные артефакты)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # Плагин носит с собой снимок compiler.wasm и копию language.json:
+      # проверяем, что они не разошлись с web-ide/compiler.wasm и
+      # tooling/language-data/language.json (обновление — --update).
+      - name: compiler.wasm и language.json совпадают с источником
+        run: node scripts/check-embedded-wasm.mjs
