@@ -152,7 +152,7 @@ anyone moving code between the engines.
 | `"abc"[1]` | `98` (a byte) | `"b"` (a character) | divergence |
 | `[1] == [1]` | `0` (pointers) | `1` (structural) | divergence |
 | `let a=[1]; a == a` | `1` | `1` | matches |
-| `assert_eq("a"+"b", "ab")` | trap (pointers) | ok (structural) | divergence |
+| `assert_eq("a"+"b", "ab")` | ok (content) | ok (structural) | matches |
 | `assert_eq([1], [1])` | trap | ok | divergence |
 | `print(true)` | `1` | `true` | divergence |
 | `print(null)` | `0` | `null` | divergence |

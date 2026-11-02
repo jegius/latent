@@ -142,7 +142,7 @@ host-free подмножества. Переключение автоматич�
   (Cache API, имя `latent-compiler-v1`).
 - Если `compiler.wasm` недоступен, IDE остаётся на движке №1 (graceful
   degradation), статус-бар показывает `engine #1 (host runtime)`.
-- Поставляемый `compiler.wasm` актуален: собран из текущего `src/` (630 340
+- Поставляемый `compiler.wasm` актуален: собран из текущего `src/` (651 473
   байт), memory-builtins и модульный ABI (`latent_compile_files`,
   `latent_bundle_files`) в нём есть — см. [bootstrap](./bootstrap.md).
 - **AI-примеры в обычном Run** включают mock автоматически (сеть не нужна).
@@ -261,7 +261,7 @@ Pages, кэширования по хешу и уменьшения старто
 
 | Файл | Размер | gzip |
 |---|---:|---:|
-| `compiler-*.wasm` | 630.34 kB | — |
+| `compiler-*.wasm` | 651.47 kB | — |
 | `core-*.js` | 40.32 kB | 11.58 kB |
 | `index-*.js` (entry) | 37.96 kB | 11.19 kB |
 | `examples-*.js` | 32.19 kB | 9.03 kB |
@@ -271,7 +271,7 @@ Pages, кэширования по хешу и уменьшения старто
 | `engine2-*.js` | 1.88 kB | 0.79 kB |
 | `index-*.css` | 12.86 kB | 3.05 kB |
 
-Размер `.wasm` обновлён под текущий `web-ide/compiler.wasm` (630 340 байт); gzip
+Размер `.wasm` обновлён под текущий `web-ide/compiler.wasm` (651 473 байт); gzip
 для него не указан — пересчитайте своим `vite build`. Остальные строки — с
 локальной сборки и могут отличаться на несколько килобайт.
 

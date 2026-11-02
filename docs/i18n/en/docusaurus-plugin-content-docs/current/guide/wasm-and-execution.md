@@ -201,7 +201,8 @@ checked separately (markers `// Does not compile with engine #2`, `// error`,
 - No packages, inheritance, or generic classes; file modules (`import`/`export`)
   exist, but they are linked at compile time — see [modules](./modules.md).
 - No GC/deallocation and no bounds checking.
-- No exceptions; `assert` is a trap, `assert_eq` compares i32 bits.
+- No exceptions; `assert` is a trap, `assert_eq` compares numbers as i32 bits and
+  strings by content.
 - No function or operator overloading; duplicates are not diagnosed.
 - No `break`/`continue`, no `if` expressions, no compound assignments.
 - "Invalid WASM" errors are not detected by the compiler.

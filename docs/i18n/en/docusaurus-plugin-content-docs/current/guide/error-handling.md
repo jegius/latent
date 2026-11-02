@@ -104,10 +104,10 @@ fn main() -> int {
 | Engine | `assert(false)` | `assert_eq(a, b)` |
 |---|---|---|
 | #1 (JS) | runtime error (`assertion failed`) | structural equality |
-| #2 (Rust → WASM) | `unreachable` trap | comparison of i32 values/pointers |
+| #2 (Rust → WASM) | `unreachable` trap | numbers by i32, strings by content, arrays by pointers |
 
-`assert_eq("a" + "b", "ab")` in engine #2 traps: strings are compared by
-pointers even when their content is equal.
+`assert_eq("a" + "b", "ab")` in engine #2 now passes: strings are compared
+by content (`STR_EQ`), not by pointers.
 
 ## Compiler diagnostics
 
@@ -148,7 +148,8 @@ In engine #1 these are interpreter JS exceptions.
 ## Engine #2 limitations
 
 - No exceptions — traps only.
-- `assert` is a trap, not a report; `assert_eq` compares i32 bits.
+- `assert` is a trap, not a report; `assert_eq` compares numbers as i32, strings
+  by content, and arrays by pointers.
 - `snapshot`, `ai_contract`, `enforce_contract` produce a host runtime error.
 - There is no `MissingReturn` diagnostic: if a function with `-> int` returns no
   value on any branch, codegen inserts `0`.

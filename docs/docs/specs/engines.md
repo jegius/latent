@@ -65,7 +65,7 @@ sidebar_position: 3
   `null`, IDE продолжает работать на движке №1 (graceful degradation).
 - Движок №2 **не исполняет** скомпилированный WASM: он только компилирует и
   отдаёт байты для показа/скачивания.
-- Поставляемый артефакт актуален: `web-ide/compiler.wasm` (630 340 байт,
+- Поставляемый артефакт актуален: `web-ide/compiler.wasm` (651 473 байт,
   `latent 0.1.0`) собран из текущих `src/` и включает memory-builtins
   (`alloc`/`load8`/`store8`/`load32`/`store32`/`memcopy`), `spawn`/`yield`/
   `async`/`await`/`select`, `test`-блоки и актуальные фиксы. Пересборка —
@@ -154,7 +154,7 @@ AI-особенность: обычный Run программы с `ai_infer`/`
 | `"abc"[1]` | `98` (байт) | `"b"` (символ) | расхождение |
 | `[1] == [1]` | `0` (указатели) | `1` (структурное) | расхождение |
 | `let a=[1]; a == a` | `1` | `1` | совпадает |
-| `assert_eq("a"+"b", "ab")` | trap (указатели) | ok (структурно) | расхождение |
+| `assert_eq("a"+"b", "ab")` | ok (содержимое) | ok (структурно) | совпадает |
 | `assert_eq([1], [1])` | trap | ok | расхождение |
 | `print(true)` | `1` | `true` | расхождение |
 | `print(null)` | `0` | `null` | расхождение |
@@ -205,7 +205,7 @@ AI-особенность: обычный Run программы с `ai_infer`/`
 
 ## Ограничения и подводные камни
 
-- `web-ide/compiler.wasm` собран из текущих `src/` (630 340 байт): memory-builtins
+- `web-ide/compiler.wasm` собран из текущих `src/` (651 473 байт): memory-builtins
   и host-конструкции в нём есть. Единственная известная «старая» копия — в
   ресурсах IDEA-плагина (`editors/idea/src/main/resources/runner/compiler.wasm`),
   она memory-builtins не содержит (см. [IDEA](../tooling/idea.md)).

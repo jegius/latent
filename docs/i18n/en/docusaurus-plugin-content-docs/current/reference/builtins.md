@@ -28,7 +28,7 @@ rejected by engine #2 with a "requires host runtime" message (the exact texts ar
 | `float` | `float(x) -> float` | #2 only | int/string → float |
 | `sqrt` | `sqrt(x) -> float` | #2 only | `f64.sqrt`; valid in an f64 context, invalid WASM when used as int |
 | `assert` | `assert(cond)` | both | aborts execution when falsy |
-| `assert_eq` | `assert_eq(a, b)` | both | in #2 — an `i32` comparison; a trap on mismatch |
+| `assert_eq` | `assert_eq(a, b)` | both | in #2 — `i32` for numbers, content for strings; a trap on mismatch |
 | `alloc` | `alloc(size) -> ptr` | #2 | the runtime bump allocator |
 | `load8` | `load8(addr) -> int` | #2 | an unsigned byte |
 | `store8` | `store8(addr, value)` | #2 | writes the low byte |
@@ -77,11 +77,13 @@ len(string) -> int
 ```
 
 It reads the first word of the data (`i32.load`): for an array, the number of elements;
-for a string, the length in bytes. In engine #2 a `len()` call without arguments
-compiles to a memory read at address 0 (usually yielding `0`); in engine #1 it crashes
-(`Cannot read properties of undefined`).
-The arity of builtins is not checked at all in #2: extra arguments are silently
-ignored (`len`, `assert`, `str`, `int`, `float`, `sqrt`, `alloc`, …).
+for a string, the length in bytes. Calling `len()` with no arguments used to
+read memory at address 0 (usually yielding `0`) in engine #2 and crash in
+engine #1 (`Cannot read properties of undefined`).
+Builtin arity is now checked by the type checker (except variadic `print`):
+calling `len()` with no arguments reports an arity error with a position, and
+extra arguments are rejected too (`len`, `assert`, `str`, `int`, `float`,
+`sqrt`, `alloc`, …).
 
 ```latent
 fn main() -> int {
@@ -134,7 +136,7 @@ sqrt(x) -> float
 ```
 
 - `str(x)`: a string — as is; `float` → `__latent_f64_to_str` («1.500000»);
-  everything else → `__latent_i32_to_str`. Without an argument — an empty string.
+  everything else → `__latent_i32_to_str`. Without an argument — an arity error.
   `f64_to_str` computes the integer part via `i32.trunc_f64_s`, so
   `str(1e300)` (and in general `|x| ≥ 2^31`) traps at runtime.
 - `int(x)`: a string is parsed as an ASCII number with an optional `-`
@@ -168,10 +170,8 @@ assert_eq(a, b, msg?)       // engine #1: structural equality
 ```
 
 - Engine #2: `assert` checks "non-zeroness" (`i32.eqz` + `if` + `unreachable`);
-  `assert_eq` compares **raw i32 values**, and the second message argument is
-  **ignored**. For numbers this is equality, for strings it is pointers (identical
-  literals may coincide due to deduplication, but a concatenation result will not,
-  which traps), and for arrays it is pointers.
+  `assert_eq` compares numbers as i32, strings by content (`STR_EQ`), and arrays
+  by pointers; the second message argument is **ignored**.
 - Engine #1: `assert` uses truthiness, `assert_eq` uses deep structural equality; on
   failure an exception is thrown — `assertion failed` / `assert_eq failed: a != b`
   (the message is included).

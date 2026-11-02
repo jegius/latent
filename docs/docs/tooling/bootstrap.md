@@ -64,7 +64,7 @@ cp target/wasm32-unknown-unknown/release/latent.wasm web-ide/latent.wasm
 `alloc(8)` + `store8`/`store32`/`load8`/`load32`/`memcopy` компилируются в
 валидный WASM.
 
-- Артефакт: `web-ide/compiler.wasm` = `web-ide/latent.wasm` (630 340 байт,
+- Артефакт: `web-ide/compiler.wasm` = `web-ide/latent.wasm` (651 473 байт,
   версия `latent 0.1.0`), пересобран из текущего `src/` (включая модули).
 - `docs/scripts/validate-examples.mjs` валидирует блоки **этим** файлом: при
   пересборке `compiler.wasm` перезапустите проверку — часть маркеров

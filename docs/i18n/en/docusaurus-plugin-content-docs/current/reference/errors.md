@@ -253,11 +253,11 @@ Float literals with an integer value (`2.0`, `5.0`) break the f64 context.
 | `return` inside a `match` arm | does not parse (an arm is an expression) |
 | `f64_to_str` for large numbers | the integer part goes through `i32.trunc_f64_s`; `\|x\| ≥ 2^31` traps; `str(1e300)` does not work |
 | `i32_to_str` for `i32::MIN` | `0 - n` overflows |
-| strings in `< > <= >=` | pointers are compared, not contents |
-| `assert_eq` of strings/arrays | i32 values are compared: literals may coincide (deduplication), a concatenation result traps |
+| strings in `< > <= >=` | compared **by contents** (`STR_CMP`), not by pointers |
+| `assert_eq` of arrays | i32 values (pointers) are compared: strings are now compared by contents, arrays are still compared by pointers |
 | escape sequences | only `\n \t \\ \"`; `\r`, `\0`, `\u{...}` are errors |
 | division/remainder by 0 | a WASM trap; `i32::MIN / -1` is a trap |
-| builtin arity | not checked: extra arguments are silently ignored (`assert`, `len`, `str`, …) |
+| builtin arity | checked by the type checker (`ArityRange`); variadic `print` is the exception |
 | a BOM at the start of the file | the lexer does not skip `U+FEFF`: an error with the column `4294967295` (an overflow), and a debug build of `latentc` panics |
 | extra values on the stack | detected only by `WebAssembly.validate()` on the host |
 

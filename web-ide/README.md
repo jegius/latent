@@ -47,7 +47,7 @@ pnpm run preview      # локальный просмотр dist/ (http://localh
 
 | Файл | Размер | gzip |
 |---|---:|---:|
-| `dist/assets/compiler-*.wasm` | 630.34 kB | 177.82 kB |
+| `dist/assets/compiler-*.wasm` | 651.47 kB | 177.82 kB |
 | `dist/assets/core-*.js` | 57.21 kB | 16.63 kB |
 | `dist/assets/index-*.js` (entry) | 45.77 kB | 13.17 kB |
 | `dist/assets/examples-*.js` | 32.19 kB | 9.03 kB |

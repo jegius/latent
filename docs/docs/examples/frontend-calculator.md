@@ -254,7 +254,7 @@ value:
 
 ## Вариант Б: компиляция на лету в браузере
 
-Здесь в браузер загружается сам компилятор Latent — `compiler.wasm` (630 340
+Здесь в браузер загружается сам компилятор Latent — `compiler.wasm` (651 473
 байт). Он экспортирует C-ABI `latent_alloc`/`latent_compile`/`latent_free`
 (см. [WASM ABI](../reference/wasm-abi.md#c-abi-компилятора-движок-2-в-браузере)).
 

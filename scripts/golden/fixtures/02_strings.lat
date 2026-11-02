@@ -40,7 +40,7 @@ fn main() -> int {
     print("sqrt =", root.to_str());
     print("to_str =", (5).to_str());
     print("to_int =", "77".to_int());
-    print("str() =", len(str()));
+    // Раньше `str()` без аргумента был допустим; теперь тайпчекер проверяет\n    // арность builtins, поэтому используем корректный вызов.\n    print("str(0) =", len(str(0)));
 
     // Строковый литерал в match.
     return match "b" {

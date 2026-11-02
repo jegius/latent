@@ -71,8 +71,8 @@ fn main() -> int {
 ```
 
 - `assert(false)` in engine #2 is an `unreachable` trap;
-- `assert_eq` in engine #2 compares **i32 values** (strings and arrays — by pointers,
-  floats — by bits);
+- `assert_eq` in engine #2 compares **i32 values** for numbers, strings by content
+  (`STR_EQ`), arrays by pointers, floats by bits;
 - in engine #1 `assert_eq` compares structurally;
 - `assert_ne`, `panic`, `exit` do not exist.
 
@@ -136,7 +136,8 @@ if you need to call them.
 ## Engine #2 limitations
 
 - There is no test runner: `test` blocks are not executed.
-- `assert` is a trap; `assert_eq` is a bitwise comparison of i32.
+- `assert` is a trap; `assert_eq` compares numbers as i32 bits, strings by
+  content, arrays by pointers.
 - `snapshot`/`ai_contract`/`enforce_contract` produce a host runtime error.
 - Decorators on top-level `fn`/`class` make the target unavailable.
 - Nested `fn` (including inside `test`) are not registered.

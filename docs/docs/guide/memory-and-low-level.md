@@ -84,7 +84,7 @@ fn main() -> int {
 Исходники builtin'ов — `src/codegen/emit_call/direct.rs`
 (`compile_memory_builtin`), регистрация вызовов — `emit_call/mod.rs`.
 Если вы работаете со **старой** сборкой `compiler.wasm`, `alloc` даст
-«Неопределённая переменная 'alloc'»; актуальная сборка (630 340 байт, собрана
+«Неопределённая переменная 'alloc'»; актуальная сборка (651 473 байт, собрана
 из текущего `src/`) их поддерживает. Пересборка — в
 [bootstrap](../tooling/bootstrap.md#2-compilerwasm-для-web-ide-движок-2).
 :::

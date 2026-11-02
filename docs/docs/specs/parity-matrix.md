@@ -171,7 +171,7 @@ sidebar_position: 2
 - `new Class(...)` без `init` в достижимом коде;
 - `print` строк из `.to_str()` иногда печатает указатель.
 
-Поставляемый `web-ide/compiler.wasm` (630 340 байт) **собран из текущего
+Поставляемый `web-ide/compiler.wasm` (651 473 байт) **собран из текущего
 `src/`**: memory-builtins (`alloc`, `load8`, `store8`, `load32`, `store32`,
 `memcopy`) и модульный ABI (`latent_compile_files`, `latent_bundle_files`) в нём
 есть, поэтому этот пункт из прежнего списка дефектов снят. Встроенная копия в

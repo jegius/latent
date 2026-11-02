@@ -172,7 +172,7 @@ Verified on the shipped `web-ide/compiler.wasm` build; for details see
 - `new Class(...)` without `init` in reachable code;
 - `print` of strings from `.to_str()` sometimes prints a pointer.
 
-The shipped `web-ide/compiler.wasm` (630 340 bytes) **is built from the current
+The shipped `web-ide/compiler.wasm` (651 473 bytes) **is built from the current
 `src/`**: the memory builtins (`alloc`, `load8`, `store8`, `load32`, `store32`,
 `memcopy`) are present in it, so that item has been removed from the former defect
 list. The embedded copy in the IDEA plugin resources is synced with the same artifact

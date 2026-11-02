@@ -4,48 +4,48 @@
   "entries": {
     "scripts/golden/fixtures/01_operators.lat": {
       "kind": "fixture",
-      "sha256": "718a863fc559747bf608fc2e0ebccb4a437fa4f027818348b44a06eb6233f1b7",
-      "size": 1580
+      "sha256": "f6ac6d8a2d107da05eb51b3b7b11722f50a4506fd940b766322e1959d1f942b8",
+      "size": 1714
     },
     "scripts/golden/fixtures/02_strings.lat": {
       "kind": "fixture",
-      "sha256": "05a1a3a4fad693374082878246cda818dcbcc10343f67243a78c07a931364065",
-      "size": 1706
+      "sha256": "e7b112fba1e61d650461eeb5f98cfdc2372575e4d4245e67d4f610c122d47343",
+      "size": 1808
     },
     "scripts/golden/fixtures/03_arrays.lat": {
       "kind": "fixture",
-      "sha256": "29186bd910d9ec96d61027bd92bd4f8ef54317e57d4aed58cbe3e0d48df88a6b",
-      "size": 1849
+      "sha256": "a8b81363201ce058dcb52179177b1bc924653095763073275cbcf67c0e32086b",
+      "size": 1983
     },
     "scripts/golden/fixtures/04_classes.lat": {
       "kind": "fixture",
-      "sha256": "001d34cb1ea658a44efded61eb6820275b8b2fe6283a3be1e17371c3d4722262",
-      "size": 1452
+      "sha256": "2ac76fcfe3f8d55f89a345345d0a2089542e47d1b22badd388946254015776c1",
+      "size": 1586
     },
     "scripts/golden/fixtures/05_enum_match.lat": {
       "kind": "fixture",
-      "sha256": "ee640398ea8a19eb88b652823814fe38842833a741499cb89272f31369ac9f47",
-      "size": 1616
+      "sha256": "ccc9e04690b7430c069f81cbfbdb950e83aa9e78f4e4f5125e1fbbfca2bd5f63",
+      "size": 1750
     },
     "scripts/golden/fixtures/06_lambdas.lat": {
       "kind": "fixture",
-      "sha256": "fc979a70fb62047257df9f3c9ca9f50893437504f5778e695ddf3d7553c25608",
-      "size": 1873
+      "sha256": "c3674b33a678a26953616f3d381427d6651fdc42a942d467b31ffd609e936355",
+      "size": 2008
     },
     "scripts/golden/fixtures/07_control.lat": {
       "kind": "fixture",
-      "sha256": "2b901f395d0c52282d56c51019f9c98170b152b20b597cd2610288cb19f4f449",
-      "size": 1610
+      "sha256": "23233613ac87cfc89b8ffe602a4b93fa0d8189db743e3af906d72fc768ed8bf8",
+      "size": 1744
     },
     "scripts/golden/fixtures/08_memory.lat": {
       "kind": "fixture",
-      "sha256": "dcc70130a7269ccfd95c480719ba0cf76a6d9b4e7ebd3f7582d0bcb569b6f607",
-      "size": 1250
+      "sha256": "c04ec19d9ded09591ac1f1bcd03dc3613d87e6264a52ba7ed63a9ccb24edeaa3",
+      "size": 1384
     },
     "scripts/golden/fixtures/09_float.lat": {
       "kind": "fixture",
-      "sha256": "d72161324fd0968c820838dcdba975ba46c5e7410e0f70912999f20685aa10ca",
-      "size": 1569
+      "sha256": "ffb65673c500441374348c7415099433e512bf768b6e4f623b0c04b81f49ecc1",
+      "size": 1703
     },
     "scripts/golden/fixtures/errors/error_ai_primitive.lat": {
       "kind": "fixture",
@@ -121,18 +121,18 @@
     },
     "web-ide/examples/arrays.lat": {
       "kind": "example",
-      "sha256": "dd3ba9ed309064e161e8a626183e0f3afce86a266d58469633802a3503615b95",
-      "size": 2010
+      "sha256": "ded3fdb9afc641d0c6b29c0b75c007285185498523acb06b3a98cec468784f5c",
+      "size": 2144
     },
     "web-ide/examples/async_await.lat": {
       "kind": "example",
-      "sha256": "951f16552df9c39fda9abe6b568eb214e3ae385f733520f2f81738be5fa1258f",
-      "size": 995
+      "sha256": "a29a65f08fdb95846ebac851b8ba0a87cb7ab89203b345449ca75bf860417ac5",
+      "size": 1129
     },
     "web-ide/examples/builtins_methods.lat": {
       "kind": "example",
-      "sha256": "c278c10d8a204bc7f394e4907d7c6b1c74d32f8fdd82a39922d8fb131c4224e6",
-      "size": 1752
+      "sha256": "4f618bf58e14ac4b609d574173d27f512d27589ed9b5de6364f9c74018e54f2d",
+      "size": 1886
     },
     "web-ide/examples/channels.lat": {
       "kind": "example",
@@ -140,43 +140,43 @@
     },
     "web-ide/examples/classes.lat": {
       "kind": "example",
-      "sha256": "a30e100c027dcd88cd9a99b1121b8235934aa17b53ce47b1969ebaa3877bdc1a",
-      "size": 1199
+      "sha256": "ac055f01f8114917f0376f24e0718dda687d0b5605b04d299e24c5f8cfaab57e",
+      "size": 1333
     },
     "web-ide/examples/control_flow.lat": {
       "kind": "example",
-      "sha256": "ad2e54d3e9d3b2dc4f174266bb5a6fb15ee9e264dc4bc924433bf6f373999670",
-      "size": 1581
+      "sha256": "b88836c5193c3b310a4080bcd3188516d01075372a9ae3e0166ec3640db44e11",
+      "size": 1715
     },
     "web-ide/examples/edge_cases.lat": {
       "kind": "example",
-      "sha256": "2333da15ac6d1e82dd99c0ca4a93d433efd01759b0d8d5164f88689565403d5d",
-      "size": 1963
+      "sha256": "7dcd5fbbaf595d27196fd67121678f99b5f9189db9c9b8bb7fdd6cd0804ad7ba",
+      "size": 2097
     },
     "web-ide/examples/fp_patterns.lat": {
       "kind": "example",
-      "sha256": "8e42a58d7578ae758bdb366977083fba9534bf296770b46a97f0030777ce14f8",
-      "size": 1568
+      "sha256": "7aa7307f57dd3fe64f498f342c05f56d1647f55b80488b86132ed8dd9c966c1a",
+      "size": 1702
     },
     "web-ide/examples/functions.lat": {
       "kind": "example",
-      "sha256": "4f252e280872fce08f6ceaf2bac93814e5b61551c3084fe94cfa6f713ccc10dd",
-      "size": 1164
+      "sha256": "cbf15febf855b0799fd44d607ce83e12446cea7d624777b3c7ae533ff94cae4c",
+      "size": 1298
     },
     "web-ide/examples/lambdas.lat": {
       "kind": "example",
-      "sha256": "b5bdebeb486b103a4bffc5f476f26ed2b9e0779401f49345eb14eb341d4c84b3",
-      "size": 1538
+      "sha256": "b09b63dd25ba27e57f714f2fda7e2f093e64b74a77262ecc84bfa668798fdea2",
+      "size": 1673
     },
     "web-ide/examples/match.lat": {
       "kind": "example",
-      "sha256": "253f3d0acab0c8761b64f9e9080c579d137bdd96b53ad4557b2018f60fabce22",
-      "size": 1370
+      "sha256": "49845f3d2c87a7d34312c93654fb095dab9a8a2778e3403e091e7515ed4acd18",
+      "size": 1504
     },
     "web-ide/examples/operators.lat": {
       "kind": "example",
-      "sha256": "b2789938d99eeadfefab1105b1f6b580b512950fa233eeb58d30078abd75522e",
-      "size": 1514
+      "sha256": "47e3f8f298b481cb7ecc220d4bf16f922ee75d1f699b903c4a49931aed79bf85",
+      "size": 1648
     },
     "web-ide/examples/parallel_sum.lat": {
       "kind": "example",
@@ -184,8 +184,8 @@
     },
     "web-ide/examples/recursion.lat": {
       "kind": "example",
-      "sha256": "ec9dad0969a2769c926493bfc8fc828651df27b355aa20a5c771e63ea5e750d7",
-      "size": 1286
+      "sha256": "b5455b60ef42225baad109af3b362c0b96e0332f76396552865ff56a79ca8de0",
+      "size": 1420
     },
     "web-ide/examples/select_yield.lat": {
       "kind": "example",
@@ -193,13 +193,13 @@
     },
     "web-ide/examples/sorting.lat": {
       "kind": "example",
-      "sha256": "815d19f39d06f2a700309b4d5fc7a227dc6d306aaccd6f89e843a25e2484b5f4",
-      "size": 1530
+      "sha256": "46256958e057bcd43c704d18d34ad845fc760ee96d131ba0d8f96e6e486e51bf",
+      "size": 1664
     },
     "web-ide/examples/strings.lat": {
       "kind": "example",
-      "sha256": "6d00f99d75cb7e4570d099ab1e9f5f92c9bd51a0e4fc125f38e5a83d66a9c746",
-      "size": 1427
+      "sha256": "1adee407c2c5188cf24dfde3a07487d8beaf94accda12c04363eecf027d1be23",
+      "size": 1561
     },
     "web-ide/examples/tensors.lat": {
       "kind": "example",
@@ -211,14 +211,14 @@
     },
     "web-ide/examples/variables_types.lat": {
       "kind": "example",
-      "sha256": "8187ae37241c0d94adefecfd959f128214af4c30bc97f0de8ffabf27149eaf20",
-      "size": 1253
+      "sha256": "568e437e3e677748e514c79ef9dab350fca155ff42925c56555e0eb4feafd27d",
+      "size": 1387
     },
     "selfhost/shc.lat": {
       "kind": "shc",
       "sourceSha256": "f0a64c4cb6636f4b77a4b729205e2f3a016e73d7699b0358cd2041232593a1d8",
-      "sha256": "bea6c3a0c77421d24a72760c129abee16fe56539263f8dce30e94420b2aabde7",
-      "size": 42679,
+      "sha256": "e615b72e96b2edfd025b1b161344219634cb3f3479cd535d3a511b2e7e3e001a",
+      "size": 42813,
       "error": null
     }
   }

@@ -265,7 +265,7 @@ hash-based caching, and a smaller initial payload.
 
 | File | Size | gzip |
 |---|---:|---:|
-| `compiler-*.wasm` | 630.34 kB | — |
+| `compiler-*.wasm` | 651.47 kB | — |
 | `core-*.js` | 40.32 kB | 11.58 kB |
 | `index-*.js` (entry) | 37.96 kB | 11.19 kB |
 | `examples-*.js` | 32.19 kB | 9.03 kB |

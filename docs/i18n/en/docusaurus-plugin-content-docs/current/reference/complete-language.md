@@ -227,8 +227,8 @@ fn main() -> int {
 - `test "name" { ... }` is executed by engine #1 after `main`; the result is not shown
   in the IDE UI (it is available through the interpreter API).
 - `assert(cond)` / `assert_eq(a, b)` compile into a trap on failure in engine #2; the
-  second message argument is ignored; `assert_eq` compares i32 values (for
-  strings/arrays — pointers).
+  second message argument is ignored; `assert_eq` compares numbers as i32, strings
+  by content, and arrays by pointers.
 - `@forall("...")`, `snapshot(...)`, `ai_contract(...)`, `enforce_contract(...)` are
   host-only for engine #1; in #2 they are a compile error.
 - The `@...` decorators over `fn`/`class`: the target is **not registered** in the

@@ -112,8 +112,8 @@ fn main() -> int {
 
 - `+` with a string on either side is concatenation; numbers and bools are
   converted to text (`"v" + 1` → `"v1"`);
-- `==`/`!=` compare the content (`__latent_str_eq`); `<`/`>` and the like compare
-  pointers, not content;
+- `==`/`!=` and `<`/`>`/`<=`/`>=` compare the **content** of strings
+  (`STR_EQ`/`STR_CMP`), not pointers;
 - `.length` is the length in **UTF-8 bytes** (engine #2), `s[i]` is a **byte**;
 - escapes: `\n`, `\t`, `\\`, `\"`; there are no others;
 - there are no multiline/raw strings and no interpolation.
@@ -168,7 +168,8 @@ What does **not** exist: `abs`, `min`, `max`, `floor`, `ceil`, `round`, `pow`,
 - `a + b` on arrays is **not** concatenation: it compiles as `i32.add` of the
   pointers. There is no array concatenation in engine #2 (there is in engine #1).
 - `print(array)` prints the pointer (a number), not the content.
-- `==` on arrays compares pointers, and so does `assert_eq`.
+- `==` on arrays compares pointers; `assert_eq` compares strings by content and
+  arrays by pointers.
 - There is no bounds checking; `pop` on an empty array corrupts memory.
 - `put/push` on a string compiles and corrupts the string.
 
