@@ -37,11 +37,11 @@ see on the page):
 | [React](./frontend-react.md) | a component in TypeScript, `useEffect` + `ref`, Vite |
 | [Canvas](./frontend-canvas.md) | WASM computes a frame or a sorting step, canvas draws it |
 | [Compiler in the browser](./frontend-compiler-playground.md) | `latent_alloc`/`latent_compile`/`latent_free`, your own playground |
-| [Interactive demos](./frontend-showcase.md) | eight browser demos: goroutines and channels, AI primitives, self-host, sandbox, modules, benchmark, image filters and physics |
+| [Interactive demos](./frontend-showcase.md) | nine browser pages: goroutines and channels, AI primitives, self-host, sandbox, modules, Palette Studio, benchmark, image filters and physics |
 
 ## Demos
 
-Five new self-contained demos execute real Latent code right on the page; the older
+Six new self-contained pages execute real Latent code right on the page; the older
 ones put it under real load:
 
 | Demo | What it shows |
@@ -51,12 +51,13 @@ ones put it under real load:
 | <a href="/latent/demos/selfhost/">Self-host</a> | `seed.wasm` compiles `shc.lat`: stages, sha256, FIXED POINT, sample run |
 | <a href="/latent/demos/sandbox/">Sandbox</a> | untrusted code in a Worker with one import: timeout, OOB trap, memory.grow |
 | <a href="/latent/demos/modules/">Modules</a> | four `.lat` files, import graph, two-phase linking, mangled names, cycles |
+| <a href="/latent/demos/palette/">Palette Studio</a> | a working app: image → palette → CSS tokens, with a benchmark against JS |
 | <a href="/latent/demos/bench/">Benchmark</a> | JS vs Latent→WASM on five algorithms |
 | <a href="/latent/demos/image/">Images</a> | filters over `ImageData` and a comparison slider |
 | <a href="/latent/demos/physics/">Physics</a> | up to 30,000 particles, FPS graph, parity with JS |
 
 Each one ships its `.lat` source, live metrics and honest limits. The detailed
-walkthrough is [Eight interactive demos](./frontend-showcase.md).
+walkthrough is [Nine interactive pages](./frontend-showcase.md).
 
 The general theory is in [Latent in the frontend](../guide/web-and-frontend.md)
 and [Latent in the browser in 5 minutes](../getting-started/web-browser.md).

@@ -167,3 +167,17 @@ fn code(c: Color) -> int {
 fn main() -> int { return code(Green); }"#);
     assert_well_formed(&wasm);
 }
+
+// ---- строковые сравнения (L03) -------------------------------------------
+
+#[test]
+fn test_string_relational_and_assert_eq_compile() {
+    let wasm = compile_ok(r#"
+fn main() -> int {
+    if ("a" < "b") { print("lt"); }
+    if ("b" >= "a") { print("ge"); }
+    assert_eq("same", "same");
+    return 0;
+}"#);
+    assert_well_formed(&wasm);
+}

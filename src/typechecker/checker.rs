@@ -52,6 +52,9 @@ impl TypeChecker {
                     TypeError::ArityMismatch { expected, found, .. } => {
                         Err(TypeError::ArityMismatch { expected, found, pos })
                     }
+                    TypeError::ArityRange { name, min, max, found, .. } => {
+                        Err(TypeError::ArityRange { name, min, max, found, pos })
+                    }
                     other => Err(other),
                 }
             }

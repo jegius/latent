@@ -5,8 +5,8 @@ use super::super::super::types::{Type, TypeError};
 use crate::ast::*;
 use crate::lexer::Position;
 
-/// Встроенные функции с переменным числом аргументов. Для них пропускаем
-/// проверку арности, но проверяем каждый аргумент (§8).
+/// Встроенные функции, распознаваемые по имени. Арность проверяется в
+/// `builtin_arity`; `print` — единственная без верхней границы.
 const VARIADIC_BUILTINS: &[&str] = &[
     "print", "assert", "ai_infer", "ai_embed", "ai_stream", "stream_next",
     "tensor", "semantic", "matmul", "cosine_similarity", "dot", "magnitude",
@@ -14,6 +14,28 @@ const VARIADIC_BUILTINS: &[&str] = &[
     "len", "push", "str", "int", "float", "sqrt",
     "alloc", "load8", "store8", "load32", "store32", "memcopy",
 ];
+
+/// Допустимая арность встроенных функций: `(min, max)`. `print` — единственная
+/// функция без верхней границы; для остальных молчаливое игнорирование лишних
+/// аргументов было источником трудноуловимых ошибок (L05).
+fn builtin_arity(name: &str) -> Option<(usize, usize)> {
+    let exact = |n| Some((n, n));
+    match name {
+        "print" => None,
+        "assert" => Some((1, 2)),
+        "assert_eq" => Some((2, 3)),
+        "ai_infer" => exact(2),
+        "ai_embed" | "semantic" | "stream_next" | "snapshot" | "ai_contract"
+        | "enforce_contract" | "len" | "str" | "int" | "float" | "sqrt"
+        | "zeros" | "ones" | "alloc" | "load8" | "load32" => exact(1),
+        "tensor" => Some((1, 2)),
+        "ai_stream" | "matmul" | "cosine_similarity" | "dot" | "push"
+        | "store8" | "store32" => exact(2),
+        "memcopy" => exact(3),
+        "magnitude" => exact(1),
+        _ => None,
+    }
+}
 
 impl TypeChecker {
     /// Типизирует вызов: методы встроенных типов, вариативные встроенные и
@@ -45,7 +67,7 @@ impl TypeChecker {
             return Ok(self.fresh_var());
         }
 
-        // Вариативные встроенные функции: проверяем аргументы, но не арность.
+        // Встроенные функции: проверяем арность по таблице и типы аргументов.
         if let ExprKind::Identifier(name) = &callee.kind {
             // `new Class(...)` — конструктор класса.
             if name.starts_with("new ") {
@@ -55,6 +77,17 @@ impl TypeChecker {
                 return Ok(Type::Named(name[4..].to_string()));
             }
             if VARIADIC_BUILTINS.contains(&name.as_str()) {
+                if let Some((min, max)) = builtin_arity(name) {
+                    if args.len() < min || args.len() > max {
+                        return Err(TypeError::ArityRange {
+                            name: name.clone(),
+                            min,
+                            max,
+                            found: args.len(),
+                            pos,
+                        });
+                    }
+                }
                 for arg in args {
                     self.infer_expr(arg)?;
                 }

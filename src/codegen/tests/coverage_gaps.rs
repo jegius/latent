@@ -123,8 +123,8 @@ fn main() -> int {
 
 #[test]
 fn test_memory_builtins_with_missing_arguments() {
-    let wasm = compile(
-        r#"
+    // L05: missing builtin arguments are a type error now, not a codegen case.
+    let source = r#"
 fn main() -> int {
     let p = alloc();
     let a = load8();
@@ -133,9 +133,13 @@ fn main() -> int {
     store32();
     memcopy();
     return p + a + b;
-}"#,
-    );
-    assert_well_formed(&wasm);
+}"#;
+    let mut lexer = crate::lexer::Lexer::new(source);
+    let tokens = lexer.tokenize().unwrap();
+    let mut parser = crate::parser::Parser::new(tokens);
+    let ast = parser.parse().unwrap();
+    let mut checker = TypeChecker::new();
+    assert!(checker.check_program(&ast).is_err());
 }
 
 #[test]

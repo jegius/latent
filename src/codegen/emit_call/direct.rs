@@ -3,7 +3,7 @@
 use super::super::bytecode::{op, valtype};
 use super::super::context::{FuncContext, StaticTy};
 use super::super::module_builder::WasmCodegen;
-use super::super::runtime_helpers::{ALLOC, F64_TO_STR, I32_TO_STR, MEM_COPY, STR_TO_I32};
+use super::super::runtime_helpers::{ALLOC, F64_TO_STR, I32_TO_STR, MEM_COPY, STR_EQ, STR_TO_I32};
 use crate::ast::*;
 
 /// Встроенные, требующие host-рантайма: движок №2 даёт по ним понятную ошибку.
@@ -134,9 +134,15 @@ impl WasmCodegen {
         }
         if name == "assert_eq" {
             if args.len() >= 2 {
+                let left_is_str = self.static_ty_of(&args[0], ctx) == StaticTy::Str;
+                let right_is_str = self.static_ty_of(&args[1], ctx) == StaticTy::Str;
                 self.compile_expr(&args[0], ctx)?;
                 self.compile_expr(&args[1], ctx)?;
-                ctx.body.push(op::I32_EQ);
+                if left_is_str || right_is_str {
+                    self.emit_helper_call(&mut ctx.body, STR_EQ);
+                } else {
+                    ctx.body.push(op::I32_EQ);
+                }
                 ctx.body.push(op::I32_EQZ);
                 ctx.body.push(op::IF);
                 ctx.body.push(valtype::VOID);

@@ -171,6 +171,9 @@ const SMOKE = {
     [1, 5000, 40, 960, 600],
     [1, 5000, 40, 960, 600],
   ],
+  // Empty image: the call still exercises alloc + the 512-bin histogram and
+  // returns 0 colours without touching any pixel memory.
+  'palette/palette.wasm': [[0, 0, 0, 0, 8]],
 };
 
 async function smokeRun(wasmBytes, spec) {

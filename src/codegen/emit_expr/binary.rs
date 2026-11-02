@@ -3,7 +3,7 @@
 use super::super::bytecode::{op, valtype};
 use super::super::context::{FuncContext, StaticTy};
 use super::super::module_builder::WasmCodegen;
-use super::super::runtime_helpers::{F64_TO_STR, I32_TO_STR, STR_CONCAT, STR_EQ};
+use super::super::runtime_helpers::{F64_TO_STR, I32_TO_STR, STR_CMP, STR_CONCAT, STR_EQ};
 use crate::ast::*;
 
 impl WasmCodegen {
@@ -65,6 +65,23 @@ impl WasmCodegen {
             if *op == BinaryOp::NotEq {
                 ctx.body.push(op::I32_EQZ);
             }
+            return Ok(());
+        }
+        // Лексикографическое сравнение строк (L03): не указатели, а байты.
+        if matches!(*op, BinaryOp::Lt | BinaryOp::Gt | BinaryOp::LtEq | BinaryOp::GtEq)
+            && is_str
+        {
+            self.compile_expr(left, ctx)?;
+            self.compile_expr(right, ctx)?;
+            self.emit_helper_call(&mut ctx.body, STR_CMP);
+            ctx.body.push(op::I32_CONST);
+            ctx.body.write_i32(0);
+            ctx.body.push(match op {
+                BinaryOp::Lt => op::I32_LT_S,
+                BinaryOp::Gt => op::I32_GT_S,
+                BinaryOp::LtEq => op::I32_LE_S,
+                _ => op::I32_GE_S,
+            });
             return Ok(());
         }
 

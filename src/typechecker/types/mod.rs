@@ -65,6 +65,7 @@ pub enum TypeError {
     TypeMismatch { expected: Type, found: Type, pos: Position },
     InfiniteType { var: String, ty: Type, pos: Position },
     ArityMismatch { expected: usize, found: usize, pos: Position },
+    ArityRange { name: String, min: usize, max: usize, found: usize, pos: Position },
     NotAFunction { ty: Type, pos: Position },
     MissingReturn { pos: Position },
     InvalidAIType { message: String, pos: Position },
@@ -87,6 +88,15 @@ impl fmt::Display for TypeError {
             TypeError::ArityMismatch { expected, found, pos } => {
                 write!(f, "Несовпадение арности на строке {}:{}: ожидалось {} аргументов, найдено {}",
                     pos.line, pos.column, expected, found)
+            }
+            TypeError::ArityRange { name, min, max, found, pos } => {
+                let expected = if min == max {
+                    format!("{}", min)
+                } else {
+                    format!("от {} до {}", min, max)
+                };
+                write!(f, "Несовпадение арности на строке {}:{}: '{}' ожидает {}, найдено {}",
+                    pos.line, pos.column, name, expected, found)
             }
             TypeError::NotAFunction { ty, pos } => {
                 write!(f, "Не функция на строке {}:{}: тип '{}'", pos.line, pos.column, ty)

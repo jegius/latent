@@ -27,7 +27,7 @@ otherwise it is a wish list. `Lxx` IDs come from the
 - **Self-host.** `seed.wasm` (≈41 KiB) compiles `shc.lat` (≈164 KiB), fixed point,
   Rust-free bootstrap.
 - **Tooling.** Web IDE, playground, VS Code, IntelliJ IDEA, LSP, MCP docs server,
-  eight browser demos.
+  nine browser demos and an app.
 - **Docs.** Two languages, compiler-verified examples, a limitations register and
   this plan.
 
@@ -58,13 +58,15 @@ ignore.
 
 - Validate the result inside the compiler and return an error with a position
   (`L01`, `L09`, `D01`).
-- A `safe` mode: bounds checks, `pop`/`push`/`len`, traps with messages
+- A `safe` mode: bounds checks, `pop`/`push`, traps with messages
   (`L02`, `D02`).
-- String/array comparison and `assert_eq` by content (`L03`, `D03`).
-- BOM, builtin arity, `i32::MIN`/large `f64` formatting, division by zero
-  (`L04`–`L06`, `D04`–`D06`).
+- Array comparison and `assert_eq` by content (`L03`, `D03`).
+- Numeric edges: `i32::MIN`/large `f64`, division by zero (`L06`, `D06`).
 - Remove silent #2 surrogates (`L07`, `D07`).
 - Parity tests for every documentation example (`L08`, `L25`, `D08`).
+
+Closed in this iteration: BOM (`L04`, `D04`), builtin arity (`L05`, `D05`) and
+string `==`/`<`/`>`/`assert_eq` (part of `L03`).
 
 **Exit criterion:** `latentc compile` never returns an invalid module for any
 example in `web-ide/examples` or `docs`; every studied defect is closed by a test
@@ -210,7 +212,7 @@ proposals, not commitments.
 
 | Phase | Limitations |
 |---|---|
-| 0 | L01–L09 |
+| 0 | L01–L03, L06–L09 (L04, L05 closed) |
 | 1 | L12–L13, L29–L30, L41–L42, L44, L46 |
 | 2 | L10–L11, L18, L23, L47 |
 | 3 | L15 |

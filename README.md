@@ -8,7 +8,7 @@ Rust-компилятор, self-hosted компилятор на самом Late
 [![Docs RU](https://img.shields.io/badge/docs-%D1%80%D1%83%D1%81%D1%81%D0%BA%D0%B8%D0%B9-blue)](https://jegius.github.io/latent/)
 [![Docs EN](https://img.shields.io/badge/docs-english-blue)](https://jegius.github.io/latent/en/)
 [![Playground](https://img.shields.io/badge/playground-open-3574f0)](https://jegius.github.io/latent/playground/)
-[![Demos](https://img.shields.io/badge/demos-8%20killer%20features-ff2d95)](https://jegius.github.io/latent/demos/)
+[![Demos](https://img.shields.io/badge/demos-9%20in%20the%20browser-ff2d95)](https://jegius.github.io/latent/demos/)
 [![Self-hosted](https://img.shields.io/badge/self--hosted-fixed%20point-success)](selfhost/README.md)
 [![Coverage](https://img.shields.io/badge/coverage-rust%2092%25%20%C2%B7%20web--ide%2097.5%25%20%C2%B7%20selfhost%20100%25-success)](#качество-кода)
 
@@ -17,7 +17,8 @@ Rust-компилятор, self-hosted компилятор на самом Late
 - 🗺 **Дорожная карта:** [ROADMAP.md](ROADMAP.md) · [реестр ограничений](docs/docs/specs/limitations.md)
 - 🧪 **Web IDE (playground):** https://jegius.github.io/latent/playground/ (модули, оба движка)
 - 💥 **Killer-демо:** https://jegius.github.io/latent/demos/ — горутины/каналы, AI-native,
-  self-hosted компилятор в браузере, WASM-песочница, модули, бенчмарки, canvas, физика
+  self-hosted компилятор в браузере, WASM-песочница, модули, Palette Studio,
+  бенчмарки, canvas, физика
 - 🤖 **MCP-сервер документации:** [`mcp/docs-mcp`](mcp/docs-mcp/README.md)
 - 🧩 **Плагины:** [VS Code](editors/vscode/README.md) · [IntelliJ IDEA](editors/idea/README.md)
 - 🏗 **Архитектура:** [ARCHITECTURE.md](ARCHITECTURE.md)
@@ -86,6 +87,7 @@ Latent задуман как **WASM-ядро для веб-приложений*
   [self-hosted компилятор в браузере](https://jegius.github.io/latent/demos/selfhost/),
   [WASM-песочница](https://jegius.github.io/latent/demos/sandbox/),
   [модули](https://jegius.github.io/latent/demos/modules/),
+  [Palette Studio — палитра и CSS-токены](https://jegius.github.io/latent/demos/palette/),
   [бенчмарк JS vs WASM](https://jegius.github.io/latent/demos/bench/),
   [canvas-фильтры](https://jegius.github.io/latent/demos/image/),
   [физика 30 000 частиц](https://jegius.github.io/latent/demos/physics/);
@@ -131,7 +133,7 @@ selfhost/            Self-hosted компилятор на самом Latent (23
 web-ide/             Браузерная IDE: движок №1 (JS-интерпретатор с модулями/host-фичами)
                      и движок №2 (Rust→WASM, Vite-чанки, модульный ABI)
 docs/                Docusaurus-сайт: RU + EN (79+79 страниц), llms.txt, playground, демо
-docs/static/demos/   Killer-демо: concurrency/ai/selfhost/sandbox/modules + bench/image/physics
+docs/static/demos/   Killer-демо: concurrency/ai/selfhost/sandbox/modules/palette + bench/image/physics
 tooling/language-data/  Machine-readable описание языка (keywords/builtins/types)
 tooling/latent-lsp/  LSP-сервер: диагностика, completion, hover, форматирование
 tooling/selfhost-coverage/  Инструментальное покрытие self-hosted компилятора

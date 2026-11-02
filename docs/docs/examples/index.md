@@ -34,11 +34,11 @@ sidebar_position: 1
 | [React](./frontend-react.md) | компонент на TypeScript, `useEffect` + `ref`, Vite |
 | [Canvas](./frontend-canvas.md) | WASM считает кадр/шаг сортировки, canvas рисует |
 | [Компилятор в браузере](./frontend-compiler-playground.md) | `latent_alloc`/`latent_compile`/`latent_free`, свой playground |
-| [Интерактивные демо](./frontend-showcase.md) | восемь демо в браузере: горутины и каналы, AI-примитивы, self-host, песочница, модули, бенчмарк, фильтры изображений и физика |
+| [Интерактивные страницы](./frontend-showcase.md) | девять страниц в браузере: горутины и каналы, AI-примитивы, self-host, песочница, модули, Palette Studio, бенчмарк, фильтры изображений и физика |
 
 ## Демо
 
-Пять новых самодостаточных демо запускают настоящий Latent-код прямо на странице,
+Шесть новых самодостаточных страниц запускают настоящий Latent-код прямо на странице,
 а старые показывают реальную нагрузку:
 
 | Демо | Что показывает |
@@ -48,12 +48,13 @@ sidebar_position: 1
 | <a href="/latent/demos/selfhost/">Self-host</a> | `seed.wasm` компилирует `shc.lat`: стадии, sha256, FIXED POINT, запуск sample |
 | <a href="/latent/demos/sandbox/">Песочница</a> | недоверенный код в Worker с одним импортом: таймаут, OOB-trap, memory.grow |
 | <a href="/latent/demos/modules/">Модули</a> | 4 `.lat`, граф импортов, двухфазная линковка, мангленные имена, циклы |
+| <a href="/latent/demos/palette/">Palette Studio</a> | рабочее приложение: изображение → палитра → CSS-токены, с benchmark против JS |
 | <a href="/latent/demos/bench/">Бенчмарк</a> | JS против Latent→WASM на пяти алгоритмах |
 | <a href="/latent/demos/image/">Изображения</a> | фильтры над `ImageData` и слайдер сравнения |
 | <a href="/latent/demos/physics/">Физика</a> | до 30 000 частиц, FPS-график, parity с JS |
 
 Рядом с каждым — исходник `.lat`, живые метрики и список известных ограничений.
-Подробный разбор — в [«Восемь интерактивных демо»](./frontend-showcase.md).
+Подробный разбор — в [«Девять интерактивных страниц»](./frontend-showcase.md).
 
 Общая теория — в [«Latent во фронтенде»](../guide/web-and-frontend.md) и
 [«Latent в браузере за 5 минут»](../getting-started/web-browser.md).

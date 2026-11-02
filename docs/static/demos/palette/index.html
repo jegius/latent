@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Palette Studio — палитра и CSS-токены из изображения</title>
+  <meta name="description" content="Рабочий инструмент для дизайн-системы: извлеките палитру из изображения, поправьте цвета, проверьте контраст и скопируйте CSS-переменные. Пиксели обрабатывает Latent→WASM, изображение не покидает браузер." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23070b12'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%235eead4'%3E%CE%BB%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="../assets/killer.css" />
+  <style>
+    body { overflow-y: scroll; }
+    .app-shell { display: grid; grid-template-columns: 320px minmax(0, 1fr) 360px; gap: 0; min-height: calc(100vh - 54px); border-top: 1px solid var(--line); }
+    .k-embed .app-topbar { display: none; }
+    .k-embed .app-shell { min-height: 100vh; border-top: 0; }
+    .app-col { min-width: 0; border-right: 1px solid var(--line); }
+    .app-col:last-child { border-right: 0; border-left: 1px solid var(--line); }
+    .app-col-inner { padding: 16px; }
+    .app-section + .app-section { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+    .app-section h2 { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin-bottom: 9px; }
+    .app-topbar { position: sticky; top: 0; z-index: 40; background: rgba(5,6,10,.9); backdrop-filter: blur(16px); border-bottom: 1px solid var(--line); }
+    .app-topbar .wrap { min-height: 54px; }
+    .app-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+    .app-brand small { color: var(--dim); font-weight: 500; font-size: 11px; margin-left: 2px; }
+    .app-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    #preview { width: 100%; height: clamp(280px, 30vw, 380px); display: block; }
+    .app-drop { position: relative; border: 1px dashed rgba(148,178,255,.26); border-radius: 14px; overflow: hidden; background: #05080e; transition: border-color .2s, background .2s; }
+    .app-drop.is-over { border-color: var(--cyan); background: rgba(94,234,212,.05); }
+    .app-drop-hint { position: absolute; left: 10px; bottom: 10px; padding: 5px 8px; border-radius: 7px; background: rgba(5,8,14,.72); border: 1px solid var(--line); color: var(--dim); font-family: var(--mono); font-size: 10px; pointer-events: none; }
+    .app-filemeta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: 11px; color: var(--muted); }
+    .app-samples { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .app-sample { display: flex; align-items: center; gap: 7px; padding: 7px 8px; border-radius: 8px; border: 1px solid var(--line); background: rgba(148,178,255,.03); color: var(--muted); font-size: 11px; cursor: pointer; text-align: left; }
+    .app-sample:hover { border-color: rgba(94,234,212,.35); color: var(--text); }
+    .app-sample.is-active { border-color: rgba(94,234,212,.5); background: rgba(94,234,212,.08); color: var(--text); }
+    .app-sample i { width: 16px; height: 16px; border-radius: 5px; flex: 0 0 auto; }
+    .app-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .app-metric { padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: rgba(148,178,255,.03); }
+    .app-metric small { display: block; color: var(--dim); font-size: 9px; letter-spacing: .05em; text-transform: uppercase; }
+    .app-metric b { display: block; font-family: var(--mono); font-size: 16px; margin-top: 2px; font-weight: 650; }
+    .workspace { min-height: 100%; display: flex; flex-direction: column; }
+    .workspace-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+    .workspace-head h1 { font-size: 17px; letter-spacing: -0.02em; }
+    .workspace-head h1 span { color: var(--dim); font-weight: 500; }
+    .workspace-body { padding: 20px; display: flex; flex-direction: column; gap: 16px; flex: 1; }
+    #palette { display: flex; flex-direction: column; gap: 8px; }
+    .app-color { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 9px; border: 1px solid var(--line); border-radius: 11px; background: rgba(148,178,255,.03); cursor: pointer; transition: border-color .16s, background .16s, transform .16s; }
+    .app-color:hover { border-color: rgba(94,234,212,.32); transform: translateX(2px); }
+    .app-color.is-active { border-color: var(--cyan); background: rgba(94,234,212,.06); box-shadow: inset 2px 0 0 var(--cyan); }
+    .app-color input[type="color"] { width: 54px; height: 54px; padding: 0; border: 0; border-radius: 9px; background: transparent; cursor: pointer; overflow: hidden; }
+    .app-color input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    .app-color input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 9px; }
+    .app-color input[type="color"]::-moz-color-swatch { border: 0; border-radius: 9px; }
+    .app-color-main { min-width: 0; }
+    .app-color-hex { font-family: var(--mono); font-size: 14px; font-weight: 650; letter-spacing: .02em; }
+    .app-color-sub { font-family: var(--mono); font-size: 10px; color: var(--dim); margin-top: 2px; }
+    .app-color-bar { height: 4px; border-radius: 999px; background: rgba(148,178,255,.1); margin-top: 7px; overflow: hidden; }
+    .app-color-bar i { display: block; height: 100%; background: currentColor; border-radius: inherit; }
+    .app-color-side { text-align: right; font-family: var(--mono); font-size: 10px; color: var(--dim); line-height: 1.5; }
+    .app-color-side b { display: block; color: var(--text); font-size: 11px; }
+    .app-color-side .ok { color: var(--green); }
+    .app-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .app-slider { flex: 1; min-width: 120px; }
+    .app-empty { color: var(--dim); font-size: 12px; padding: 24px 0; text-align: center; }
+    .app-preview-card { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #0a0f1a; }
+    .app-preview-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 10px; color: var(--dim); }
+    .app-preview-body { padding: 14px; display: grid; grid-template-columns: minmax(0,1.25fr) minmax(0,.75fr); gap: 12px; }
+    .app-preview-kicker { font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+    .app-preview-title { font-size: 18px; line-height: 1.15; letter-spacing: -.03em; margin: 4px 0 6px; }
+    .app-preview-text { color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+    .app-preview-actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+    .app-preview-btn { border: 0; border-radius: 7px; padding: 6px 9px; font: inherit; font-size: 10.5px; font-weight: 650; cursor: default; }
+    .app-preview-ghost { background: rgba(148,178,255,.08); border: 1px solid var(--line); color: var(--text); }
+    .app-chart { display: flex; align-items: flex-end; gap: 5px; min-height: 84px; padding-top: 8px; }
+    .app-chart i { flex: 1; border-radius: 3px 3px 0 0; min-height: 6px; }
+    .app-bench { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
+    .app-bench-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .app-bench-row b { color: var(--text); font-weight: 600; }
+    .app-bench-row .wasm { color: var(--cyan); }
+    .app-bench-row .js { color: var(--amber); }
+    .app-bench-speed { margin-top: 2px; color: var(--green); font-size: 12px; font-weight: 650; }
+    .app-export { display: flex; flex-direction: column; gap: 7px; }
+    .app-export .k-btn { justify-content: flex-start; }
+    .app-about { border: 1px solid var(--line); border-radius: 10px; background: rgba(148,178,255,.025); }
+    .app-about summary { padding: 9px 10px; cursor: pointer; color: var(--muted); font-size: 12px; }
+    .app-about[open] summary { border-bottom: 1px solid var(--line); }
+    .app-about-body { padding: 10px; }
+    .app-about-body p { color: var(--muted); font-size: 11px; line-height: 1.55; margin-bottom: 7px; }
+    .app-about-body code { font-family: var(--mono); color: var(--cyan); font-size: .95em; }
+    .app-statusbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 9px 20px; border-top: 1px solid var(--line); color: var(--dim); font-family: var(--mono); font-size: 10px; }
+    .app-statusbar b { color: var(--muted); font-weight: 500; }
+    .app-statusbar .live { color: var(--green); }
+    .app-toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%) translateY(10px); padding: 8px 13px; border-radius: 9px; background: rgba(8,13,22,.96); border: 1px solid var(--line); color: var(--text); font-size: 12px; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 60; }
+    .app-toast.is-on { opacity: 1; transform: translateX(-50%); }
+    @media (max-width: 1180px) {
+      .app-shell { grid-template-columns: 280px minmax(0,1fr); }
+      .app-col:last-child { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); }
+      .app-col:last-child .app-col-inner { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
+      .app-col:last-child .app-section + .app-section { margin-top: 0; padding-top: 0; border-top: 0; }
+    }
+    @media (max-width: 820px) {
+      .app-shell { grid-template-columns: minmax(0,1fr); overflow-x: hidden; }
+      .app-topbar .wrap { flex-wrap: wrap; padding: 8px 12px; gap: 8px; }
+      .app-brand { width: 100%; }
+      .app-brand small { display: none; }
+      .app-actions { width: 100%; margin-left: 0; flex-wrap: wrap; gap: 6px; }
+      .app-actions .k-pill { order: -1; }
+      .app-actions .k-btn { flex: 1 1 auto; justify-content: center; }
+      .app-col { border-right: 0; border-bottom: 1px solid var(--line); }
+      .app-col:last-child .app-col-inner { display: block; }
+      .app-col:last-child .app-section + .app-section { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+      .workspace-head { flex-wrap: wrap; padding-left: 14px; padding-right: 14px; }
+      .workspace-head h1 { flex: 1 1 100%; }
+      .workspace-body { padding: 14px; }
+      .app-color { grid-template-columns: 46px minmax(0, 1fr) auto; gap: 8px; padding: 7px; }
+      .app-color input[type="color"] { width: 46px; height: 46px; }
+      .app-color-hex { font-size: 13px; }
+      .app-color-sub { font-size: 9.5px; }
+      .app-preview-body { grid-template-columns: minmax(0,1fr); }
+      .app-statusbar { gap: 8px; padding: 8px 14px; font-size: 9px; }
+      .app-filemeta { font-size: 10px; }
+    }
+    @media (prefers-reduced-motion: reduce) { .app-color, .app-drop, .app-toast { transition: none; } }
+  </style>
+</head>
+<body>
+  <header class="app-topbar">
+    <div class="wrap k-top-inner">
+      <div class="app-brand"><span class="k-mark">◒</span> Palette Studio <small>design tokens from pixels</small></div>
+      <div class="app-actions">
+        <span class="k-pill" id="wasm-badge">palette.wasm…</span>
+        <label class="k-btn k-btn--sm k-btn--primary" for="file" style="cursor:pointer">Открыть изображение</label>
+        <input id="file" type="file" accept="image/png,image/jpeg,image/webp" class="k-hide" />
+        <a class="k-btn k-btn--sm k-btn--ghost" href="../">Все демо</a>
+        <a class="k-btn k-btn--sm k-btn--ghost" href="../../examples/frontend-showcase">Документация</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <aside class="app-col">
+      <div class="app-col-inner">
+        <section class="app-section">
+          <h2>Источник</h2>
+          <div class="app-drop" id="drop">
+            <canvas id="preview" aria-label="Изображение для анализа"></canvas>
+            <span class="app-drop-hint">перетащите png / jpg / webp</span>
+          </div>
+          <div class="app-filemeta">
+            <span id="image-name">Product UI</span>
+            <span id="image-size">—</span>
+          </div>
+          <div class="app-samples" id="samples" style="margin-top:9px"></div>
+        </section>
+
+        <section class="app-section">
+          <h2>Анализ</h2>
+          <div class="app-toolbar" style="margin-bottom:9px">
+            <label class="k-small k-dim" for="max-colors">цветов</label>
+            <input id="max-colors" class="k-range app-slider" type="range" min="4" max="12" step="1" value="8" />
+            <b class="k-mono" id="max-label" style="font-size:12px">8</b>
+          </div>
+          <button class="k-btn k-btn--primary k-btn--block" id="extract" type="button">Пересчитать палитру</button>
+          <div class="app-metrics" style="margin-top:10px">
+            <div class="app-metric"><small>пикселей</small><b id="m-pixels">—</b></div>
+            <div class="app-metric"><small>непрозрачных</small><b id="m-opaque">—</b></div>
+            <div class="app-metric"><small>цветов</small><b id="m-colors">—</b></div>
+            <div class="app-metric"><small>wasm</small><b id="m-wasm">—</b></div>
+          </div>
+          <div class="app-bench">
+            <div class="app-bench-row"><span>Latent WASM</span><b class="wasm" id="bench-wasm">—</b></div>
+            <div class="app-bench-row"><span>JS twin</span><b class="js" id="bench-js">—</b></div>
+            <div class="app-bench-row"><span>match</span><b id="bench-match">—</b></div>
+            <div class="app-bench-speed" id="bench-speed">—</div>
+            <button class="k-btn k-btn--sm k-btn--ghost" id="bench" type="button" style="margin-top:4px">Сравнить с JS-версией</button>
+          </div>
+        </section>
+
+        <section class="app-section">
+          <details class="app-about">
+            <summary>Как это работает</summary>
+            <div class="app-about-body">
+              <p>Пиксели копируются в линейную память Latent-модуля, программа строит 512-бинную гистограмму и возвращает топ-N цветов. Хост только рисует canvas и считает WCAG-контраст.</p>
+              <p><code>main(pixels, w, h, out, max_colors)</code> — 1.8 КБ wasm, без сети и зависимостей. Ссылки на исходник — справа.</p>
+              <p>Ограничения: sRGB, квантование 3 бита на канал, alpha &lt; 128 пропускается, изображение уменьшается до 480 px.</p>
+            </div>
+          </details>
+        </section>
+      </div>
+    </aside>
+
+    <section class="workspace">
+      <div class="workspace-head">
+        <h1>Палитра <span>· из изображения</span></h1>
+        <div class="app-toolbar">
+          <button class="k-btn k-btn--sm k-btn--ghost" id="sort-share" type="button">по доле</button>
+          <button class="k-btn k-btn--sm k-btn--ghost" id="sort-lum" type="button">по яркости</button>
+          <span class="k-badge" id="export-hint">—</span>
+        </div>
+      </div>
+      <div class="workspace-body">
+        <div id="palette"></div>
+        <div class="app-preview-card">
+          <div class="app-preview-head"><span>предпросмотр интерфейса</span><span id="accent-label">accent</span></div>
+          <div id="accent-preview"></div>
+        </div>
+      </div>
+      <div class="app-statusbar">
+        <span class="live">● offline</span>
+        <span><b id="status">загрузка…</b></span>
+        <span class="k-right"><b id="m-time">—</b> wasm</span>
+        <span><b id="m-ratio">—</b> opaque</span>
+      </div>
+    </section>
+
+    <aside class="app-col">
+      <div class="app-col-inner">
+        <section class="app-section">
+          <h2>Контраст</h2>
+          <div class="app-metrics">
+            <div class="app-metric"><small>акцент / белый</small><b id="c-white">—</b></div>
+            <div class="app-metric"><small>акцент / чёрный</small><b id="c-black">—</b></div>
+            <div class="app-metric"><small>выбран</small><b id="selected-hex" style="font-size:13px">—</b></div>
+            <div class="app-metric"><small>WCAG</small><b id="selected-badge">—</b></div>
+            <div class="app-metric"><small>AA цветов</small><b id="aa-count">—</b></div>
+            <div class="app-metric"><small>AAA цветов</small><b id="aaa-count">—</b></div>
+          </div>
+          <p class="k-hint" style="margin-top:8px">WCAG 2.1 считается на хосте; порог AA — 4.5:1, AAA — 7:1.</p>
+        </section>
+
+        <section class="app-section">
+          <h2>Экспорт</h2>
+          <div class="app-export">
+            <button class="k-btn k-btn--sm" id="export-css" type="button">Скопировать CSS-переменные</button>
+            <button class="k-btn k-btn--sm" id="export-json" type="button">Скопировать JSON</button>
+            <button class="k-btn k-btn--sm" id="export-css-file" type="button">Скачать tokens.css</button>
+            <button class="k-btn k-btn--sm" id="export-png" type="button">Скачать палитру PNG</button>
+          </div>
+          <p class="k-hint" style="margin-top:8px">Цвета можно править в списке: откройте свотч и выберите свой оттенок. Экспорт обновится сразу.</p>
+        </section>
+
+        <section class="app-section">
+          <h2>Исходник</h2>
+          <div class="app-export">
+            <a class="k-btn k-btn--sm" href="./palette.lat" target="_blank" rel="noopener">palette.lat</a>
+            <a class="k-btn k-btn--sm" href="./killer-palette.js" target="_blank" rel="noopener">killer-palette.js</a>
+          </div>
+          <p class="k-hint" style="margin-top:8px">JS-двойник для сравнения — внутри <code>killer-palette.js</code>, функция <code>paletteJS</code>. Оба варианта используют одни и те же 512 бинов.</p>
+        </section>
+      </div>
+    </aside>
+  </main>
+
+  <div class="app-toast" id="toast" role="status"></div>
+
+  <script type="module" src="./killer-palette.js"></script>
+</body>
+</html>

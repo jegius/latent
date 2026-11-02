@@ -35,6 +35,7 @@ pub(super) const MEM_COPY: &str = "__latent_mem_copy";
 pub(super) const STR_LEN: &str = "__latent_str_len";
 pub(super) const STR_CONCAT: &str = "__latent_str_concat";
 pub(super) const STR_EQ: &str = "__latent_str_eq";
+pub(super) const STR_CMP: &str = "__latent_str_cmp";
 pub(super) const STR_CHAR_AT: &str = "__latent_str_char_at";
 pub(super) const I32_TO_STR: &str = "__latent_i32_to_str";
 pub(super) const F64_TO_STR: &str = "__latent_f64_to_str";
@@ -61,6 +62,7 @@ impl WasmCodegen {
 
         let eq_ty = self.add_func_type(&[valtype::I32, valtype::I32], &[valtype::I32]);
         self.register_helper(STR_EQ, eq_ty);
+        self.register_helper(STR_CMP, eq_ty);
 
         let char_ty = self.add_func_type(&[valtype::I32, valtype::I32], &[valtype::I32]);
         self.register_helper(STR_CHAR_AT, char_ty);
@@ -95,6 +97,7 @@ impl WasmCodegen {
         self.emit_str_len_body();
         self.emit_str_concat_body();
         self.emit_str_eq_body();
+        self.emit_str_cmp_body();
         self.emit_str_char_at_body();
         self.emit_i32_to_str_body();
         self.emit_f64_to_str_body();

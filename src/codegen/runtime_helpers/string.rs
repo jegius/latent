@@ -131,6 +131,95 @@ impl WasmCodegen {
         self.finish_body(b);
     }
 
+    /// str_cmp(a,b)->i32: -1/0/1 по байтам UTF-8, затем по длине.
+    /// locals: params 0 a,1 b; declared 2 i,3 lenA,4 lenB,5 min,6 ca,7 cb
+    pub(super) fn emit_str_cmp_body(&mut self) {
+        let mut b = self.begin_body(6);
+        // lenA = load(a)
+        b.push(op::LOCAL_GET); b.write_u32(0);
+        b.push(op::I32_LOAD); b.write_u32(2); b.write_u32(0);
+        b.push(op::LOCAL_SET); b.write_u32(3);
+        // lenB = load(b)
+        b.push(op::LOCAL_GET); b.write_u32(1);
+        b.push(op::I32_LOAD); b.write_u32(2); b.write_u32(0);
+        b.push(op::LOCAL_SET); b.write_u32(4);
+        // min = lenA < lenB ? lenA : lenB
+        b.push(op::LOCAL_GET); b.write_u32(3);
+        b.push(op::LOCAL_GET); b.write_u32(4);
+        b.push(op::I32_LT_U);
+        b.push(op::IF); b.push(valtype::I32);
+        b.push(op::LOCAL_GET); b.write_u32(3);
+        b.push(op::ELSE);
+        b.push(op::LOCAL_GET); b.write_u32(4);
+        b.push(op::END);
+        b.push(op::LOCAL_SET); b.write_u32(5);
+        // i = 0
+        self.i32c(&mut b, 0);
+        b.push(op::LOCAL_SET); b.write_u32(2);
+        b.push(op::BLOCK); b.push(valtype::VOID);
+        b.push(op::LOOP); b.push(valtype::VOID);
+        b.push(op::LOCAL_GET); b.write_u32(2);
+        b.push(op::LOCAL_GET); b.write_u32(5);
+        b.push(op::I32_GE_U);
+        b.push(op::BR_IF); b.write_u32(1);
+        // ca = a[4+i]
+        b.push(op::LOCAL_GET); b.write_u32(0);
+        self.i32c(&mut b, 4);
+        b.push(op::I32_ADD);
+        b.push(op::LOCAL_GET); b.write_u32(2);
+        b.push(op::I32_ADD);
+        b.push(op::I32_LOAD8_U); b.write_u32(0); b.write_u32(0);
+        b.push(op::LOCAL_SET); b.write_u32(6);
+        // cb = b[4+i]
+        b.push(op::LOCAL_GET); b.write_u32(1);
+        self.i32c(&mut b, 4);
+        b.push(op::I32_ADD);
+        b.push(op::LOCAL_GET); b.write_u32(2);
+        b.push(op::I32_ADD);
+        b.push(op::I32_LOAD8_U); b.write_u32(0); b.write_u32(0);
+        b.push(op::LOCAL_SET); b.write_u32(7);
+        // if ca != cb return ca > cb ? 1 : -1
+        b.push(op::LOCAL_GET); b.write_u32(6);
+        b.push(op::LOCAL_GET); b.write_u32(7);
+        b.push(op::I32_NE);
+        b.push(op::IF); b.push(valtype::VOID);
+        b.push(op::LOCAL_GET); b.write_u32(6);
+        b.push(op::LOCAL_GET); b.write_u32(7);
+        b.push(op::I32_GT_U);
+        b.push(op::IF); b.push(valtype::I32);
+        self.i32c(&mut b, 1);
+        b.push(op::ELSE);
+        self.i32c(&mut b, -1);
+        b.push(op::END);
+        b.push(op::RETURN);
+        b.push(op::END);
+        // i++
+        b.push(op::LOCAL_GET); b.write_u32(2);
+        self.i32c(&mut b, 1);
+        b.push(op::I32_ADD);
+        b.push(op::LOCAL_SET); b.write_u32(2);
+        b.push(op::BR); b.write_u32(0);
+        b.push(op::END);
+        b.push(op::END);
+        // if lenA == lenB return 0; return lenA > lenB ? 1 : -1
+        b.push(op::LOCAL_GET); b.write_u32(3);
+        b.push(op::LOCAL_GET); b.write_u32(4);
+        b.push(op::I32_EQ);
+        b.push(op::IF); b.push(valtype::I32);
+        self.i32c(&mut b, 0);
+        b.push(op::ELSE);
+        b.push(op::LOCAL_GET); b.write_u32(3);
+        b.push(op::LOCAL_GET); b.write_u32(4);
+        b.push(op::I32_GT_U);
+        b.push(op::IF); b.push(valtype::I32);
+        self.i32c(&mut b, 1);
+        b.push(op::ELSE);
+        self.i32c(&mut b, -1);
+        b.push(op::END);
+        b.push(op::END);
+        self.finish_body(b);
+    }
+
     /// str_char_at(ptr, index)->i32: байт по индексу (0..len), иначе -1.
     pub(super) fn emit_str_char_at_body(&mut self) {
         let mut b = self.begin_body(0);

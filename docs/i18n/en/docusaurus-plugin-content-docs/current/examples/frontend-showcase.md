@@ -1,16 +1,16 @@
 ---
-title: "Eight interactive Latent demos"
-sidebar_label: "Demos and what they show"
+title: "Nine interactive Latent pages"
+sidebar_label: "Demos and the app"
 sidebar_position: 15
-description: "Eight browser demos: goroutines and channels, AI primitives, the self-hosted compiler, a sandbox for untrusted code, modules — plus a benchmark, canvas filters and physics. Real execution, live metrics, known limits."
+description: "Nine browser pages: goroutines and channels, AI primitives, the self-hosted compiler, a sandbox, modules, Palette Studio — plus a benchmark, canvas filters and physics. Real execution, live metrics, known limits."
 ---
 
-# Eight interactive Latent demos
+# Nine interactive Latent pages
 
-The eight pages below run Latent right in the browser. Five are about the
-language: goroutines and channels, AI primitives, the self-hosted compiler, a
-sandbox and modules. Three are about dense computation: a benchmark, image
-filters and physics.
+The nine pages below run Latent right in the browser. Five are about the language:
+goroutines and channels, AI primitives, the self-hosted compiler, a sandbox and
+modules. One is a working design-system app. Three are about dense computation: a
+benchmark, image filters and physics.
 
 There are no recorded videos and no "average numbers from our machine": the code
 runs on yours, the metrics are measured on the spot, and the `.lat` sources sit
@@ -18,15 +18,16 @@ next to them. These are static pages with no bundler and no external
 dependencies, in `docs/static/demos/`, published at `/latent/demos/...`. A copy
 of the interpreter for offline use lives in `demos/vendor/compiler/`.
 
-## Map: demo, strong side, what you see
+## Map: page, strong side, what you see
 
-| Demo | Strong side | What you see |
+| Page | Strong side | What you see |
 |---|---|---|
 | <a href="/latent/demos/concurrency/">Goroutines & channels</a> | CSP in the grammar: `spawn`, `channel`, `<-`, `select`, `yield` | a live visualization of goroutines, channel pipes and message tokens; the scheduler trace; fan-in, map-reduce, worker pool, select, **1000 goroutines**, deadlock |
 | <a href="/latent/demos/ai/">AI-native</a> | `ai_embed`, `ai_infer`, `ai_stream`, `tensor`, `matmul` are language syntax | embeddings as vectors, a cosine heatmap, token streaming, real A/B/C matrices, optional gateway |
 | <a href="/latent/demos/selfhost/">Compiler compiles itself</a> | a 41 KiB `seed.wasm` compiles the 164 KiB `shc.lat` in the browser | the `seed → stage1′ → stage2′ → stage3′` chain, sha256 per stage, **FIXED POINT**, sample run |
 | <a href="/latent/demos/sandbox/">Sandbox</a> | a single `env.print` import, wasm traps, Worker termination | editor → `compiler.wasm` → Worker; infinite loop, OOB, `memory.grow` 64 MiB, DOM/fetch rejected |
 | <a href="/latent/demos/modules/">Modules</a> | `import`/`export`, module graph, two-phase linking | a 4-file tree, SVG graph, mangled names, an `a ↔ b` cycle, a build through `latent_compile_files` |
+| <a href="/latent/demos/palette/">Palette Studio</a> | an app: pixels → palette → CSS tokens | image upload, editable swatches, WCAG contrast, CSS/JSON/PNG export and an **honest benchmark** against a JS twin |
 | <a href="/latent/demos/bench/">Benchmark</a> | dense `i32` loops in linear memory | JS vs Latent→WASM on five algorithms, medians, parity checksums |
 | <a href="/latent/demos/image/">Images</a> | pointers into memory instead of copies | grayscale, blur, Sobel, threshold over `ImageData`, an original/filter slider |
 | <a href="/latent/demos/physics/">Physics</a> | one buffer, fixed point, no GC | up to 30,000 particles, an FPS graph, bit-for-bit parity with the JS twin |
@@ -217,6 +218,35 @@ paths are real.
 Modules v1 are named imports and relative `.lat` paths only; the editor lives in
 tab memory; cycles are resolved by the linker, but recursion is still recursion.
 
+## 6. Palette Studio: an app, not a showcase
+
+<iframe
+  src="/latent/demos/palette/?embed=1"
+  title="Palette Studio — palette and CSS tokens from an image"
+  loading="lazy"
+  style={{width: '100%', height: '820px', border: 0, borderRadius: '12px'}}
+/>
+
+This is a working design-system tool: drop a logo or screenshot, get a palette,
+edit the swatches, check WCAG contrast and copy CSS variables, JSON or a PNG. The
+image never leaves the browser — the pixels are read by `palette.wasm`.
+
+```latent
+fn bin_of(r: int, g: int, b: int) -> int {
+    // 3 bits per channel: 512 bins, enough for 5–8 brand colours.
+    return (r >> 5) * 64 + (g >> 5) * 8 + (b >> 5);
+}
+```
+
+The app ships a JS twin of the same algorithm on `Uint32Array`. "Compare with JS"
+runs both on identical pixels and reports the median: on a 480×293 image Latent is
+consistently faster, and the palettes match. It is not a synthetic benchmark —
+same file, same data, same result.
+
+App limits: sRGB, 3-bit quantisation, alpha &lt; 128 is skipped, the image is
+downscaled to 480 px, and contrast is computed on the host. For precise
+colorimetry and OKLCH you need a different tool.
+
 ## Performance: benchmark, images, physics
 
 Three demos about dense computation and predictable memory. They are not about CSP
@@ -350,6 +380,9 @@ their own `assets/killer.css`, so a hub redesign cannot break them.
    the log shows terminate, trap and 1025 pages.
 5. In **modules**, switch to "cycles allowed", run, and look at the `a.lat ↔ b.lat`
    cycle in the graph; then "missing import" for a path-level error.
+6. In **Palette Studio**, upload your own screenshot, edit one swatch, copy the CSS,
+   and press "Compare with JS" — you get the real median for your image, not a
+   number from a slide.
 
 ## Related sections
 

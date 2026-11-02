@@ -41,6 +41,23 @@ fn test_duplicate_and_arity_errors() {
 }
 
 #[test]
+fn test_builtin_arity_errors() {
+    // L05: builtin arity is no longer silently ignored.
+    for source in [
+        "fn main() -> int { let x = len(); return x; }",
+        "fn main() -> int { push([1], 2, 3); return 0; }",
+        "fn main() -> int { store32(1); return 0; }",
+        "fn main() -> int { assert(); return 0; }",
+        "fn main() -> int { let x = alloc(); return x; }",
+    ] {
+        assert!(assert_type_error(source).contains("арности"), "no arity error for {source}");
+    }
+    assert!(check("fn main() -> int { assert(true, 1); return 0; }").is_ok());
+    assert!(check("fn main() -> int { return len([1, 2]); }").is_ok());
+    assert!(check("fn main() -> int { print(); return 0; }").is_ok());
+}
+
+#[test]
 fn test_condition_and_assignment_errors() {
     assert!(check("fn main() -> int { if (1 == 1) { } return 0; }").is_ok());
     // Условие не-bool — ошибка типизации.

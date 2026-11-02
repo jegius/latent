@@ -27,10 +27,8 @@ will drift from the code again.
 | ID | Limitation | What happens | Workaround | Next step |
 |---|---|---|---|---|
 | L01 | Engine #2 emits invalid WASM for some programs | float literals with zero fraction, annotations with a different type, `[1.5]`, mixed arithmetic, float fields/captures, `return;` in `unit`, void calls as values, `match` with void arms, `new` without `init`, void method as a statement | call `WebAssembly.validate()` on the host; docs mark such blocks as expected errors | validate the emitted module in the compiler; type-directed codegen |
-| L02 | No bounds checks or safe mode | `a[N]` reads/writes out of bounds; `pop()` on an empty array reads `arr[-1]`; `push` on a string corrupts memory; `len()` with no argument reads address 0 | stay in bounds by hand; run untrusted code in a Worker | a `safe` mode with traps and messages, `raw` for low-level code |
-| L03 | Strings and arrays compare differently than users expect | `< > <= >=` on strings compares pointers; `assert_eq` on strings/arrays compares i32 values | compare length and bytes manually | compare `string`/`[T]` by content; pointer comparison as a separate operation |
-| L04 | BOM at the start of a file breaks the lexer | column `4294967295`, debug `latentc` may panic | save UTF-8 without BOM | skip `U+FEFF` and stop the column overflow |
-| L05 | Builtin arity is not checked | extra arguments are ignored (`assert`, `len`, `str`, …); missing ones read garbage | read signatures in the reference | check arity and argument types in the type checker |
+| L02 | No bounds checks or safe mode | `a[N]` reads/writes out of bounds; `pop()` on an empty array reads `arr[-1]`; `push` on a string corrupts memory | stay in bounds by hand; run untrusted code in a Worker | a `safe` mode with traps and messages, `raw` for low-level code |
+| L03 | Array comparison and `assert_eq` for arrays | `==`, `<`, `>` for strings now compare content, but arrays still compare as pointers; `assert_eq` on arrays does too | compare length and elements manually | deep comparison of `[T]` and content-aware `assert_eq` |
 | L06 | Numeric edge cases and traps without diagnostics | `i32_to_str(i32::MIN)` overflows; `f64_to_str` traps at `|x| ≥ 2^31`; division/remainder by zero and `i32::MIN / -1` trap without a line | avoid edge values; check the divisor | correct formatting; trap with a position and a code |
 | L07 | Engine #2 silently replaces concurrency semantics | `spawn` runs sequentially, `select` takes the first arm, `yield` is a no-op, `await` is passthrough, top-level code and `test` blocks are not emitted | do not compile host constructs with #2 | an error instead of a surrogate, or an explicit emulation flag |
 | L08 | The engines diverge observably | `7 / 2` is `3.5` in #1 and `3` in #2; string length is UTF-16 vs UTF-8; `[1] == [1]` is `true` vs `false`; float; `enum` in #1 | the difference table and playground auto-fallback | one specification and parity tests for every example |
@@ -89,15 +87,23 @@ will drift from the code again.
 | L39 | Class inheritance | composition and `enum`/`match` cover the cases; inheritance complicates layout |
 | L40 | An npm-style package registry | modules v2 and reproducible builds first |
 
+## Removed
+
+| ID | What was wrong | What closed it |
+|---|---|---|
+| L04 | A UTF-8 BOM broke the lexer | `src/lexer/scanner.rs` skips `U+FEFF`; test `test_utf8_bom_is_skipped` |
+| L05 | Builtin arity was not checked | the type checker returns `ArityRange`; test `test_builtin_arity_errors`; `print` stays variadic |
+| L03 (strings) | `==`, `<`, `>` and `assert_eq` compared string pointers | `STR_EQ`/`STR_CMP`; `assert_eq` picks the string helper from the static type; test `test_string_relational_and_assert_eq_compile` |
+
 ## Deferred actions
 
 | ID | Action | Related |
 |---|---|---|
 | D01 | Validate WASM inside the compiler and return a structured error with a position | L01, L09 |
 | D02 | Add a `safe` mode with bounds checks and clear traps | L02 |
-| D03 | Fix string/array comparison and `assert_eq` | L03 |
-| D04 | Fix BOM and column overflow | L04 |
-| D05 | Check builtin arity | L05 |
+| D03 | Fix array comparison and `assert_eq` (strings are closed) | L03 |
+| D04 | ~~Fix BOM and column overflow~~ — closed | L04 |
+| D05 | ~~Check builtin arity~~ — closed | L05 |
 | D06 | Fix `i32::MIN`/large `f64` formatting; diagnose division by zero | L06 |
 | D07 | Remove silent #2 surrogates or gate them behind a flag | L07 |
 | D08 | Make parity tests mandatory for every documentation example | L08, L25 |
