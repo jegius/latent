@@ -4,7 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Latent — физика частиц на canvas</title>
-  <meta name="description" content="20 000 частиц, три вращающихся аттрактора и фиксированная точка в Latent→WASM. Живой FPS, график шага симуляции и честное сравнение с JS." />
+  <meta name="description" content="До 30 000 частиц, три вращающихся аттрактора и фиксированная точка в Latent→WASM. Живой FPS, график шага симуляции и честное сравнение с JS." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23070b12'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%235eead4'%3E%CE%BB%3C/text%3E%3C/svg%3E" />
   <script>
     // Keep relative URLs stable whether the host serves /demos/physics or
     // /demos/physics/ (Docusaurus serve drops the trailing slash).
@@ -16,7 +17,8 @@
       document.head.appendChild(base);
     })();
   </script>
-  <link rel="stylesheet" href="../assets/demo.css" />
+  <link rel="stylesheet" href="/latent/demos/assets/demo.css"
+        onerror="this.onerror=null;this.href='../assets/demo.css'" />
   <style>
     .sim-stage {
       position: relative;
@@ -92,7 +94,7 @@
       </div>
     </section>
 
-    <section class="wrap section">
+    <section class="wrap section embed-keep">
       <div class="grid grid-hero">
         <div class="panel" style="padding: 14px">
           <div class="sim-stage">
@@ -152,7 +154,7 @@
       </div>
     </section>
 
-    <section class="wrap section">
+    <section class="wrap section embed-keep">
       <div class="metrics">
         <div class="metric accent">
           <div class="k">sim step</div>
@@ -179,7 +181,7 @@
           <h2 style="font-size:20px">Почему здесь Latent, а не JS</h2>
           <div class="stack-sm" style="margin-top: 12px">
             <p class="muted small" style="margin:0">
-              <b style="color:var(--text)">Один буфер вместо 20 000 объектов.</b> Частица — это
+              <b style="color:var(--text)">Один буфер вместо 30 000 объектов.</b> Частица — это
               четыре i32 по фиксированным смещениям. Нет массива объектов, нет ссылок, нет
               работы для сборщика мусора. Память выделяется один раз на 30 000 частиц.
             </p>
@@ -196,7 +198,7 @@
             <p class="muted small" style="margin:0">
               <b style="color:var(--text)">Столкновения.</b> Частицы отражаются от трёх ядер
               аттракторов и от стенок; ядра вращаются вокруг центра. Это не N-body попарно —
-              честно: O(N·3), зато 20 000 частиц укладываются в доли миллисекунды.
+              честно: O(N·3), зато 30 000 частиц укладываются в доли миллисекунды.
             </p>
           </div>
         </div>
@@ -232,7 +234,7 @@
   </main>
 
   <footer class="wrap footer">
-    <span>Latent demos · 20 000 частиц в одном линейном буфере</span>
+    <span>Latent demos · 30 000 частиц в одном линейном буфере</span>
     <span class="row">
       <a href="../">Все демо</a><span class="dim">/</span>
       <a href="../bench/">Бенчмарк</a><span class="dim">/</span>
@@ -247,6 +249,10 @@
       instantiateLatent, formatMs, median, p95, nextFrame,
     } from '../assets/wasm.js';
     import {highlightLatent} from '../assets/highlight.js';
+
+    if (new URLSearchParams(location.search).has('embed')) {
+      document.body.classList.add('embed');
+    }
 
     const W = 960;
     const H = 600;

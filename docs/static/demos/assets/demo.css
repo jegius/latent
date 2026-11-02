@@ -943,6 +943,51 @@ tr.active td {
   transition: width 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+/* ---------- embedded preview (?embed=1) ---------- */
+
+body.embed .topbar,
+body.embed .hero,
+body.embed .footer {
+  display: none;
+}
+
+body.embed main {
+  padding-top: 6px;
+}
+
+body.embed .section {
+  padding: 10px 0;
+}
+
+body.embed .section:not(.embed-keep) {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  body.embed .grid-hero {
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  body.embed .panel {
+    padding: 14px;
+  }
+
+  body.embed .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Embedded preview of the physics page: keep the canvas and the essential
+   controls, hide the long benchmark/parity block (the full page has it). */
+body.embed .graph-card,
+body.embed #check,
+body.embed #bench,
+body.embed #bench-out,
+body.embed .swatches {
+  display: none;
+}
+
 /* ---------- lists ---------- */
 
 .bench-row {

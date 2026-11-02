@@ -22,10 +22,10 @@ description: "Три работающих в браузере демо Latent: �
 трёх прогонов.
 
 <iframe
-  src="/latent/demos/bench/"
+  src="/latent/demos/bench/?embed=1"
   title="Latent vs JavaScript — интерактивный бенчмарк"
   loading="lazy"
-  style={{width: '100%', height: '760px', border: 0, borderRadius: '12px'}}
+  style={{width: '100%', height: '780px', border: 0, borderRadius: '12px'}}
 />
 
 Если встроенная страница не загрузилась (например, из-за политики iframe),
@@ -41,10 +41,10 @@ description: "Три работающих в браузере демо Latent: �
 ## Физика: 10 000+ частиц в одном буфере
 
 <iframe
-  src="/latent/demos/physics/"
+  src="/latent/demos/physics/?embed=1"
   title="Latent — симуляция гравитации на 30 000 частиц"
   loading="lazy"
-  style={{width: '100%', height: '700px', border: 0, borderRadius: '12px'}}
+  style={{width: '100%', height: '760px', border: 0, borderRadius: '12px'}}
 />
 
 Симуляция целиком живёт в памяти модуля: четыре массива `i32` (x, y, vx, vy) по

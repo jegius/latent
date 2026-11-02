@@ -22,10 +22,10 @@ The most revealing demo: the same algorithms in JavaScript and in Latent→WASM,
 the same input data, a checksum comparison, and the median of three runs.
 
 <iframe
-  src="/latent/demos/bench/"
+  src="/latent/demos/bench/?embed=1"
   title="Latent vs JavaScript — interactive benchmark"
   loading="lazy"
-  style={{width: '100%', height: '760px', border: 0, borderRadius: '12px'}}
+  style={{width: '100%', height: '780px', border: 0, borderRadius: '12px'}}
 />
 
 If the embedded page does not load (for example, because of an iframe policy),
@@ -41,10 +41,10 @@ open it directly: <a href="/latent/demos/bench/">latent/demos/bench</a>.
 ## Physics: 10,000+ particles in one buffer
 
 <iframe
-  src="/latent/demos/physics/"
+  src="/latent/demos/physics/?embed=1"
   title="Latent — gravity simulation with 30,000 particles"
   loading="lazy"
-  style={{width: '100%', height: '700px', border: 0, borderRadius: '12px'}}
+  style={{width: '100%', height: '760px', border: 0, borderRadius: '12px'}}
 />
 
 The whole simulation lives in the module's memory: four `i32` arrays (x, y, vx,

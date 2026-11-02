@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Latent — фильтры изображений на canvas</title>
   <meta name="description" content="Grayscale, box blur, Sobel и threshold в Latent→WASM против того же кода на JS. ImageData живёт в линейной памяти, canvas показывает результат." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23070b12'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%235eead4'%3E%CE%BB%3C/text%3E%3C/svg%3E" />
   <script>
     // Keep relative URLs stable whether the host serves /demos/image or
     // /demos/image/ (Docusaurus serve drops the trailing slash).
@@ -16,7 +17,8 @@
       document.head.appendChild(base);
     })();
   </script>
-  <link rel="stylesheet" href="../assets/demo.css" />
+  <link rel="stylesheet" href="/latent/demos/assets/demo.css"
+        onerror="this.onerror=null;this.href='../assets/demo.css'" />
   <style>
     .stage {
       position: relative;
@@ -127,7 +129,7 @@
       </div>
     </section>
 
-    <section class="wrap section">
+    <section class="wrap section embed-keep">
       <div class="grid grid-2">
         <div class="panel">
           <div class="stage-wrap">
@@ -195,7 +197,7 @@
       </div>
     </section>
 
-    <section class="wrap section">
+    <section class="wrap section embed-keep">
       <div class="metrics">
         <div class="metric accent">
           <div class="k">фильтр</div>
@@ -294,6 +296,10 @@
       instantiateLatent, formatBytes, formatMs, median, p95, nextFrame,
     } from '../assets/wasm.js';
     import {highlightLatent} from '../assets/highlight.js';
+
+    if (new URLSearchParams(location.search).has('embed')) {
+      document.body.classList.add('embed');
+    }
 
     const W = 480;
     const H = 360;
