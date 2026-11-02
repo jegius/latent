@@ -73,7 +73,8 @@ export function walkMarkdown(root) {
 function titleFromPath(relativePath) {
     const base = relativePath.split('/').pop().replace(/\.mdx?$/i, '');
     if (base === 'index') {
-        const parent = relativePath.split('/').slice(-2)[0];
+        const parts = relativePath.split('/');
+        const parent = parts.length > 1 ? parts[parts.length - 2] : '';
         return parent ? humanize(parent) : 'Документация';
     }
     return humanize(base);

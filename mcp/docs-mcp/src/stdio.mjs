@@ -190,8 +190,10 @@ export function startStdio(core, options = {}) {
             buffer = Buffer.alloc(0);
             if (rest.startsWith('{')) enqueue(Buffer.from(rest, 'utf8'));
         }
-        closed = true;
+        // Закрываемся только после обработки очереди: иначе ответ на последнее
+        // сообщение (NDJSON без завершающего \n) будет отброшен writeMessage.
         queue.finally(() => {
+            closed = true;
             if (!exitRequested && exitOnEof) {
                 exitRequested = true;
                 maybeFinish();

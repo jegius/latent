@@ -268,8 +268,10 @@ Content-Length: 123\r\n\r\n{"jsonrpc":"2.0","id":1,"method":"initialize",...}
 Дополнительно принимается **NDJSON** (одно сообщение на строку — текущая
 редакция MCP stdio). Диагностика пишется только в stderr. Сообщения
 обрабатываются последовательно; уведомление `exit` (или EOF stdin) завершает
-процесс с кодом 0. `shutdown` (запрос) возвращает `null`; `notifications/initialized`
-отмечает сессию инициализированной — оба метода поддерживаются для совместимости
+процесс с кодом 0. При EOF последнее NDJSON-сообщение без завершающего `\n`
+дообрабатывается, и только после слива очереди процесс завершается. `shutdown`
+(запрос) возвращает `null`; `notifications/initialized` отмечает сессию
+инициализированной — оба метода поддерживаются для совместимости
 с разными клиентами. По HTTP `shutdown`/`exit` сервер не останавливают:
 остановка — SIGINT/SIGTERM, а завершение сессии — `DELETE /mcp`.
 
@@ -347,17 +349,50 @@ curl -s http://127.0.0.1:8765/mcp \
 ## Тесты
 
 ```bash
+# Все тесты (300 сценариев).
 node --test "mcp/docs-mcp/test/*.test.mjs"
+
+# Покрытие только серверного кода (mcp/docs-mcp/src/**).
+node --experimental-test-coverage \
+  --test-coverage-include="mcp/docs-mcp/src/**" \
+  --test "mcp/docs-mcp/test/*.test.mjs"
+
+# Покрытие всего, что загружают тесты (включая bin/server.mjs
+# и web-ide/examples/manifest.js).
+node --experimental-test-coverage --test "mcp/docs-mcp/test/*.test.mjs"
 ```
 
-Покрыто: разбор front matter и индексация, поиск/ранжирование/сниппеты,
-initialize/capabilities, `tools/list` (все 6), вызовы инструментов (включая
-валидный и битый код через настоящий `compiler.wasm`), resources
-(list/templates/read), prompts (list/get для трёх шаблонов), JSON-RPC-ошибки
-(`-32601`, `-32602`, `-32600`), HTTP-транспорт (initialize, сессии, stateless,
-`/health`, лендинг, 404/405, CORS, SSE, DELETE, close) и stdio
-(Content-Length, NDJSON, EOF, exit, флаги CLI, HTTP-сервер на порту 0 с
-остановкой по SIGTERM).
+Текущее покрытие (Node 24, `--experimental-test-coverage`):
+
+| Область | Строки | Ветви | Функции |
+|---|---|---|---|
+| `mcp/docs-mcp/src/**` | 99.67% | 96.45% | 99.58% |
+| всё, что загружают тесты | 98.42% | 95.80% | 98.01% |
+
+Покрыто: разбор front matter (скаляры, списки, блочные `|`/`>`, BOM/CRLF),
+индексация и сортировка разделов, поиск/ранжирование/сниппеты, каталог
+примеров (`manifest.js`, `docs/examples`, дедупликация), initialize и
+согласование версии протокола, `tools/list` (все 6), аргументы и ошибки всех
+инструментов (`-32602`, `isError`, `-32603`), справочник `reference/*`
+(точный префикс, синонимы, отсутствующая тема), resources
+(list/templates/read, защита от выхода из каталога), prompts (list/get,
+необязательные аргументы, обрезка длинных выдержек), JSON-RPC batch и
+уведомления, HTTP-транспорт (сессии и их TTL, stateless, 404/405/406/413/415,
+лимит тела 1 МиБ, CORS, SSE и heartbeat, DELETE, закрытие), stdio
+(Content-Length, NDJSON, частичные чанки, битый фрейминг, EOF, `exit`,
+фейковые потоки) и флаги CLI. `check_code` проверяется на настоящем
+`compiler.wasm` (лексер/парсер/типизация/кодогенерация, BOM, пустой код), а
+защитные ветви ABI — на синтетических WASM-модулях (нулевые указатели,
+падение `latent_free`, `env.print*`, лимит 128 КиБ).
+
+Остаются непокрытыми только защитные/недостижимые ветви: `prompts/get` с
+`null` от `getPrompt` (неизвестный prompt отсекается раньше), `catch` вокруг
+`client.end()` уже закрытого SSE-соединения и fallback
+`closeIdleConnections` в `http.mjs` (в Node 24 есть `closeAllConnections`),
+`.catch` очереди stdio после внутренних `try/catch`, необязательные внутренние
+`options` в `prompts.mjs`, а также чтение `package.json` в `version.mjs`
+(в пакете файл всегда есть — fallback проверен отдельными инстансами модуля и
+дочерним процессом, но V8 не засчитывает его в общий отчёт).
 
 Тесты используют собственные фикстуры `test/fixtures/docs/**`, поэтому зелёные
 даже при неполной реальной документации; смоук-тесты на реальном
