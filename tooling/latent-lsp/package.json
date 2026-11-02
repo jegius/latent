@@ -1,0 +1,23 @@
+{
+  "name": "latent-lsp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Language Server Protocol для языка Latent (zero deps, stdio)",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "latent-lsp": "./bin/server.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "node bin/server.mjs --stdio",
+    "test": "node --test test/*.test.mjs"
+  }
+}

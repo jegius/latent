@@ -1,0 +1,2070 @@
+{
+  "version": "1.0.0",
+  "language": "latent",
+  "compilerVersion": "0.1.0",
+  "description": "Machine-readable источник правды о языке Latent: ключевые слова, операторы, типы, встроенные функции и методы, host-only примитивы, каталог диагностик и ABI WASM-модуля. Выверено по src/ (lexer, parser, typechecker, codegen) и web-ide/examples/*.lat на ветке part10-toolchain.",
+  "engines": {
+    "rust": {
+      "name": "Движок №2",
+      "description": "Rust-компилятор Latent → WebAssembly (src/, web-ide/compiler.wasm). Полный пайплайн: лексер → парсер → type checker → codegen. Host-примитивы (AI, каналы, тензоры) недоступны.",
+      "target": "wasm32-unknown-unknown"
+    },
+    "js": {
+      "name": "Движок №1",
+      "description": "Tree-walking интерпретатор на JavaScript (web-ide/compiler/). Исполняет AI-примитивы через host-гейтвей и поддерживает каналы/горутины."
+    },
+    "both": {
+      "name": "Оба движка",
+      "description": "Конструкция поддержана и Rust-компилятором (WASM), и JS-интерпретатором."
+    },
+    "host": {
+      "name": "Только host-рантайм",
+      "description": "Требует host-рантайма (браузер/IDE с AI-гейтвеем или каналами). В движке №2 даёт понятную ошибку компиляции."
+    }
+  },
+  "keywords": [
+    {
+      "name": "let",
+      "kind": "keyword",
+      "soft": false,
+      "category": "declaration",
+      "summary": "Объявление локальной переменной с необязательной аннотацией типа. Тип выводится, если аннотация опущена.",
+      "syntax": "let x: int = 0;",
+      "engine": "both",
+      "docs": "guide/variables-and-types"
+    },
+    {
+      "name": "fn",
+      "kind": "keyword",
+      "soft": false,
+      "category": "declaration",
+      "summary": "Объявление функции либо лямбда-выражения (у лямбды две формы тела: `=> expr` и `{ ... }`).",
+      "syntax": "fn name(a: int) -> int { return a; }",
+      "engine": "both",
+      "docs": "guide/functions"
+    },
+    {
+      "name": "if",
+      "kind": "keyword",
+      "soft": false,
+      "category": "control-flow",
+      "summary": "Условная инструкция; условие обязательно в круглых скобках. Поддерживается `else if`.",
+      "syntax": "if (cond) { ... } else { ... }",
+      "engine": "both",
+      "docs": "guide/control-flow"
+    },
+    {
+      "name": "else",
+      "kind": "keyword",
+      "soft": false,
+      "category": "control-flow",
+      "summary": "Альтернативная ветка `if`; может открывать `else if (cond) { ... }`.",
+      "syntax": "if (x > 0) { ... } else { ... }",
+      "engine": "both",
+      "docs": "guide/control-flow"
+    },
+    {
+      "name": "while",
+      "kind": "keyword",
+      "soft": false,
+      "category": "control-flow",
+      "summary": "Цикл с предусловием; условие в круглых скобках.",
+      "syntax": "while (cond) { ... }",
+      "engine": "both",
+      "docs": "guide/control-flow"
+    },
+    {
+      "name": "for",
+      "kind": "keyword",
+      "soft": false,
+      "category": "control-flow",
+      "summary": "Цикл в двух формах: C-стиль `for (init; cond; step)` и обход коллекции `for (let item in arr)`.",
+      "syntax": "for (let i = 0; i < n; i = i + 1) { ... }",
+      "engine": "both",
+      "docs": "guide/control-flow"
+    },
+    {
+      "name": "in",
+      "kind": "keyword",
+      "soft": false,
+      "category": "control-flow",
+      "summary": "Разделитель в форме обхода коллекции: `for (let item in arr) { ... }`.",
+      "syntax": "for (let item in items) { ... }",
+      "engine": "both",
+      "docs": "guide/arrays-and-strings"
+    },
+    {
+      "name": "return",
+      "kind": "keyword",
+      "soft": false,
+      "category": "control-flow",
+      "summary": "Возврат значения из функции; `return;` допустим для функций без результата.",
+      "syntax": "return expr;",
+      "engine": "both",
+      "docs": "guide/functions"
+    },
+    {
+      "name": "class",
+      "kind": "keyword",
+      "soft": false,
+      "category": "oop",
+      "summary": "Объявление класса: поля `name: type;` и методы `fn name(...) { ... }` с неявным `this`.",
+      "syntax": "class Point { x: int; fn init(x) { this.x = x; } }",
+      "engine": "both",
+      "docs": "guide/classes"
+    },
+    {
+      "name": "new",
+      "kind": "keyword",
+      "soft": false,
+      "category": "oop",
+      "summary": "Создание экземпляра класса: `new Class(args)`; аргументы передаются в метод `init`.",
+      "syntax": "let p = new Point(1, 2);",
+      "engine": "both",
+      "docs": "guide/classes"
+    },
+    {
+      "name": "this",
+      "kind": "keyword",
+      "soft": false,
+      "category": "oop",
+      "summary": "Ссылка на текущий экземпляр внутри методов класса; неявный первый параметр метода.",
+      "syntax": "this.field = value;",
+      "engine": "both",
+      "docs": "guide/classes"
+    },
+    {
+      "name": "async",
+      "kind": "keyword",
+      "soft": false,
+      "category": "concurrency",
+      "summary": "Помечает функцию асинхронной: её результат имеет тип `Promise<T>`. В движке №2 компилируется синхронно.",
+      "syntax": "async fn fetch_value() -> int { return 42; }",
+      "engine": "both",
+      "docs": "guide/concurrency"
+    },
+    {
+      "name": "await",
+      "kind": "keyword",
+      "soft": false,
+      "category": "concurrency",
+      "summary": "Разворачивает `Promise<T>` в `T`. В движке №2 — прозрачное разворачивание значения.",
+      "syntax": "let v = await compute();",
+      "engine": "both",
+      "docs": "guide/concurrency"
+    },
+    {
+      "name": "spawn",
+      "kind": "keyword",
+      "soft": false,
+      "category": "concurrency",
+      "summary": "Запускает блок `{ ... }` или вызов функции как горутину. В движке №2 выполняется последовательно.",
+      "syntax": "spawn { ... }",
+      "engine": "both",
+      "docs": "guide/concurrency"
+    },
+    {
+      "name": "channel",
+      "kind": "keyword",
+      "soft": false,
+      "category": "concurrency",
+      "summary": "Создание канала: `channel<T>()` или `channel()`. Каналы существуют только в host-рантайме движка №1.",
+      "syntax": "let ch = channel<int>();",
+      "engine": "host",
+      "docs": "guide/concurrency"
+    },
+    {
+      "name": "select",
+      "kind": "keyword",
+      "soft": false,
+      "category": "concurrency",
+      "summary": "Мультиплексирование каналов: `select { case v <- ch: { ... } default: { ... } }`. В движке №2 исполняется первая ветка.",
+      "syntax": "select { case v <- ch: { ... } default: { ... } }",
+      "engine": "both",
+      "docs": "guide/concurrency"
+    },
+    {
+      "name": "case",
+      "kind": "keyword",
+      "soft": true,
+      "category": "concurrency",
+      "summary": "Необязательный префикс ветки в `select` и в паттернах `match`; «мягкое» слово — допустимо как имя.",
+      "syntax": "case v <- ch: { ... }",
+      "engine": "both",
+      "docs": "guide/concurrency"
+    },
+    {
+      "name": "default",
+      "kind": "keyword",
+      "soft": false,
+      "category": "control-flow",
+      "summary": "Ветка по умолчанию в `match` и `select` (в `match` — wildcard-паттерн).",
+      "syntax": "default: { ... }",
+      "engine": "both",
+      "docs": "guide/enums-and-pattern-matching"
+    },
+    {
+      "name": "yield",
+      "kind": "keyword",
+      "soft": false,
+      "category": "concurrency",
+      "summary": "Уступает управление планировщику (`yield;`). В движке №2 — no-op.",
+      "syntax": "yield;",
+      "engine": "both",
+      "docs": "guide/concurrency"
+    },
+    {
+      "name": "match",
+      "kind": "keyword",
+      "soft": false,
+      "category": "control-flow",
+      "summary": "Сопоставление с образцом как выражение. Ветки разделяются запятыми, поддерживаются литералы, `_`, идентификаторы и конструкторы вариантов.",
+      "syntax": "match x { case 0: \"zero\", default: \"many\", }",
+      "engine": "both",
+      "docs": "guide/enums-and-pattern-matching"
+    },
+    {
+      "name": "enum",
+      "kind": "keyword",
+      "soft": false,
+      "category": "types",
+      "summary": "Объявление sum-типа: варианты без полей и с полями; встроенные `Ok/Err/Some/None` доступны без объявления.",
+      "syntax": "enum Shape { Circle(num), Square(num), Empty }",
+      "engine": "both",
+      "docs": "guide/enums-and-pattern-matching"
+    },
+    {
+      "name": "true",
+      "kind": "keyword",
+      "soft": false,
+      "category": "literal",
+      "summary": "Литерал истины типа `bool`.",
+      "syntax": "let ok = true;",
+      "engine": "both",
+      "docs": "reference/types"
+    },
+    {
+      "name": "false",
+      "kind": "keyword",
+      "soft": false,
+      "category": "literal",
+      "summary": "Литерал лжи типа `bool`.",
+      "syntax": "let ok = false;",
+      "engine": "both",
+      "docs": "reference/types"
+    },
+    {
+      "name": "null",
+      "kind": "keyword",
+      "soft": false,
+      "category": "literal",
+      "summary": "Литерал отсутствующего значения; в WASM представляется нулевым указателем.",
+      "syntax": "let nothing = null;",
+      "engine": "both",
+      "docs": "reference/types"
+    },
+    {
+      "name": "ai",
+      "kind": "keyword",
+      "soft": false,
+      "category": "ai",
+      "summary": "Пространство AI-примитивов: `ai.load`, `ai.infer`, `ai.embed`, `ai.agent`. Требует host-рантайма.",
+      "syntax": "let m = ai.load(\"gpt-4\");",
+      "engine": "host",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "model",
+      "kind": "keyword",
+      "soft": true,
+      "category": "ai",
+      "summary": "«Мягкое» ключевое слово для объявления AI-модели; синтаксически остаётся валидным именем (`fn model()`, `let model = ...`).",
+      "syntax": "let model: Model<string> = ai.load(\"gpt-4\");",
+      "engine": "host",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "agent",
+      "kind": "keyword",
+      "soft": true,
+      "category": "ai",
+      "summary": "«Мягкое» ключевое слово для AI-агентов; допустимо как имя переменной или метода.",
+      "syntax": "let agent = ai.agent(\"assistant\", config);",
+      "engine": "host",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "embedding",
+      "kind": "keyword",
+      "soft": true,
+      "category": "ai",
+      "summary": "«Мягкое» ключевое слово для векторов-эмбеддингов; допустимо как имя.",
+      "syntax": "let embedding: Embedding<1536> = ai.embed(\"text\");",
+      "engine": "host",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "tensor",
+      "kind": "keyword",
+      "soft": true,
+      "category": "ai",
+      "summary": "«Мягкое» ключевое слово типа `Tensor`; одноимённая host-функция создаёт тензор.",
+      "syntax": "let t = tensor([[1, 2], [3, 4]]);",
+      "engine": "host",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "semantic",
+      "kind": "keyword",
+      "soft": true,
+      "category": "ai",
+      "summary": "«Мягкое» ключевое слово семантических векторов; одноимённая host-функция строит вектор.",
+      "syntax": "let s = semantic(\"the quick brown fox\");",
+      "engine": "host",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "test",
+      "kind": "keyword",
+      "soft": true,
+      "category": "testing",
+      "summary": "Блок регрессионного теста: `test \"name\" { ... }` или `test(\"name\") { ... }`.",
+      "syntax": "test \"arithmetic\" { assert(1 + 1 == 2); }",
+      "engine": "both",
+      "docs": "guide/testing-and-contracts"
+    },
+    {
+      "name": "assert",
+      "kind": "keyword",
+      "soft": true,
+      "category": "testing",
+      "summary": "«Мягкое» ключевое слово и одновременно встроенная функция проверки условия.",
+      "syntax": "assert(cond);",
+      "engine": "both",
+      "docs": "guide/testing-and-contracts"
+    },
+    {
+      "name": "assert_eq",
+      "kind": "keyword",
+      "soft": true,
+      "category": "testing",
+      "summary": "«Мягкое» ключевое слово и встроенная функция проверки равенства двух значений.",
+      "syntax": "assert_eq(a, b);",
+      "engine": "both",
+      "docs": "guide/testing-and-contracts"
+    },
+    {
+      "name": "forall",
+      "kind": "keyword",
+      "soft": true,
+      "category": "testing",
+      "summary": "Декоратор property-based тестов: `@forall(\"array\") fn ...`. Исполняется host-рантаймом движка №1.",
+      "syntax": "@forall(\"array\")\nfn non_empty_length(arr) { assert(arr.length >= 0); }",
+      "engine": "host",
+      "docs": "guide/testing-and-contracts"
+    },
+    {
+      "name": "snapshot",
+      "kind": "keyword",
+      "soft": true,
+      "category": "testing",
+      "summary": "«Мягкое» ключевое слово и host-функция: сохраняет именованное значение для регрессионного контроля.",
+      "syntax": "snapshot(\"demo\");",
+      "engine": "host",
+      "docs": "guide/testing-and-contracts"
+    },
+    {
+      "name": "ai_contract",
+      "kind": "keyword",
+      "soft": true,
+      "category": "testing",
+      "summary": "«Мягкое» ключевое слово и host-функция: создаёт AI-контракт (в т.ч. как декоратор `@ai_contract`).",
+      "syntax": "let c = ai_contract(\"ordering\");",
+      "engine": "host",
+      "docs": "guide/testing-and-contracts"
+    },
+    {
+      "name": "enforce_contract",
+      "kind": "keyword",
+      "soft": true,
+      "category": "testing",
+      "summary": "«Мягкое» ключевое слово и host-функция: включает проверку AI-контракта во время исполнения.",
+      "syntax": "enforce_contract(c);",
+      "engine": "host",
+      "docs": "guide/testing-and-contracts"
+    }
+  ],
+  "operators": [
+    {
+      "op": "||",
+      "kind": "binary",
+      "precedence": 10,
+      "assoc": "left",
+      "summary": "Логическое ИЛИ с коротким замыканием: правая часть не вычисляется, если левая истинна.",
+      "example": "a || b",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": "&&",
+      "kind": "binary",
+      "precedence": 20,
+      "assoc": "left",
+      "summary": "Логическое И с коротким замыканием: правая часть не вычисляется, если левая ложна.",
+      "example": "a && b",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": "==",
+      "kind": "binary",
+      "precedence": 30,
+      "assoc": "left",
+      "summary": "Проверка равенства; для строк — побайтовое сравнение, для массивов — глубокая проверка.",
+      "example": "a == b",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": "!=",
+      "kind": "binary",
+      "precedence": 30,
+      "assoc": "left",
+      "summary": "Проверка неравенства (обратна `==`).",
+      "example": "a != b",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": "<",
+      "kind": "binary",
+      "precedence": 40,
+      "assoc": "left",
+      "summary": "Сравнение «меньше» для чисел.",
+      "example": "a < b",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": ">",
+      "kind": "binary",
+      "precedence": 40,
+      "assoc": "left",
+      "summary": "Сравнение «больше» для чисел.",
+      "example": "a > b",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": "<=",
+      "kind": "binary",
+      "precedence": 40,
+      "assoc": "left",
+      "summary": "Сравнение «меньше или равно» для чисел.",
+      "example": "a <= b",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": ">=",
+      "kind": "binary",
+      "precedence": 40,
+      "assoc": "left",
+      "summary": "Сравнение «больше или равно» для чисел.",
+      "example": "a >= b",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": "|",
+      "kind": "binary",
+      "precedence": 50,
+      "assoc": "left",
+      "summary": "Побитовое ИЛИ над целыми; результат типа `int`.",
+      "example": "a | b",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": "^",
+      "kind": "binary",
+      "precedence": 50,
+      "assoc": "left",
+      "summary": "Побитовое исключающее ИЛИ над целыми; результат типа `int`.",
+      "example": "a ^ b",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": "&",
+      "kind": "binary",
+      "precedence": 60,
+      "assoc": "left",
+      "summary": "Побитовое И над целыми; результат типа `int`.",
+      "example": "a & b",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": "<<",
+      "kind": "binary",
+      "precedence": 70,
+      "assoc": "left",
+      "summary": "Побитовый сдвиг влево; результат типа `int`.",
+      "example": "a << 2",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": ">>",
+      "kind": "binary",
+      "precedence": 70,
+      "assoc": "left",
+      "summary": "Побитовый сдвиг вправо; результат типа `int`.",
+      "example": "a >> 2",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": "+",
+      "kind": "binary",
+      "precedence": 80,
+      "assoc": "left",
+      "summary": "Сложение чисел; если хотя бы один операнд `string` — конкатенация строк.",
+      "example": "a + b",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": "-",
+      "kind": "binary",
+      "precedence": 80,
+      "assoc": "left",
+      "summary": "Вычитание чисел.",
+      "example": "a - b",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": "*",
+      "kind": "binary",
+      "precedence": 90,
+      "assoc": "left",
+      "summary": "Умножение чисел.",
+      "example": "a * b",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": "/",
+      "kind": "binary",
+      "precedence": 90,
+      "assoc": "left",
+      "summary": "Деление чисел; при целочисленных операндах в WASM — целочисленное деление.",
+      "example": "a / b",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": "%",
+      "kind": "binary",
+      "precedence": 90,
+      "assoc": "left",
+      "summary": "Остаток от деления.",
+      "example": "a % b",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": "!",
+      "kind": "unary",
+      "precedence": 95,
+      "assoc": "right",
+      "summary": "Логическое НЕ (префиксный оператор): любой операнд трактуется по истинности, результат `bool`.",
+      "example": "!flag",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": "-",
+      "kind": "unary",
+      "precedence": 95,
+      "assoc": "right",
+      "summary": "Арифметическое отрицание (префиксный унарный минус).",
+      "example": "-x",
+      "engine": "both",
+      "docs": "reference/operators"
+    },
+    {
+      "op": "<-",
+      "kind": "unary",
+      "precedence": 95,
+      "assoc": "right",
+      "summary": "Приём из канала (префиксный оператор): `<-ch` возвращает значение из канала. Требует host-рантайма.",
+      "example": "let v = <-ch;",
+      "engine": "host",
+      "docs": "guide/concurrency"
+    },
+    {
+      "op": "<-",
+      "kind": "binary",
+      "precedence": 2,
+      "assoc": "right",
+      "summary": "Отправка в канал: `ch <- value`. Требует host-рантайма.",
+      "example": "ch <- 42;",
+      "engine": "host",
+      "docs": "guide/concurrency"
+    },
+    {
+      "op": "=",
+      "kind": "assignment",
+      "precedence": 2,
+      "assoc": "right",
+      "summary": "Присваивание переменной, элементу массива или полю объекта; результат — присвоенное значение.",
+      "example": "x = x + 1;",
+      "engine": "both",
+      "docs": "guide/variables-and-types"
+    },
+    {
+      "op": "=>",
+      "kind": "arrow",
+      "precedence": 1,
+      "assoc": "right",
+      "summary": "Стрелка лямбда-выражения: `fn(x) => expr`.",
+      "example": "let double = fn(x) => x * 2;",
+      "engine": "both",
+      "docs": "guide/functions"
+    },
+    {
+      "op": "->",
+      "kind": "arrow",
+      "precedence": 1,
+      "assoc": "right",
+      "summary": "Стрелка аннотации возвращаемого типа функции или типа-функции.",
+      "example": "fn add(a: int, b: int) -> int { ... }",
+      "engine": "both",
+      "docs": "reference/grammar"
+    },
+    {
+      "op": ".",
+      "kind": "postfix",
+      "precedence": 100,
+      "assoc": "left",
+      "summary": "Доступ к полю, свойству или методу объекта: `obj.field`, `arr.length`, `class.method()`.",
+      "example": "p.x; stack.push(1);",
+      "engine": "both",
+      "docs": "guide/classes"
+    },
+    {
+      "op": "(",
+      "kind": "punctuation",
+      "summary": "Открывающая круглая скобка: вызов функции/метода, группировка выражения, параметры и условие.",
+      "example": "f(a, b); if (cond) { ... }",
+      "engine": "both",
+      "docs": "reference/grammar"
+    },
+    {
+      "op": ")",
+      "kind": "punctuation",
+      "summary": "Закрывающая круглая скобка.",
+      "example": "f(a, b)",
+      "engine": "both",
+      "docs": "reference/grammar"
+    },
+    {
+      "op": "[",
+      "kind": "punctuation",
+      "summary": "Открывающая квадратная скобка: литерал массива, индексация, тип массива `[int]`.",
+      "example": "let a = [1, 2]; a[0];",
+      "engine": "both",
+      "docs": "guide/arrays-and-strings"
+    },
+    {
+      "op": "]",
+      "kind": "punctuation",
+      "summary": "Закрывающая квадратная скобка.",
+      "example": "[1, 2]",
+      "engine": "both",
+      "docs": "guide/arrays-and-strings"
+    },
+    {
+      "op": "{",
+      "kind": "punctuation",
+      "summary": "Открывающая фигурная скобка: тело функции, блока, класса, enum, match/select.",
+      "example": "fn main() { ... }",
+      "engine": "both",
+      "docs": "reference/grammar"
+    },
+    {
+      "op": "}",
+      "kind": "punctuation",
+      "summary": "Закрывающая фигурная скобка.",
+      "example": "{ ... }",
+      "engine": "both",
+      "docs": "reference/grammar"
+    },
+    {
+      "op": ":",
+      "kind": "punctuation",
+      "summary": "Двоеточие: аннотация типа, ветка `default:`/`case ...:`.",
+      "example": "let x: int = 0; default: ...",
+      "engine": "both",
+      "docs": "reference/grammar"
+    },
+    {
+      "op": "::",
+      "kind": "punctuation",
+      "summary": "Зарезервированный разделитель пути (лексер распознаёт, синтаксис пока не использует).",
+      "example": "std::println",
+      "engine": "both",
+      "docs": "reference/grammar"
+    },
+    {
+      "op": ",",
+      "kind": "punctuation",
+      "summary": "Разделитель аргументов, элементов массива, параметров, полей enum и веток match.",
+      "example": "f(a, b)",
+      "engine": "both",
+      "docs": "reference/grammar"
+    },
+    {
+      "op": ";",
+      "kind": "punctuation",
+      "summary": "Завершитель инструкции `let`/`return`/выражения-инструкции.",
+      "example": "let x = 1;",
+      "engine": "both",
+      "docs": "reference/grammar"
+    },
+    {
+      "op": "@",
+      "kind": "punctuation",
+      "summary": "Декоратор перед объявлением: `@forall(...)`, `@ai_contract(...)`.",
+      "example": "@forall(\"array\")\nfn f(arr) { ... }",
+      "engine": "host",
+      "docs": "guide/testing-and-contracts"
+    }
+  ],
+  "types": [
+    {
+      "name": "int",
+      "category": "primitive",
+      "wasm": "i32",
+      "summary": "Целое 32-битное число; основное представление чисел в WASM-модуле.",
+      "syntax": "let x: int = 42;",
+      "engine": "both",
+      "docs": "reference/types"
+    },
+    {
+      "name": "float",
+      "category": "primitive",
+      "wasm": "f64",
+      "summary": "Число с плавающей точкой двойной точности; литералы с дробной частью выводятся как `float`.",
+      "syntax": "let pi: float = 3.14;",
+      "engine": "both",
+      "docs": "reference/types"
+    },
+    {
+      "name": "bool",
+      "category": "primitive",
+      "wasm": "i32 (0 | 1)",
+      "summary": "Логический тип; результат сравнений и логических операторов.",
+      "syntax": "let ok: bool = true;",
+      "engine": "both",
+      "docs": "reference/types"
+    },
+    {
+      "name": "string",
+      "category": "primitive",
+      "wasm": "i32 (ptr: [len u32][utf8])",
+      "summary": "UTF-8 строка; в линейной памяти представлена заголовком длины и байтами.",
+      "syntax": "let s: string = \"latent\";",
+      "engine": "both",
+      "docs": "reference/types"
+    },
+    {
+      "name": "null",
+      "category": "primitive",
+      "wasm": "i32 (0)",
+      "summary": "Тип литерала `null`; в WASM — нулевой указатель.",
+      "syntax": "let n = null;",
+      "engine": "both",
+      "docs": "reference/types"
+    },
+    {
+      "name": "unit",
+      "category": "primitive",
+      "wasm": "— (нет значения)",
+      "summary": "Тип отсутствия значения (аналог `void`); результат функций без `return expr`.",
+      "syntax": "fn log(msg: string) -> unit { print(msg); }",
+      "engine": "both",
+      "docs": "reference/types"
+    },
+    {
+      "name": "void",
+      "category": "primitive",
+      "wasm": "— (нет значения)",
+      "summary": "Синоним `unit`: тип функции без результата.",
+      "syntax": "fn log(msg: string) -> void { print(msg); }",
+      "engine": "both",
+      "docs": "reference/types"
+    },
+    {
+      "name": "[T]",
+      "category": "composite",
+      "wasm": "i32 (ptr: [len u32][elem*4])",
+      "summary": "Массив элементов типа `T`; в WASM длина хранится в первом слове, элементы — по 4 байта.",
+      "syntax": "let xs: [int] = [1, 2, 3];",
+      "engine": "both",
+      "docs": "guide/arrays-and-strings"
+    },
+    {
+      "name": "fn(T, ...) -> R",
+      "category": "composite",
+      "wasm": "i32 (ptr: [table_slot][env_ptr])",
+      "summary": "Тип функции/замыкания; значение — указатель на замыкание (слот таблицы + окружение захватов).",
+      "syntax": "let f: fn(int) -> int = fn(x) => x * 2;",
+      "engine": "both",
+      "docs": "guide/functions"
+    },
+    {
+      "name": "T<A, B>",
+      "category": "composite",
+      "wasm": "i32",
+      "summary": "Обобщённый/параметризованный тип: `Model<string>`, `Channel<int>`, `Promise<int>`, `Embedding<1536>`.",
+      "syntax": "let ch: channel<int> = channel<int>();",
+      "engine": "both",
+      "docs": "reference/types"
+    },
+    {
+      "name": "Named",
+      "category": "user",
+      "wasm": "i32",
+      "summary": "Пользовательский именованный тип: имя класса или enum, объявленного в программе.",
+      "syntax": "class Point { x: int; y: int; }",
+      "engine": "both",
+      "docs": "guide/classes"
+    },
+    {
+      "name": "Variant",
+      "category": "user",
+      "wasm": "i32 (ptr: [tag u32][field*4])",
+      "summary": "Значение sum-типа (enum): тег варианта и поля. Встроенные варианты `Ok`, `Err`, `Some`, `None`.",
+      "syntax": "match r { case Ok(v): v, case Err(e): -1 }",
+      "engine": "both",
+      "docs": "guide/enums-and-pattern-matching"
+    },
+    {
+      "name": "channel",
+      "category": "concurrency",
+      "wasm": "i32 (host handle)",
+      "summary": "Тип канала CSP; создаётся `channel()` / `channel<T>()`, методы `send`/`recv`. Только host-рантайм.",
+      "syntax": "fn worker(ch: channel, n: int) { ch.send(n); }",
+      "engine": "host",
+      "docs": "guide/concurrency"
+    },
+    {
+      "name": "Channel<T>",
+      "category": "concurrency",
+      "wasm": "i32 (host handle)",
+      "summary": "Обобщённая форма канала с типом элемента; `named`-форма `channel` эквивалентна.",
+      "syntax": "let ch: Channel<int> = channel<int>();",
+      "engine": "host",
+      "docs": "guide/concurrency"
+    },
+    {
+      "name": "Promise<T>",
+      "category": "concurrency",
+      "wasm": "i32",
+      "summary": "Результат `async fn`; разворачивается оператором `await`.",
+      "syntax": "async fn fetch_value() -> int { return 42; }",
+      "engine": "both",
+      "docs": "guide/concurrency"
+    },
+    {
+      "name": "Model<T>",
+      "category": "ai",
+      "wasm": "i32 (host handle)",
+      "summary": "Загруженная AI-модель, возвращаемая `ai.load`; `T` — тип результата инференса.",
+      "syntax": "let m: Model<string> = ai.load(\"gpt-4\");",
+      "engine": "host",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "Embedding<N>",
+      "category": "ai",
+      "wasm": "[float] (i32 ptr)",
+      "summary": "Вектор-эмбеддинг фиксированной размерности `N` (обычно 1536); `ai.embed` возвращает `[float]`.",
+      "syntax": "let e: Embedding<1536> = ai.embed(\"text\");",
+      "engine": "host",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "Tensor<[dims]>",
+      "category": "ai",
+      "wasm": "i32 (host handle)",
+      "summary": "Многомерный тензор; создаётся `tensor(data)`, свойства `data`, `shape`, `rank`, операция `matmul`.",
+      "syntax": "let a = tensor([[1, 2], [3, 4]]);",
+      "engine": "host",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "Agent",
+      "category": "ai",
+      "wasm": "i32 (host handle)",
+      "summary": "AI-агент, создаваемый `ai.agent(name, config)`; вызов агента — инференс с его настройками.",
+      "syntax": "let a: Agent = ai.agent(\"assistant\", config);",
+      "engine": "host",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "Semantic",
+      "category": "ai",
+      "wasm": "[float] (i32 ptr)",
+      "summary": "Семантический вектор, построенный функцией `semantic(text)`; сравнивается `cosine_similarity`.",
+      "syntax": "let s: Semantic = semantic(\"the quick brown fox\");",
+      "engine": "host",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "Contract",
+      "category": "ai",
+      "wasm": "i32 (host handle)",
+      "summary": "AI-контракт, создаваемый `ai_contract(name)` и включаемый `enforce_contract(c)`.",
+      "syntax": "let c = ai_contract(\"ordering\");",
+      "engine": "host",
+      "docs": "guide/testing-and-contracts"
+    }
+  ],
+  "builtins": [
+    {
+      "name": "print",
+      "kind": "function",
+      "signatures": [
+        "print(value, ...)"
+      ],
+      "engine": "both",
+      "summary": "Печатает значения в stdout через host-импорт `env.print(i32)`. Каждый аргумент конвертируется в строку и печатается отдельной строкой.",
+      "example": "print(\"x =\", x);",
+      "docs": "reference/builtins"
+    },
+    {
+      "name": "len",
+      "kind": "function",
+      "signatures": [
+        "len(arr|str) -> int"
+      ],
+      "engine": "both",
+      "summary": "Длина массива или строки (читает заголовок длины из линейной памяти).",
+      "example": "len([1, 2, 3])",
+      "docs": "reference/builtins"
+    },
+    {
+      "name": "push",
+      "kind": "function",
+      "signatures": [
+        "push(arr, value) -> [T]"
+      ],
+      "engine": "both",
+      "summary": "Функциональная форма метода `arr.push(value)`: добавляет элемент в конец массива и возвращает массив (type checker считает результат `unit`).",
+      "example": "push(acc, 1);",
+      "docs": "reference/builtins"
+    },
+    {
+      "name": "str",
+      "kind": "function",
+      "signatures": [
+        "str(x) -> string"
+      ],
+      "engine": "both",
+      "summary": "Приводит значение к строке: строку оставляет как есть, число конвертирует через рантайм-хелпер.",
+      "example": "str(42)",
+      "docs": "reference/builtins"
+    },
+    {
+      "name": "int",
+      "kind": "function",
+      "signatures": [
+        "int(x) -> int"
+      ],
+      "engine": "both",
+      "summary": "Приводит значение к целому: строку парсит, `float` усекает, `int` оставляет как есть.",
+      "example": "int(\"42\")",
+      "docs": "reference/builtins"
+    },
+    {
+      "name": "float",
+      "kind": "function",
+      "signatures": [
+        "float(x) -> float"
+      ],
+      "engine": "both",
+      "summary": "Приводит значение к числу с плавающей точкой: `int`/`string` конвертируются.",
+      "example": "float(3)",
+      "docs": "reference/builtins"
+    },
+    {
+      "name": "sqrt",
+      "kind": "function",
+      "signatures": [
+        "sqrt(x) -> float"
+      ],
+      "engine": "both",
+      "summary": "Квадратный корень; операнд приводится к `float`, используется инструкция `f64.sqrt`.",
+      "example": "sqrt(16.0)",
+      "docs": "reference/builtins"
+    },
+    {
+      "name": "assert",
+      "kind": "function",
+      "signatures": [
+        "assert(cond, message?)"
+      ],
+      "engine": "both",
+      "summary": "Проверяет истинность условия; при ложном условии исполнение прерывается (WASM `unreachable`). Необязательное сообщение игнорируется.",
+      "example": "assert(1 + 1 == 2);",
+      "docs": "reference/builtins"
+    },
+    {
+      "name": "assert_eq",
+      "kind": "function",
+      "signatures": [
+        "assert_eq(a, b, message?)"
+      ],
+      "engine": "both",
+      "summary": "Проверяет равенство двух значений; при несовпадении исполнение прерывается. Необязательное сообщение игнорируется.",
+      "example": "assert_eq(2 * 3, 6);",
+      "docs": "reference/builtins"
+    },
+    {
+      "name": "alloc",
+      "kind": "function",
+      "signatures": [
+        "alloc(size) -> int"
+      ],
+      "engine": "both",
+      "summary": "Bump-аллокатор рантайма: выделяет `size` байт в линейной памяти и возвращает указатель.",
+      "example": "let ptr = alloc(16);",
+      "docs": "reference/wasm-abi"
+    },
+    {
+      "name": "load8",
+      "kind": "function",
+      "signatures": [
+        "load8(addr) -> int"
+      ],
+      "engine": "both",
+      "summary": "Читает беззнаковый байт из линейной памяти по адресу; небезопасная операция без проверки границ.",
+      "example": "let byte = load8(ptr);",
+      "docs": "reference/wasm-abi"
+    },
+    {
+      "name": "store8",
+      "kind": "function",
+      "signatures": [
+        "store8(addr, value)"
+      ],
+      "engine": "both",
+      "summary": "Записывает младший байт значения по адресу в линейной памяти.",
+      "example": "store8(ptr, 0x00);",
+      "docs": "reference/wasm-abi"
+    },
+    {
+      "name": "load32",
+      "kind": "function",
+      "signatures": [
+        "load32(addr) -> int"
+      ],
+      "engine": "both",
+      "summary": "Читает 32-битное слово (little-endian) из линейной памяти.",
+      "example": "let word = load32(ptr);",
+      "docs": "reference/wasm-abi"
+    },
+    {
+      "name": "store32",
+      "kind": "function",
+      "signatures": [
+        "store32(addr, value)"
+      ],
+      "engine": "both",
+      "summary": "Записывает 32-битное слово (little-endian) по адресу в линейной памяти.",
+      "example": "store32(ptr, 42);",
+      "docs": "reference/wasm-abi"
+    },
+    {
+      "name": "memcopy",
+      "kind": "function",
+      "signatures": [
+        "memcopy(dst, src, len)"
+      ],
+      "engine": "both",
+      "summary": "Побайтово копирует `len` байт из `src` в `dst` (рантайм-хелпер `__latent_mem_copy`).",
+      "example": "memcopy(dst, src, 8);",
+      "docs": "reference/wasm-abi"
+    },
+    {
+      "name": "push",
+      "kind": "method",
+      "owner": "array",
+      "signatures": [
+        "arr.push(value) -> [T]"
+      ],
+      "engine": "both",
+      "summary": "Добавляет элемент в конец массива: `arr[len] = value; arr.len = len + 1`.",
+      "example": "stack.push(40);",
+      "docs": "guide/arrays-and-strings"
+    },
+    {
+      "name": "pop",
+      "kind": "method",
+      "owner": "array",
+      "signatures": [
+        "arr.pop() -> T"
+      ],
+      "engine": "both",
+      "summary": "Удаляет последний элемент массива и возвращает его.",
+      "example": "let top = stack.pop();",
+      "docs": "guide/arrays-and-strings"
+    },
+    {
+      "name": "length",
+      "kind": "property",
+      "owner": "array",
+      "signatures": [
+        "arr.length -> int",
+        "arr.length() -> int"
+      ],
+      "engine": "both",
+      "summary": "Длина массива: свойство `arr.length` (и совместимый вызов `arr.length()`); читает заголовок длины.",
+      "example": "primes.length",
+      "docs": "guide/arrays-and-strings"
+    },
+    {
+      "name": "length",
+      "kind": "property",
+      "owner": "string",
+      "signatures": [
+        "str.length -> int",
+        "str.length() -> int"
+      ],
+      "engine": "both",
+      "summary": "Длина строки в байтах UTF-8: свойство `str.length` (и вызов `str.length()`).",
+      "example": "\"hello\".length",
+      "docs": "guide/arrays-and-strings"
+    },
+    {
+      "name": "to_str",
+      "kind": "method",
+      "owner": "any",
+      "signatures": [
+        "x.to_str() -> string"
+      ],
+      "engine": "both",
+      "summary": "Строковое представление значения; у `float` использует `f64_to_str`, у остальных — `i32_to_str`.",
+      "example": "x.to_str()",
+      "docs": "reference/builtins"
+    },
+    {
+      "name": "toString",
+      "kind": "method",
+      "owner": "any",
+      "signatures": [
+        "x.toString() -> string"
+      ],
+      "engine": "both",
+      "summary": "Псевдоним `to_str()`.",
+      "example": "x.toString()",
+      "docs": "reference/builtins"
+    },
+    {
+      "name": "to_int",
+      "kind": "method",
+      "owner": "string",
+      "signatures": [
+        "s.to_int() -> int",
+        "f.to_int() -> int"
+      ],
+      "engine": "both",
+      "summary": "Приведение к целому: строку парсит, `float` усекает.",
+      "example": "\"42\".to_int()",
+      "docs": "reference/builtins"
+    },
+    {
+      "name": "toInt",
+      "kind": "method",
+      "owner": "string",
+      "signatures": [
+        "s.toInt() -> int"
+      ],
+      "engine": "both",
+      "summary": "Псевдоним `to_int()`.",
+      "example": "\"42\".toInt()",
+      "docs": "reference/builtins"
+    },
+    {
+      "name": "send",
+      "kind": "method",
+      "owner": "channel",
+      "signatures": [
+        "ch.send(value)"
+      ],
+      "engine": "host",
+      "summary": "Отправляет значение в канал; альтернатива оператору `ch <- value`. Только host-рантайм.",
+      "example": "ch.send(i * i);",
+      "docs": "guide/concurrency"
+    },
+    {
+      "name": "recv",
+      "kind": "method",
+      "owner": "channel",
+      "signatures": [
+        "ch.recv() -> T"
+      ],
+      "engine": "host",
+      "summary": "Принимает значение из канала (блокирующе). Только host-рантайм.",
+      "example": "let v = ch.recv();",
+      "docs": "guide/concurrency"
+    },
+    {
+      "name": "data",
+      "kind": "property",
+      "owner": "tensor",
+      "signatures": [
+        "t.data -> [[float]]"
+      ],
+      "engine": "host",
+      "summary": "Данные тензора как вложенные массивы. Только host-рантайм.",
+      "example": "c.data[0][0]",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "shape",
+      "kind": "property",
+      "owner": "tensor",
+      "signatures": [
+        "t.shape -> [int]"
+      ],
+      "engine": "host",
+      "summary": "Размерности тензора. Только host-рантайм.",
+      "example": "c.shape",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "rank",
+      "kind": "property",
+      "owner": "tensor",
+      "signatures": [
+        "t.rank -> int"
+      ],
+      "engine": "host",
+      "summary": "Число размерностей тензора. Только host-рантайм.",
+      "example": "c.rank",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "channel",
+      "kind": "host-function",
+      "signatures": [
+        "channel() -> channel",
+        "channel<T>() -> Channel<T>"
+      ],
+      "engine": "host",
+      "summary": "Создаёт канал CSP. В движке №2 даёт ошибку «требует host-рантайма».",
+      "example": "let ch = channel<int>();",
+      "docs": "guide/concurrency"
+    },
+    {
+      "name": "tensor",
+      "kind": "host-function",
+      "signatures": [
+        "tensor(data) -> Tensor"
+      ],
+      "engine": "host",
+      "summary": "Создаёт тензор из вложенных массивов. Только host-рантайм.",
+      "example": "let a = tensor([[1, 2], [3, 4]]);",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "semantic",
+      "kind": "host-function",
+      "signatures": [
+        "semantic(text) -> Semantic"
+      ],
+      "engine": "host",
+      "summary": "Строит семантический вектор текста. Только host-рантайм.",
+      "example": "let s = semantic(\"the quick brown fox\");",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "matmul",
+      "kind": "host-function",
+      "signatures": [
+        "matmul(a, b) -> Tensor"
+      ],
+      "engine": "host",
+      "summary": "Матричное умножение тензоров. Только host-рантайм.",
+      "example": "let c = matmul(a, b);",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "cosine_similarity",
+      "kind": "host-function",
+      "signatures": [
+        "cosine_similarity(a, b) -> float"
+      ],
+      "engine": "host",
+      "summary": "Косинусное сходство двух векторов. Только host-рантайм.",
+      "example": "cosine_similarity(v1, v2)",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "dot",
+      "kind": "host-function",
+      "signatures": [
+        "dot(a, b) -> float"
+      ],
+      "engine": "host",
+      "summary": "Скалярное произведение векторов. Только host-рантайм.",
+      "example": "dot(v1, v2)",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "magnitude",
+      "kind": "host-function",
+      "signatures": [
+        "magnitude(v) -> float"
+      ],
+      "engine": "host",
+      "summary": "Длина (норма) вектора. Только host-рантайм.",
+      "example": "magnitude(v1)",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "zeros",
+      "kind": "host-function",
+      "signatures": [
+        "zeros(n) -> Tensor"
+      ],
+      "engine": "host",
+      "summary": "Тензор из нулей заданной размерности. Только host-рантайм.",
+      "example": "zeros(3)",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "ones",
+      "kind": "host-function",
+      "signatures": [
+        "ones(n) -> Tensor"
+      ],
+      "engine": "host",
+      "summary": "Тензор из единиц заданной размерности. Только host-рантайм.",
+      "example": "ones(3)",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "snapshot",
+      "kind": "host-function",
+      "signatures": [
+        "snapshot(name) -> bool"
+      ],
+      "engine": "host",
+      "summary": "Сохраняет именованный снимок значения для регрессионных тестов. Только host-рантайм.",
+      "example": "snapshot(\"demo\");",
+      "docs": "guide/testing-and-contracts"
+    },
+    {
+      "name": "ai_contract",
+      "kind": "host-function",
+      "signatures": [
+        "ai_contract(name) -> Contract"
+      ],
+      "engine": "host",
+      "summary": "Создаёт AI-контракт по имени; доступен также как декоратор `@ai_contract`. Только host-рантайм.",
+      "example": "let c = ai_contract(\"ordering\");",
+      "docs": "guide/testing-and-contracts"
+    },
+    {
+      "name": "enforce_contract",
+      "kind": "host-function",
+      "signatures": [
+        "enforce_contract(contract) -> bool"
+      ],
+      "engine": "host",
+      "summary": "Включает проверку AI-контракта во время исполнения. Только host-рантайм.",
+      "example": "enforce_contract(c);",
+      "docs": "guide/testing-and-contracts"
+    },
+    {
+      "name": "ai_infer",
+      "kind": "host-function",
+      "signatures": [
+        "ai_infer(model, prompt) -> string"
+      ],
+      "engine": "host",
+      "summary": "Инференс AI-модели: модель и промпт — строки, результат — строка. Только host-рантайм.",
+      "example": "ai_infer(\"gpt-4\", \"Analyze data\");",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "ai_embed",
+      "kind": "host-function",
+      "signatures": [
+        "ai_embed(text) -> [float]"
+      ],
+      "engine": "host",
+      "summary": "Вектор-эмбеддинг текста. Только host-рантайм.",
+      "example": "let v = ai_embed(\"parallel map-reduce\");",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "ai_stream",
+      "kind": "host-function",
+      "signatures": [
+        "ai_stream(model, prompt) -> handle"
+      ],
+      "engine": "host",
+      "summary": "Открывает потоковый инференс; токены читаются `stream_next`. Только host-рантайм.",
+      "example": "let h = ai_stream(\"gpt-4\", \"short sentence\");",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "stream_next",
+      "kind": "host-function",
+      "signatures": [
+        "stream_next(handle) -> string"
+      ],
+      "engine": "host",
+      "summary": "Возвращает следующий токен потока или `null` в конце. Только host-рантайм.",
+      "example": "let token = stream_next(h);",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "load",
+      "kind": "method",
+      "owner": "ai",
+      "signatures": [
+        "ai.load(model_name) -> Model<string>"
+      ],
+      "engine": "host",
+      "summary": "Загружает AI-модель по имени. Только host-рантайм.",
+      "example": "let m = ai.load(\"gpt-4\");",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "infer",
+      "kind": "method",
+      "owner": "ai",
+      "signatures": [
+        "ai.infer(model, input) -> string"
+      ],
+      "engine": "host",
+      "summary": "Инференс загруженной модели. Только host-рантайм.",
+      "example": "let out = ai.infer(m, \"hello\");",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "embed",
+      "kind": "method",
+      "owner": "ai",
+      "signatures": [
+        "ai.embed(text) -> Embedding<N>"
+      ],
+      "engine": "host",
+      "summary": "Эмбеддинг текста через AI-гейтвей. Только host-рантайм.",
+      "example": "let e = ai.embed(\"text\");",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "agent",
+      "kind": "method",
+      "owner": "ai",
+      "signatures": [
+        "ai.agent(name, config) -> Agent"
+      ],
+      "engine": "host",
+      "summary": "Создаёт AI-агента с конфигурацией. Только host-рантайм.",
+      "example": "let a = ai.agent(\"assistant\", config);",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "ai_generate!",
+      "kind": "macro",
+      "signatures": [
+        "ai_generate!(\"prompt\")"
+      ],
+      "engine": "host",
+      "summary": "Compile-time генерация кода по промпту (макрос лексера/парсера). Только host-рантайм с AI-гейтвеем.",
+      "example": "let code = ai_generate!(\"generate a sum function\");",
+      "docs": "guide/ai-features"
+    },
+    {
+      "name": "Ok",
+      "kind": "constructor",
+      "signatures": [
+        "Ok(value) -> Result<T, E>"
+      ],
+      "engine": "both",
+      "summary": "Встроенный конструктор варианта успеха; тег 0 в представлении `Variant`.",
+      "example": "let r = Ok(42);",
+      "docs": "guide/enums-and-pattern-matching"
+    },
+    {
+      "name": "Err",
+      "kind": "constructor",
+      "signatures": [
+        "Err(error) -> Result<T, E>"
+      ],
+      "engine": "both",
+      "summary": "Встроенный конструктор варианта ошибки; тег 1.",
+      "example": "let r = Err(\"bad\");",
+      "docs": "guide/enums-and-pattern-matching"
+    },
+    {
+      "name": "Some",
+      "kind": "constructor",
+      "signatures": [
+        "Some(value) -> Option<T>"
+      ],
+      "engine": "both",
+      "summary": "Встроенный конструктор «есть значение»; тег 0.",
+      "example": "let o = Some(1);",
+      "docs": "guide/enums-and-pattern-matching"
+    },
+    {
+      "name": "None",
+      "kind": "constructor",
+      "signatures": [
+        "None() -> Option<T>"
+      ],
+      "engine": "both",
+      "summary": "Встроенный конструктор «нет значения»; 0-арный вариант, представлен тегом напрямую.",
+      "example": "let o = None();",
+      "docs": "guide/enums-and-pattern-matching"
+    }
+  ],
+  "hostOnly": [
+    "tensor",
+    "semantic",
+    "matmul",
+    "cosine_similarity",
+    "dot",
+    "magnitude",
+    "zeros",
+    "ones",
+    "snapshot",
+    "ai_contract",
+    "enforce_contract",
+    "ai_infer",
+    "ai_embed",
+    "ai_stream",
+    "stream_next",
+    "channel"
+  ],
+  "diagnostics": [
+    {
+      "code": "LEX_UNEXPECTED_CHAR",
+      "engine": "both",
+      "severity": "error",
+      "positioned": true,
+      "pattern": "Неожиданный символ '{ch}' на строке {line}:{column}",
+      "regex": "^Неожиданный символ '(?<ch>.)' на строке (\\d+):(\\d+)$",
+      "sample": "Неожиданный символ '#' на строке 1:13",
+      "summary": "Встретился символ, который не может начинать токен (например `#`, `$`, `?`).",
+      "docs": "reference/errors#lex_unexpected_char"
+    },
+    {
+      "code": "LEX_UNTERMINATED_STRING",
+      "engine": "both",
+      "severity": "error",
+      "positioned": true,
+      "pattern": "Незавершённая строка на строке {line}:{column}",
+      "regex": "^Незавершённая строка на строке (\\d+):(\\d+)$",
+      "sample": "Незавершённая строка на строке 2:11",
+      "summary": "Строковый литерал не закрыт до конца строки или файла.",
+      "docs": "reference/errors#lex_unterminated_string"
+    },
+    {
+      "code": "LEX_INVALID_ESCAPE",
+      "engine": "both",
+      "severity": "error",
+      "positioned": true,
+      "pattern": "Неверная escape-последовательность '{sequence}' на строке {line}:{column}",
+      "regex": "^Неверная escape-последовательность '(.+)' на строке (\\d+):(\\d+)$",
+      "sample": "Неверная escape-последовательность '\\q' на строке 1:5",
+      "summary": "В строке использована неподдерживаемая escape-последовательность. Допустимы только `\\n`, `\\t`, `\\\\`, `\\\"`.",
+      "docs": "reference/errors#lex_invalid_escape"
+    },
+    {
+      "code": "LEX_INVALID_NUMBER",
+      "engine": "both",
+      "severity": "error",
+      "positioned": true,
+      "pattern": "Неверный формат числа '{text}' на строке {line}:{column}",
+      "regex": "^Неверный формат числа '(.+)' на строке (\\d+):(\\d+)$",
+      "sample": "Неверный формат числа '1e' на строке 1:1",
+      "summary": "Числовой литерал не удалось разобрать (например степень без цифр).",
+      "docs": "reference/errors#lex_invalid_number"
+    },
+    {
+      "code": "LEX_UNTERMINATED_COMMENT",
+      "engine": "both",
+      "severity": "error",
+      "positioned": true,
+      "pattern": "Незавершённый блочный комментарий на строке {line}:{column}",
+      "regex": "^Незавершённый блочный комментарий на строке (\\d+):(\\d+)$",
+      "sample": "Незавершённый блочный комментарий на строке 1:1",
+      "summary": "Блочный комментарий `/* ... */` не закрыт до конца файла.",
+      "docs": "reference/errors#lex_unterminated_comment"
+    },
+    {
+      "code": "PARSE_UNEXPECTED_TOKEN",
+      "engine": "both",
+      "severity": "error",
+      "positioned": true,
+      "pattern": "Ошибка парсинга на строке {line}:{column}: ожидалось '{expected}', найдено {found}",
+      "regex": "^Ошибка парсинга на строке (\\d+):(\\d+): ожидалось '(.+)', найдено (.+)$",
+      "sample": "Ошибка парсинга на строке 1:21: ожидалось 'expression', найдено Semicolon",
+      "summary": "Синтаксическая ошибка: парсер ожидал другую конструкцию. `found` — имя токена (`Semicolon`, `RBrace`, `Identifier(\"x\")` и т.п.).",
+      "docs": "reference/errors#parse_unexpected_token"
+    },
+    {
+      "code": "PARSE_UNEXPECTED_EOF",
+      "engine": "both",
+      "severity": "error",
+      "positioned": false,
+      "pattern": "Неожиданный конец файла: ожидалось '{expected}'",
+      "regex": "^Неожиданный конец файла: ожидалось '(.+)'$",
+      "sample": "Неожиданный конец файла: ожидалось '}'",
+      "summary": "Файл закончился раньше, чем парсер получил обязательный токен (обычно незакрытая скобка).",
+      "docs": "reference/errors#parse_unexpected_eof"
+    },
+    {
+      "code": "PARSE_INVALID_ASSIGN_TARGET",
+      "engine": "both",
+      "severity": "error",
+      "positioned": true,
+      "pattern": "Неверная цель присваивания на строке {line}:{column}",
+      "regex": "^Неверная цель присваивания на строке (\\d+):(\\d+)$",
+      "sample": "Неверная цель присваивания на строке 1:5",
+      "summary": "Слева от `=` стоит выражение, которому нельзя присвоить значение (разрешены имя, индекс или поле).",
+      "docs": "reference/errors#parse_invalid_assign_target"
+    },
+    {
+      "code": "TYPE_UNDEFINED_VARIABLE",
+      "engine": "both",
+      "severity": "error",
+      "positioned": true,
+      "pattern": "Неопределённая переменная '{name}' на строке {line}:{column}",
+      "regex": "^Неопределённая переменная '(.+)' на строке (\\d+):(\\d+)$",
+      "sample": "Неопределённая переменная 'unknown_fn' на строке 2:13",
+      "summary": "Имя не объявлено в области видимости и не является известной функцией/встроенной.",
+      "docs": "reference/errors#type_undefined_variable"
+    },
+    {
+      "code": "TYPE_MISMATCH",
+      "engine": "both",
+      "severity": "error",
+      "positioned": true,
+      "pattern": "Несовпадение типов на строке {line}:{column}: ожидалось '{expected}', найдено '{found}'",
+      "regex": "^Несовпадение типов на строке (\\d+):(\\d+): ожидалось '(.+)', найдено '(.+)'$",
+      "sample": "Несовпадение типов на строке 3:3: ожидалось 'float', найдено 'string'",
+      "summary": "Унификация типов не удалась: выражение или аннотация несовместимы.",
+      "docs": "reference/errors#type_mismatch"
+    },
+    {
+      "code": "TYPE_INFINITE",
+      "engine": "both",
+      "severity": "error",
+      "positioned": true,
+      "pattern": "Бесконечный тип на строке {line}:{column}: '{var}' = '{type}'",
+      "regex": "^Бесконечный тип на строке (\\d+):(\\d+): '(.+)' = '(.+)'$",
+      "sample": "Бесконечный тип на строке 2:5: '$T1' = 'fn($T1) -> $T1'",
+      "summary": "Occurs-check: типовая переменная входит в собственный тип (например `let f = fn(x) => f(x);`).",
+      "docs": "reference/errors#type_infinite"
+    },
+    {
+      "code": "TYPE_ARITY_MISMATCH",
+      "engine": "both",
+      "severity": "error",
+      "positioned": true,
+      "pattern": "Несовпадение арности на строке {line}:{column}: ожидалось {expected} аргументов, найдено {found}",
+      "regex": "^Несовпадение арности на строке (\\d+):(\\d+): ожидалось (\\d+) аргументов, найдено (\\d+)$",
+      "sample": "Несовпадение арности на строке 4:10: ожидалось 2 аргументов, найдено 3",
+      "summary": "У функции в сигнатуре другое число параметров, чем в вызове.",
+      "docs": "reference/errors#type_arity_mismatch"
+    },
+    {
+      "code": "TYPE_NOT_A_FUNCTION",
+      "engine": "both",
+      "severity": "error",
+      "positioned": true,
+      "pattern": "Не функция на строке {line}:{column}: тип '{type}'",
+      "regex": "^Не функция на строке (\\d+):(\\d+): тип '(.+)'$",
+      "sample": "Не функция на строке 3:7: тип 'int'",
+      "summary": "Вызов применён к значению, тип которого не является функцией (`await`, инференс и т.п.).",
+      "docs": "reference/errors#type_not_a_function"
+    },
+    {
+      "code": "TYPE_MISSING_RETURN",
+      "engine": "both",
+      "severity": "error",
+      "positioned": true,
+      "reserved": true,
+      "pattern": "Отсутствует return на строке {line}:{column}",
+      "regex": "^Отсутствует return на строке (\\d+):(\\d+)$",
+      "sample": "Отсутствует return на строке 5:1",
+      "summary": "Зарезервированная диагностика TypeError::MissingReturn (в v0.1.0 не порождается).",
+      "docs": "reference/errors#type_missing_return"
+    },
+    {
+      "code": "TYPE_INVALID_AI_TYPE",
+      "engine": "both",
+      "severity": "error",
+      "positioned": true,
+      "reserved": true,
+      "pattern": "Неверный AI-тип на строке {line}:{column}: {message}",
+      "regex": "^Неверный AI-тип на строке (\\d+):(\\d+): (.+)$",
+      "sample": "Неверный AI-тип на строке 2:9: ожидалась модель",
+      "summary": "Зарезервированная диагностика TypeError::InvalidAIType (в v0.1.0 не порождается).",
+      "docs": "reference/errors#type_invalid_ai_type"
+    },
+    {
+      "code": "GEN_UNKNOWN_FUNCTION",
+      "engine": "both",
+      "severity": "error",
+      "positioned": false,
+      "pattern": "Unknown function: {name}",
+      "regex": "^Unknown function: (.+)$",
+      "sample": "Unknown function: unknown_fn",
+      "summary": "Кодогенератор не нашёл ни встроенную, ни пользовательскую функцию с таким именем.",
+      "docs": "reference/errors#gen_unknown_function"
+    },
+    {
+      "code": "GEN_HOST_BUILTIN",
+      "engine": "both",
+      "severity": "error",
+      "positioned": false,
+      "pattern": "Builtin '{name}' не поддерживается движком №2 (требует host-рантайма)",
+      "regex": "^Builtin '(.+)' не поддерживается движком №2 \\(требует host-рантайма\\)$",
+      "sample": "Builtin 'tensor' не поддерживается движком №2 (требует host-рантайма)",
+      "summary": "Host-примитив встретился в коде, компилируемом движком №2 (список см. `hostOnly`).",
+      "docs": "reference/errors#gen_host_builtin"
+    },
+    {
+      "code": "GEN_METHOD_UNSUPPORTED",
+      "engine": "both",
+      "severity": "error",
+      "positioned": false,
+      "pattern": "Метод '{name}' не поддерживается движком №2 (требует host-рантайма)",
+      "regex": "^Метод '(.+)' не поддерживается движком №2 \\(требует host-рантайма\\)$",
+      "sample": "Метод 'send' не поддерживается движком №2 (требует host-рантайма)",
+      "summary": "Вызван метод, который реализован только host-рантаймом движка №1.",
+      "docs": "reference/errors#gen_method_unsupported"
+    },
+    {
+      "code": "GEN_UNDEFINED_VARIABLE",
+      "engine": "both",
+      "severity": "error",
+      "positioned": false,
+      "pattern": "Undefined variable: {name}",
+      "regex": "^Undefined variable: (.+)$",
+      "sample": "Undefined variable: x",
+      "summary": "Кодогенератор не нашёл локальную переменную или функцию с таким именем.",
+      "docs": "reference/errors#gen_undefined_variable"
+    },
+    {
+      "code": "GEN_UNKNOWN_FIELD",
+      "engine": "both",
+      "severity": "error",
+      "positioned": false,
+      "pattern": "Unknown field: {class}.{field}",
+      "regex": "^Unknown field: ([A-Za-z_][A-Za-z0-9_]*)\\.(.+)$",
+      "sample": "Unknown field: Point.z",
+      "summary": "Обращение к полю, которого нет в layout класса.",
+      "docs": "reference/errors#gen_unknown_field"
+    },
+    {
+      "code": "GEN_UNKNOWN_CLASS",
+      "engine": "both",
+      "severity": "error",
+      "positioned": false,
+      "pattern": "Unknown class: {name}",
+      "regex": "^Unknown class: (.+)$",
+      "sample": "Unknown class: Shape",
+      "summary": "Класс, к которому применяется `new`/доступ к полю, не объявлен.",
+      "docs": "reference/errors#gen_unknown_class"
+    },
+    {
+      "code": "GEN_UNKNOWN_ENUM_VARIANT",
+      "engine": "both",
+      "severity": "error",
+      "positioned": false,
+      "pattern": "Unknown enum variant: {name}",
+      "regex": "^Unknown enum variant: (.+)$",
+      "sample": "Unknown enum variant: Missing",
+      "summary": "Конструктор варианта не объявлен ни в одном enum и не является встроенным (Ok/Err/Some/None).",
+      "docs": "reference/errors#gen_unknown_enum_variant"
+    },
+    {
+      "code": "GEN_ENUM_VARIANT_IN_PATTERN",
+      "engine": "both",
+      "severity": "error",
+      "positioned": false,
+      "pattern": "Unknown enum variant in pattern: {name}",
+      "regex": "^Unknown enum variant in pattern: (.+)$",
+      "sample": "Unknown enum variant in pattern: Missing",
+      "summary": "В паттерне `match` использован конструктор, не объявленный ни в одном enum и не являющийся встроенным.",
+      "docs": "reference/errors#gen_enum_variant_in_pattern"
+    },
+    {
+      "code": "GEN_ENUM_ARITY",
+      "engine": "both",
+      "severity": "error",
+      "positioned": false,
+      "pattern": "Enum variant '{name}' expects {n} field(s), got {m}",
+      "regex": "^Enum variant '(.+)' expects (\\d+) field\\(s\\), got (\\d+)$",
+      "sample": "Enum variant 'Ok' expects 1 field(s), got 2",
+      "summary": "Число аргументов конструктора enum-варианта не совпадает с числом полей.",
+      "docs": "reference/errors#gen_enum_arity"
+    },
+    {
+      "code": "GEN_ENUM_PATTERN_ARITY",
+      "engine": "both",
+      "severity": "error",
+      "positioned": false,
+      "pattern": "Enum pattern '{name}' expects {n} field(s), got {m}",
+      "regex": "^Enum pattern '(.+)' expects (\\d+) field\\(s\\), got (\\d+)$",
+      "sample": "Enum pattern 'Ok' expects 1 field(s), got 0",
+      "summary": "Число под-паттернов конструктора не совпадает с числом полей варианта.",
+      "docs": "reference/errors#gen_enum_pattern_arity"
+    },
+    {
+      "code": "GEN_PATTERN_UNSUPPORTED",
+      "engine": "both",
+      "severity": "error",
+      "positioned": false,
+      "pattern": "Unsupported literal pattern in match codegen",
+      "regex": "^Unsupported literal pattern in match codegen$",
+      "sample": "Unsupported literal pattern in match codegen",
+      "summary": "В `match` встретился литеральный паттерн, который кодогенератор не умеет компилировать.",
+      "docs": "reference/errors#gen_pattern_unsupported"
+    },
+    {
+      "code": "GEN_COMPLEX_ASSIGN",
+      "engine": "both",
+      "severity": "error",
+      "positioned": false,
+      "pattern": "Complex assignment not yet supported",
+      "regex": "^Complex assignment not yet supported$",
+      "sample": "Complex assignment not yet supported",
+      "summary": "Присваивание во вложенную цель (например `a[i].x = v`) пока не поддерживается кодогенератором.",
+      "docs": "reference/errors#gen_complex_assign"
+    },
+    {
+      "code": "GEN_CHANNEL_SEND",
+      "engine": "both",
+      "severity": "error",
+      "positioned": false,
+      "pattern": "Оператор отправки в канал (ch <- v) требует host-рантайма движка №1",
+      "regex": "^Оператор отправки в канал \\(ch <- v\\) требует host-рантайма движка №1$",
+      "sample": "Оператор отправки в канал (ch <- v) требует host-рантайма движка №1",
+      "summary": "Отправка в канал в движке №2 невозможна: каналы реализованы только host-рантаймом.",
+      "docs": "reference/errors#gen_channel_send"
+    },
+    {
+      "code": "GEN_CHANNEL_RECV",
+      "engine": "both",
+      "severity": "error",
+      "positioned": false,
+      "pattern": "Приём из канала (<- ch) требует host-рантайма движка №1",
+      "regex": "^Приём из канала \\(<- ch\\) требует host-рантайма движка №1$",
+      "sample": "Приём из канала (<- ch) требует host-рантайма движка №1",
+      "summary": "Приём из канала в движке №2 невозможен: каналы реализованы только host-рантаймом.",
+      "docs": "reference/errors#gen_channel_recv"
+    },
+    {
+      "code": "GEN_AI_PRIMITIVE",
+      "engine": "both",
+      "severity": "error",
+      "positioned": false,
+      "pattern": "AI-примитивы требуют host-рантайма движка №1",
+      "regex": "^AI-примитивы требуют host-рантайма движка №1$",
+      "sample": "AI-примитивы требуют host-рантайма движка №1",
+      "summary": "AI-примитивы (`ai.*`, `ai_infer`, `ai_embed`, ...) в движке №2 не поддерживаются.",
+      "docs": "reference/errors#gen_ai_primitive"
+    },
+    {
+      "code": "GEN_PUSH_ARITY",
+      "engine": "both",
+      "severity": "error",
+      "positioned": false,
+      "pattern": "push expects (array, value)",
+      "regex": "^push expects \\(array, value\\)$",
+      "sample": "push expects (array, value)",
+      "summary": "Функциональный `push` вызван без двух аргументов (массив и значение).",
+      "docs": "reference/errors#gen_push_arity"
+    },
+    {
+      "code": "GEN_INTERNAL_LAMBDA",
+      "engine": "both",
+      "severity": "error",
+      "positioned": false,
+      "pattern": "internal: lambda not hoisted",
+      "regex": "^internal: lambda not hoisted$",
+      "sample": "internal: lambda not hoisted",
+      "summary": "Внутренняя ошибка кодогенератора: лямбда не была зарегистрирована в первом проходе.",
+      "docs": "reference/errors#gen_internal_lambda"
+    }
+  ],
+  "snippets": [
+    {
+      "prefix": "fn",
+      "body": "fn ${1:name}(${2}) -> ${3:int} {\n    ${0}\n}",
+      "description": "Функция с аннотацией возвращаемого типа"
+    },
+    {
+      "prefix": "let",
+      "body": "let ${1:name}: ${2:int} = ${0:0};",
+      "description": "Переменная с аннотацией типа"
+    },
+    {
+      "prefix": "if",
+      "body": "if (${1:cond}) {\n    ${0}\n}",
+      "description": "Условная инструкция"
+    },
+    {
+      "prefix": "ifelse",
+      "body": "if (${1:cond}) {\n    ${2}\n} else {\n    ${0}\n}",
+      "description": "Условие с альтернативной веткой"
+    },
+    {
+      "prefix": "while",
+      "body": "while (${1:cond}) {\n    ${0}\n}",
+      "description": "Цикл с предусловием"
+    },
+    {
+      "prefix": "for",
+      "body": "for (let ${1:i} = 0; ${1:i} < ${2:n}; ${1:i} = ${1:i} + 1) {\n    ${0}\n}",
+      "description": "Цикл C-стиля"
+    },
+    {
+      "prefix": "forin",
+      "body": "for (let ${1:item} in ${2:items}) {\n    ${0}\n}",
+      "description": "Обход коллекции"
+    },
+    {
+      "prefix": "match",
+      "body": "match ${1:value} {\n    case ${2:0}: ${3:\"zero\"},\n    default: ${0:\"many\"},\n}",
+      "description": "Сопоставление с образцом"
+    },
+    {
+      "prefix": "class",
+      "body": "class ${1:Name} {\n    ${2:field}: ${3:int};\n\n    fn init(${4}) {\n        ${0}\n    }\n}",
+      "description": "Класс с полем и конструктором"
+    },
+    {
+      "prefix": "enum",
+      "body": "enum ${1:Name} {\n    ${2:Variant},\n    ${0:Empty}\n}",
+      "description": "Sum-тип"
+    },
+    {
+      "prefix": "test",
+      "body": "test \"${1:name}\" {\n    assert(${0:true});\n}",
+      "description": "Блок регрессионного теста"
+    },
+    {
+      "prefix": "spawn",
+      "body": "spawn {\n    ${0}\n}",
+      "description": "Горутина"
+    },
+    {
+      "prefix": "select",
+      "body": "select {\n    case ${1:v} <- ${2:ch}: {\n        ${3}\n    }\n    default: {\n        ${0}\n    }\n}",
+      "description": "Мультиплексирование каналов"
+    },
+    {
+      "prefix": "lambda",
+      "body": "fn(${1:x}) => ${0:x * 2}",
+      "description": "Лямбда-выражение"
+    }
+  ],
+  "abi": {
+    "target": "wasm32-unknown-unknown",
+    "memoryPageSize": 65536,
+    "memoryPages": 16,
+    "heapStart": 1024,
+    "imports": [
+      {
+        "module": "env",
+        "name": "print",
+        "signature": "(i32) -> void",
+        "description": "Печатает строку из линейной памяти по указателю: [len u32 LE][utf8]. Занимает индекс функции 0, поэтому все остальные функции сдвинуты на 1."
+      }
+    ],
+    "exports": [
+      {
+        "name": "memory",
+        "kind": "memory",
+        "description": "Линейная память модуля."
+      },
+      {
+        "name": "main",
+        "kind": "function",
+        "signature": "() -> i32",
+        "description": "Экспортируется, если в программе объявлена функция main."
+      }
+    ],
+    "compilerAbi": [
+      {
+        "name": "latent_alloc",
+        "signature": "(i32 size) -> i32",
+        "description": "Выделяет size байт в линейной памяти компилятора и возвращает указатель."
+      },
+      {
+        "name": "latent_compile",
+        "signature": "(i32 src_ptr, i32 src_len) -> i32",
+        "description": "Компилирует исходник из линейной памяти. Возвращает указатель на буфер [status u32 LE][len u32 LE][payload]: status=1 — payload это .wasm-байты, status=0 — payload это UTF-8 сообщение об ошибке."
+      },
+      {
+        "name": "latent_free",
+        "signature": "(i32 ptr, i32 size) -> void",
+        "description": "Освобождает буфер, выделенный latent_alloc или возвращённый latent_compile."
+      },
+      {
+        "name": "latent_version",
+        "signature": "() -> i32",
+        "description": "Возвращает указатель на буфер [len u32 LE][utf8] с версией компилятора."
+      }
+    ],
+    "dataLayout": [
+      {
+        "name": "string",
+        "layout": "[len u32 LE][utf8 bytes]",
+        "description": "Строка: длина в байтах, затем байты UTF-8. Указатель — на заголовок длины."
+      },
+      {
+        "name": "array",
+        "layout": "[len u32][elem0 i32][elem1 i32]...",
+        "description": "Массив: длина в первом слове, элементы по 4 байта. Индексация: ptr + 4 + i*4."
+      },
+      {
+        "name": "variant",
+        "layout": "[tag u32][field0 i32][field1 i32]...",
+        "description": "Значение enum: тег варианта и поля; 0-арный вариант представлен самим тегом."
+      },
+      {
+        "name": "class",
+        "layout": "поля подряд; float — f64 (8 байт), остальные — i32 (4 байта); выравнивание 4",
+        "description": "Layout класса: смещения полей вычисляются на этапе кодогенерации, размер выровнен по 4."
+      },
+      {
+        "name": "closure",
+        "layout": "[table_slot u32][env_ptr u32]; env: [captured0 i32]...",
+        "description": "Замыкание: слот таблицы функций и указатель на массив захваченных значений."
+      }
+    ],
+    "diagnosticsEncoding": {
+      "runtime": "Текст ошибки компиляции — UTF-8; позиция встроена в текст в формате `... на строке L:C` (1-based), кроме сообщений без позиции.",
+      "success": "status=1, payload = wasm-байты."
+    }
+  }
+}
