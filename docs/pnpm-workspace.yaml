@@ -1,0 +1,7 @@
+# pnpm 11 читает настройки сборки из этого файла, а не из package.json.
+# core-js в документации не нуждается в postinstall (это лишь сообщение о
+# донате), а docs/.npmrc ставит ignore-scripts=true. Явно запрещаем его
+# build-скрипт, иначе `pnpm install --frozen-lockfile` в чистом CI падает с
+# ERR_PNPM_IGNORED_BUILDS (так же, как web-ide разрешает esbuild).
+allowBuilds:
+  core-js: false
