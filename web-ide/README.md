@@ -77,17 +77,29 @@ IDE автоматически подгружает движок №2 при п�
 - Горячие клавиши: `Ctrl/⌘+Enter` — Run, `Ctrl/⌘+Shift+Enter` — Run with AI,
   `Ctrl/⌘+S` — сохранить.
 
-## Тесты
+## Тесты и покрытие
 
 ```bash
-cd web-ide && node --test test/*.test.js
+cd web-ide
+node --test "test/*.test.js"                        # 337 тестов
+node --experimental-test-coverage --test "test/*.test.js"   # покрытие
+# либо через npm/pnpm-скрипты:
+pnpm test          # node --test
+pnpm coverage      # node --experimental-test-coverage
+pnpm run check:structure   # аудит SOLID/декомпозиции (файлы < 300 строк, тонкие фасады)
 ```
 
-Покрытие: лексер/парсер/интерпретатор движка №1, планировщик goroutines и
-дедлоки, AI и self-repair, рабочие пространства, шаринг, загрузчик и ABI
-движка №2 (на реальном `compiler.wasm`), компиляция примеров, а также
-продвинутые фичи языка (классы, `match`, `async/await`, `select`/`yield`,
-тензоры, тесты/контракты, лямбды) — `test/features.test.js`.
+Текущее покрытие (node v24, `--experimental-test-coverage`): **99.79% строк,
+97.51% ветвей, 99.31% функций** (39 модулей движка/сервисов; подробная таблица —
+`docs/docs/specs/webide-architecture.md`).
+
+Покрытие: лексер/парсер/интерпретатор движка №1 (включая `assert_eq` со
+структурным равенством, for-in по тензорам/Result/экземплярам, select-выражения,
+вложенные объявления, rethrow), AI-гейтвей и pre-fetch с persistent-кэшем,
+self-repair, планировщик goroutines и дедлоки, рабочие пространства, шаринг,
+настройки AI, загрузчик и ABI движка №2 (на реальном `compiler.wasm` и на
+синтетических WASM-модулях), форматтер, а также чистые модули canvas-редактора
+(подсветка строки, геометрия курсора/скролла).
 
 ## Архитектура
 
@@ -114,14 +126,20 @@ web-ide/
 ├── controllers/          file-, command-, ai-settings-controller
 ├── views/                canvas-editor (barrel), output-view, toolbar-view,
 │   │                     ai-settings-view, file-tree-view, menubar-view
-│   └── editor/           theme, metrics, renderer, input, line-tokenizer
+│   └── editor/           theme, metrics, renderer, input (ввод/textarea),
+│                         pointer (мышь/скролл), navigation (стрелки/правка),
+│                         line-tokenizer
 ├── services/             compiler-service, ai-settings-service,
 │                         workspace-service, share-service
+├── scripts/              check-structure.mjs (аудит SRP/декомпозиции)
 └── styles/               base, menubar, toolbar, panels, editor,
                           output, statusbar, responsive + index.css
 ```
 
-Файлы, превышавшие 300 строк, декомпозированы; ни один файл в `web-ide/` не
-превышает 300 строк. Каждый модуль отвечает за одну зону (SRP/SOLID), а
-корневые `compiler-loader.js`, `examples.js`, `styles.css` и
-`views/canvas-editor.js` сохранены как тонкие barrel-фасады для совместимости.
+Файлы, превышавшие 300 строк, декомпозированы; ни один `.js`-файл в `web-ide/`
+не превышает 300 строк (`pnpm run check:structure` проверяет это автоматически).
+Каждый модуль отвечает за одну зону (SRP/SOLID), а корневые `compiler-loader.js`,
+`examples.js`, `styles.css` и `views/canvas-editor.js` сохранены как тонкие
+barrel-фасады для совместимости. Повторявшиеся реализации структурного
+равенства (assert/assert_eq) сведены к одному `deepEqual` в
+`compiler/value-utils.js`.

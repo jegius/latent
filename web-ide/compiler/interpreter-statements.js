@@ -2,7 +2,7 @@
 // Единственная ответственность: execute(interp, stmt, env) и прогон тестов.
 
 import { ReturnSignal } from './environment.js';
-import { isTruthy, formatValue } from './value-utils.js';
+import { isTruthy, formatValue, deepEqual } from './value-utils.js';
 import { evaluate } from './interpreter-expressions.js';
 import { isInstance } from './oop.js';
 
@@ -137,7 +137,7 @@ export function execute(interp, stmt, env) {
         }
         case 'AssertEq': {
             const args = stmt.args.map(a => evaluate(interp, a, env));
-            if (!looseEqual(args[0], args[1])) {
+            if (!deepEqual(args[0], args[1])) {
                 throw new Error(
                     `assert_eq failed: ${formatValue(args[0])} != ${formatValue(args[1])}` +
                     (args[2] !== undefined ? `: ${formatValue(args[2])}` : ''));
@@ -195,14 +195,6 @@ function toIterable(v) {
     if (typeof v === 'string') return v.split('');
     if (v && isInstance(v)) return [...v.fields.values()];
     throw new Error(`Value is not iterable: ${formatValue(v)}`);
-}
-
-function looseEqual(a, b) {
-    if (a === b) return true;
-    if (Array.isArray(a) && Array.isArray(b)) {
-        return a.length === b.length && a.every((v, i) => looseEqual(v, b[i]));
-    }
-    return false;
 }
 
 /**

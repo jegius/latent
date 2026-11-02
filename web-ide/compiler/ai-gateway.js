@@ -69,7 +69,7 @@ export async function aiInferRemote(model, prompt) {
         const data = await res.json();
         // Убираем think-блоки из ответов reasoning-моделей (qwen3 и т.п.)
         let text = data.response || '';
-        text = text.replace(/ thinking[\s\S]*?<\/think>/g, '').trim();
+        text = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
         return text;
     }
 

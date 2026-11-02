@@ -5,6 +5,8 @@
   "type": "module",
   "description": "Latent online IDE — tree-walking interpreter (engine #1) and AI gateway",
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test \"test/*.test.js\"",
+    "coverage": "node --experimental-test-coverage --test \"test/*.test.js\"",
+    "check:structure": "node scripts/check-structure.mjs"
   }
 }

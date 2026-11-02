@@ -3,10 +3,10 @@
 // Result/Option, assert, AI-примитивы, контракты). Методы вызываются с `this`,
 // привязанным к интерпретатору.
 
-import { Channel } from './environment.js';
-import { isTagged } from './environment.js';
+import { Channel, isTagged } from './environment.js';
 import {
     formatValue, cosineSimilarity, matmul, Tensor, isTensor, flatTensor, dot, magnitude,
+    deepEqual,
 } from './value-utils.js';
 import { mockEmbed } from './interpreter-ai.js';
 
@@ -26,21 +26,12 @@ export function assertEqual(a, b, msg) {
     }
 }
 
-/** Структурное равенство без циклического импорта. */
+/**
+ * Структурное равенство для assert_eq. Единая реализация — deepEqual в
+ * value-utils (без циклического импорта); здесь сохранён публичный алиас.
+ */
 export function structuralEqual(a, b) {
-    if (a === b) return true;
-    if (Array.isArray(a) && Array.isArray(b)) {
-        return a.length === b.length && a.every((v, i) => structuralEqual(v, b[i]));
-    }
-    if (isTensor(a) && isTensor(b)) {
-        return JSON.stringify(a.shape) === JSON.stringify(b.shape) && structuralEqual(a.data, b.data);
-    }
-    if (a && b && typeof a === 'object' && typeof b === 'object') {
-        const ka = Object.keys(a);
-        const kb = Object.keys(b);
-        return ka.length === kb.length && ka.every(k => structuralEqual(a[k], b[k]));
-    }
-    return false;
+    return deepEqual(a, b);
 }
 
 /** Приводит значение к числовому вектору (Tensor/semantic/массив). */

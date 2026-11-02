@@ -6,10 +6,12 @@ import {
 } from './editor-theme.js';
 import { posToLineCol, getMaxScroll, getMaxScrollX, ensureCursorVisible } from './editor-metrics.js';
 import { render } from './editor-renderer.js';
+import { setupTextareaInput } from './editor-input.js';
+import { handleKeyDown } from './editor-navigation.js';
 import {
-    setupTextareaInput, handleWheel, isOnScrollbar,
-    handleMouseDown, handleMouseMove, handleMouseUp, handleClick, handleKeyDown,
-} from './editor-input.js';
+    handleWheel, isOnScrollbar,
+    handleMouseDown, handleMouseMove, handleMouseUp, handleClick,
+} from './editor-pointer.js';
 
 /**
  * Канвас-редактор кода (слой отображения).
