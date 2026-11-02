@@ -40,9 +40,14 @@ Latent задуман как **WASM-ядро для веб-приложений*
 JS/React/Vue/Svelte. В документации — отдельный раздел с проверенными кейсами:
 
 - [Latent во фронтенде](docs/docs/guide/web-and-frontend.md) — ABI, интеграция с
-  React/Vue/Svelte/Vite, Web Workers, Cache API, производительность, ограничения;
+  React/Vue/Svelte/Vite, Web Workers, Cache API, ленивая загрузка и чанки, ограничения;
 - [Latent в браузере за 5 минут](docs/docs/getting-started/web-browser.md) — готовый
   HTML + `WebAssembly.instantiate`;
+- **[интерактивные демо](https://jegius.github.io/latent/demos/)** — бенчмарк
+  JS против Latent→WASM (hash, sieve, matmul, quicksort, UTF-8), фильтры изображений
+  на canvas и физика 30 000 частиц: живые метрики, без сборки и зависимостей,
+  с компиляцией `.lat` прямо в браузере (см.
+  [разбор](docs/docs/examples/frontend-showcase.md));
 - примеры: [калькулятор](docs/docs/examples/frontend-calculator.md),
   [обработка данных](docs/docs/examples/frontend-data-processing.md),
   [строки и UTF-8](docs/docs/examples/frontend-strings.md),
