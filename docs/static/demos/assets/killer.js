@@ -318,9 +318,12 @@ export class CodeViewer {
     this.current = clamp(index, 0, this.files.length - 1);
     const file = this.files[this.current];
     const lang = file.lang || this.lang;
-    this.pre.innerHTML = file.code.split('\n').map((line, i) => `
-      <div class="k-code-line"><span class="k-ln">${i + 1}</span><span class="k-code-text">${highlightLine(line, lang) || ' '}</span></div>
-    `).join('');
+    // No whitespace between line elements: the container is a <pre>, so any
+    // newline or indent in this template would render as extra blank lines and
+    // leading spaces inside the code viewer.
+    this.pre.innerHTML = file.code.split('\n').map((line, i) =>
+      `<div class="k-code-line"><span class="k-ln">${i + 1}</span><span class="k-code-text">${highlightLine(line, lang) || ' '}</span></div>`,
+    ).join('');
     $$('[data-code-tab]', this.root).forEach((tab, i) => {
       const on = i === this.current;
       tab.classList.toggle('is-active', on);
