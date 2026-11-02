@@ -39,3 +39,6 @@ pub use stream::AIStream;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod tests_coverage;

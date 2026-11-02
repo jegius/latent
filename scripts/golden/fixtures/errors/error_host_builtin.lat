@@ -1,0 +1,7 @@
+// Golden-набор: host-builtin в движке №2 даёт понятную ошибку.
+// expect-error: требует host-рантайма
+
+fn main() -> int {
+    let t = tensor([1, 2, 3]);
+    return 0;
+}

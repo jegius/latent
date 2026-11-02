@@ -210,3 +210,46 @@ pub mod valtype {
     pub const F64: u8 = 0x7C;
     pub const VOID: u8 = 0x40;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_leb128_unsigned() {
+        let mut b = ByteBuffer::new();
+        b.write_u32(0);
+        b.write_u32(624485);
+        assert_eq!(b.into_vec(), vec![0x00, 0xE5, 0x8E, 0x26]);
+    }
+
+    #[test]
+    fn test_leb128_signed() {
+        let mut b = ByteBuffer::new();
+        b.write_i32(0);
+        b.write_i32(-1);
+        b.write_i32(-624485);
+        assert_eq!(b.into_vec(), vec![0x00, 0x7F, 0x9B, 0xF1, 0x59]);
+    }
+
+    #[test]
+    fn test_leb128_64bit() {
+        let mut b = ByteBuffer::new();
+        b.write_u64(0);
+        b.write_u64(1 << 35);
+        b.write_i64(-1);
+        assert!(!b.into_vec().is_empty());
+    }
+
+    #[test]
+    fn test_buffer_helpers() {
+        let mut b = ByteBuffer::new();
+        assert_eq!(b.last_byte(), None);
+        b.push(1);
+        b.extend(&[2, 3]);
+        assert_eq!(b.last_byte(), Some(3));
+        assert_eq!(b.into_vec(), vec![1, 2, 3]);
+        let d = ByteBuffer::default();
+        assert_eq!(d.last_byte(), None);
+    }
+}

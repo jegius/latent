@@ -298,4 +298,7 @@ fn main() -> int {
 }
 
 mod advanced;
+mod coverage_gaps;
+mod coverage_gaps2;
 mod features;
+mod features_misc;

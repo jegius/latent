@@ -1,0 +1,7 @@
+// Golden-набор: AI-примитивы требуют host-рантайма движка №1.
+// expect-error: host-рантайма
+
+fn main() -> int {
+    let x = ai_infer("hi");
+    return 0;
+}

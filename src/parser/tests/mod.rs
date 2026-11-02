@@ -122,4 +122,6 @@ fn test_while() {
     }
 }
 
+mod new_features;
 mod stmts_exprs;
+mod errors;

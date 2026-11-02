@@ -2,6 +2,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 
 import {
     JSON_HEADERS,
@@ -9,6 +10,9 @@ import {
     httpPost,
     startFixtureHttp,
 } from './helpers.mjs';
+import { createMcpRoutes } from '../src/http-mcp.mjs';
+import { startHttpServer } from '../src/http.mjs';
+import { renderLanding } from '../src/landing.mjs';
 
 /** Параметры initialize по умолчанию. */
 const INIT_PARAMS = {
@@ -338,4 +342,332 @@ test('сервер на порту 0 отдаёт реальный порт', as
     } finally {
         await handle.close();
     }
+});
+
+// --- маршруты, лимиты и защитные ветви HTTP-транспорта ----------------------
+
+/**
+ * Сырой POST без автоматических заголовков fetch.
+ * @param {string} endpoint
+ * @param {string} body
+ * @param {Record<string, string>} headers
+ * @returns {Promise<{status: number, body: string}>}
+ */
+function rawPost(endpoint, body, headers) {
+    const url = new URL(endpoint);
+    return new Promise((resolve, reject) => {
+        const req = http.request({
+            hostname: url.hostname,
+            port: url.port,
+            path: url.pathname,
+            method: 'POST',
+            headers,
+        }, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk.toString('utf8'); });
+            res.on('end', () => resolve({ status: res.statusCode, body: data }));
+        });
+        req.on('error', reject);
+        req.end(body);
+    });
+}
+
+test('POST без Content-Type — 415, ветка «заголовок отсутствует»', async (t) => {
+    const handle = await startFixtureHttp({ stateless: true });
+    t.after(() => handle.close());
+
+    const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' });
+    const response = await rawPost(handle.url, body, { 'Content-Length': String(Buffer.byteLength(body)) });
+    assert.equal(response.status, 415);
+    assert.match(JSON.parse(response.body).message, /application\/json/);
+});
+
+test('тело больше 1 МиБ отклоняется с кодом 413', async (t) => {
+    const handle = await startFixtureHttp({ stateless: true });
+    t.after(() => handle.close());
+
+    const huge = JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'ping',
+        params: { pad: 'x'.repeat(1024 * 1024 + 1) },
+    });
+    const response = await httpPost(handle.url, JSON.parse(huge));
+    assert.equal(response.status, 413);
+    assert.match(response.body.message, /больше 1048576 байт/);
+});
+
+test('HEAD / и POST / — контракт методов лендинга', async (t) => {
+    const handle = await startFixtureHttp();
+    t.after(() => handle.close());
+    const base = handle.url.replace(/\/mcp$/, '');
+
+    const head = await fetch(`${base}/`, { method: 'HEAD' });
+    assert.equal(head.status, 200);
+    assert.match(head.headers.get('content-type'), /text\/html/);
+    assert.equal(await head.text(), '');
+
+    const post = await fetch(`${base}/`, { method: 'POST' });
+    assert.equal(post.status, 405);
+    assert.match(post.headers.get('allow'), /GET/);
+    assert.match(post.headers.get('allow'), /HEAD/);
+});
+
+test('GET /favicon.ico и OPTIONS /health — 204 без тела', async (t) => {
+    const handle = await startFixtureHttp();
+    t.after(() => handle.close());
+    const base = handle.url.replace(/\/mcp$/, '');
+
+    const favicon = await fetch(`${base}/favicon.ico`);
+    assert.equal(favicon.status, 204);
+    assert.equal(await favicon.text(), '');
+
+    const options = await fetch(`${base}/health`, { method: 'OPTIONS' });
+    assert.equal(options.status, 204);
+    assert.equal(options.headers.get('access-control-allow-origin'), '*');
+});
+
+test('POST /health и PUT /mcp — 405 с Allow', async (t) => {
+    const handle = await startFixtureHttp();
+    t.after(() => handle.close());
+    const base = handle.url.replace(/\/mcp$/, '');
+
+    const health = await fetch(`${base}/health`, { method: 'POST' });
+    assert.equal(health.status, 405);
+    assert.match(health.headers.get('allow'), /GET/);
+
+    const method = await fetch(handle.url, { method: 'PATCH' });
+    assert.equal(method.status, 405);
+    const body = await method.json();
+    assert.match(body.message, /POST/);
+    assert.match(body.message, /DELETE/);
+    assert.match(body.message, /OPTIONS/);
+});
+
+test('initialize без params создаёт сессию с пустыми метаданными', async (t) => {
+    const handle = await startFixtureHttp();
+    t.after(() => handle.close());
+
+    const response = await httpPost(handle.url, { jsonrpc: '2.0', id: 1, method: 'initialize' });
+    assert.equal(response.status, 200);
+    assert.equal(response.body.result.protocolVersion, '2025-06-18');
+    const sessionId = response.headers.get('mcp-session-id');
+    assert.ok(sessionId);
+    const session = handle.sessions.get(sessionId);
+    assert.deepEqual(session.clientInfo, {});
+    assert.equal(session.protocolVersion, '');
+});
+
+test('batch initialize + notification создаёт сессию и отвечает только на запрос', async (t) => {
+    const handle = await startFixtureHttp();
+    t.after(() => handle.close());
+
+    const response = await httpPost(handle.url, [
+        { jsonrpc: '2.0', id: 1, method: 'initialize', params: INIT_PARAMS },
+        { jsonrpc: '2.0', method: 'notifications/initialized' },
+    ]);
+    assert.equal(response.status, 200);
+    assert.ok(Array.isArray(response.body));
+    assert.equal(response.body.length, 1);
+    assert.equal(response.body[0].result.serverInfo.name, 'latent-docs');
+    assert.ok(response.headers.get('mcp-session-id'));
+});
+
+test('batch, где кроме initialize есть запрос до инициализации, отклоняется', async (t) => {
+    const handle = await startFixtureHttp();
+    t.after(() => handle.close());
+
+    const response = await httpPost(handle.url, [
+        { jsonrpc: '2.0', id: 1, method: 'initialize', params: INIT_PARAMS },
+        { jsonrpc: '2.0', id: 2, method: 'tools/list' },
+    ]);
+    assert.equal(response.status, 400);
+    assert.equal(response.body.error.code, -32002);
+});
+
+test('поддерживаемый MCP-Protocol-Version в заголовке не блокирует запрос', async (t) => {
+    const handle = await startFixtureHttp({ stateless: true });
+    t.after(() => handle.close());
+
+    const response = await httpPost(
+        handle.url,
+        { jsonrpc: '2.0', id: 1, method: 'ping' },
+        { 'MCP-Protocol-Version': '2025-03-26' },
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.body.result, {});
+});
+
+test('DELETE в stateless-режиме отвечает подтверждением', async (t) => {
+    const handle = await startFixtureHttp({ stateless: true });
+    t.after(() => handle.close());
+
+    const response = await fetch(handle.url, { method: 'DELETE' });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true, stateless: true });
+});
+
+test('DELETE несуществующей сессии — 404 и -32001', async (t) => {
+    const handle = await startFixtureHttp();
+    t.after(() => handle.close());
+
+    const response = await fetch(handle.url, {
+        method: 'DELETE',
+        headers: { 'Mcp-Session-Id': '00000000-0000-0000-0000-000000000000' },
+    });
+    assert.equal(response.status, 404);
+    const body = await response.json();
+    assert.equal(body.error.code, -32001);
+});
+
+test('неизвестная сессия с уведомлением — 404 с id:null', async (t) => {
+    const handle = await startFixtureHttp();
+    t.after(() => handle.close());
+
+    const response = await httpPost(
+        handle.url,
+        { jsonrpc: '2.0', method: 'notifications/initialized' },
+        { 'Mcp-Session-Id': '00000000-0000-0000-0000-000000000000' },
+    );
+    assert.equal(response.status, 404);
+    assert.equal(response.body.error.code, -32001);
+    assert.equal(response.body.id, null);
+});
+
+test('истёкшая сессия отвергается на следующем запросе', async (t) => {
+    const handle = await startFixtureHttp();
+    t.after(() => handle.close());
+
+    const sessionId = await openSession(handle.url);
+    const session = handle.sessions.get(sessionId);
+    session.lastSeen = Date.now() - (31 * 60 * 1000);
+
+    const response = await httpPost(
+        handle.url,
+        { jsonrpc: '2.0', id: 2, method: 'tools/list' },
+        { 'Mcp-Session-Id': sessionId },
+    );
+    assert.equal(response.status, 404);
+    assert.equal(response.body.error.code, -32001);
+    assert.equal(handle.sessions.size, 0);
+});
+
+test('необработанное исключение ядра — 500 InternalError без деталей', async (t) => {
+    const logged = [];
+    const core = createFixtureCore();
+    core.handlePayload = async () => {
+        throw new Error('внутренний сбой');
+    };
+    const handle = await startHttpServer({
+        core,
+        host: '127.0.0.1',
+        port: 0,
+        stateless: true,
+        logger: { error: (...args) => logged.push(args) },
+    });
+    t.after(() => handle.close());
+
+    const response = await httpPost(handle.url, { jsonrpc: '2.0', id: 1, method: 'ping' });
+    assert.equal(response.status, 500);
+    assert.equal(response.body.error.code, -32603);
+    assert.match(response.body.error.message, /Внутренняя ошибка сервера/);
+    assert.equal(logged.length, 1, 'ошибка должна попасть в лог');
+});
+
+test('SSE: heartbeat пишет keep-alive и снимает клиента при закрытии', async (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] });
+    const sseClients = new Set();
+    const handlers = {};
+    const res = {
+        headersSent: false,
+        writableEnded: false,
+        status: null,
+        headers: null,
+        chunks: [],
+        writeHead(status, headers) {
+            this.status = status;
+            this.headers = headers;
+        },
+        write(chunk) {
+            this.chunks.push(String(chunk));
+            return true;
+        },
+        on(event, handler) {
+            handlers[event] = handler;
+        },
+        end() {},
+    };
+    const req = { headers: { accept: 'text/event-stream' }, on() {} };
+    const routes = createMcpRoutes({
+        core: createFixtureCore(),
+        sessions: null,
+        stateless: true,
+        sseClients,
+        logger: { error() {} },
+    });
+
+    routes.handleSse(req, res);
+    assert.equal(res.status, 200);
+    assert.match(res.headers['Content-Type'], /text\/event-stream/);
+    assert.match(res.chunks[0], /подключено к latent-docs/);
+    assert.equal(sseClients.size, 1);
+
+    t.mock.timers.tick(15000);
+    assert.match(res.chunks.at(-1), /keep-alive/);
+
+    handlers.close();
+    assert.equal(sseClients.size, 0);
+    t.mock.timers.tick(30000);
+    assert.equal(res.chunks.filter((chunk) => chunk.includes('keep-alive')).length, 1, 'таймер должен быть очищен');
+});
+
+test('SSE: ошибка записи heartbeat не роняет сервер', async (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] });
+    const sseClients = new Set();
+    const res = {
+        headersSent: false,
+        writableEnded: false,
+        writeHead() {},
+        write() {
+            throw new Error('сокет закрыт');
+        },
+        on() {},
+        end() {},
+    };
+    const routes = createMcpRoutes({
+        core: createFixtureCore(),
+        sessions: null,
+        stateless: true,
+        sseClients,
+        logger: { error() {} },
+    });
+
+    routes.handleSse({ headers: { accept: '*/*' }, on() {} }, res);
+    assert.doesNotThrow(() => t.mock.timers.tick(15000));
+    assert.equal(sseClients.size, 1);
+});
+
+test('лендинг: stateless-режим и host 0.0.0.0 отражаются в HTML', async (t) => {
+    const html = renderLanding({
+        host: '0.0.0.0',
+        port: 8792,
+        docsRoot: 'C:/docs',
+        docCount: 3,
+        stateless: true,
+        version: '9.9.9',
+    });
+    assert.match(html, /http:\/\/127\.0\.0\.1:8792\/mcp/);
+    assert.match(html, /HTTP \(stateless\)/);
+    assert.match(html, /stateless-режиме/);
+
+    const handle = await startHttpServer({
+        core: createFixtureCore(),
+        host: '0.0.0.0',
+        port: 0,
+        stateless: true,
+        logger: { error() {} },
+    });
+    t.after(() => handle.close());
+    assert.equal(handle.host, '127.0.0.1');
+    assert.match(handle.url, /^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
 });

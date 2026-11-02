@@ -159,3 +159,188 @@ test('пустой каталог даёт пустой, но рабочий и�
         fs.rmSync(emptyDir, { recursive: true, force: true });
     }
 });
+
+/**
+ * Создаёт временный каталог документации из дерева «путь: содержимое».
+ * @param {Record<string, string>} tree
+ * @returns {string}
+ */
+function makeDocs(tree) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'latent-docs-index-'));
+    for (const [relative, content] of Object.entries(tree)) {
+        const absolute = path.join(root, ...relative.split('/'));
+        fs.mkdirSync(path.dirname(absolute), { recursive: true });
+        fs.writeFileSync(absolute, content, 'utf8');
+    }
+    return root;
+}
+
+test('walkMarkdown пропускает скрытые каталоги, node_modules и не-Markdown файлы', () => {
+    const root = makeDocs({
+        'index.md': '# Корень',
+        'guide/one.md': '# Один',
+        'guide/two.mdx': '# Два',
+        '.hidden/secret.md': '# Секрет',
+        'node_modules/pkg/readme.md': '# Пакет',
+        'guide/notes.txt': 'не markdown',
+        'guide/image.png': 'binary',
+    });
+    try {
+        assert.deepEqual(walkMarkdown(root), ['guide/one.md', 'guide/two.mdx', 'index.md']);
+        const index = buildDocsIndex({ docsRoot: root });
+        assert.equal(index.docs.length, 3);
+        assert.equal(index.find('index.md').title, 'Корень');
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test('walkMarkdown на файле (не каталоге) возвращает пустой список', () => {
+    const root = makeDocs({ 'guide/one.md': '# Один' });
+    try {
+        assert.deepEqual(walkMarkdown(path.join(root, 'guide', 'one.md')), []);
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test('buildDocsIndex: каталог-файл и путь с недопустимым символом дают exists=false', () => {
+    const root = makeDocs({ 'guide/one.md': '# Один' });
+    try {
+        const asFile = buildDocsIndex({ docsRoot: path.join(root, 'guide', 'one.md') });
+        assert.equal(asFile.exists, false);
+        assert.match(asFile.error, /не найден/);
+
+        const invalid = buildDocsIndex({ docsRoot: path.join(root, 'bad\u0000name') });
+        assert.equal(invalid.exists, false);
+        assert.equal(invalid.docs.length, 0);
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test('buildDocsIndex: исчезнувший между обходом и чтением файл не роняет индекс', () => {
+    const root = makeDocs({ 'guide/ghost.md': '# Призрак', 'guide/real.md': '# Реальный' });
+    const original = fs.readFileSync;
+    fs.readFileSync = function patched(file, ...rest) {
+        if (String(file).endsWith('ghost.md')) throw new Error('ENOENT');
+        return original.call(this, file, ...rest);
+    };
+    try {
+        const index = buildDocsIndex({ docsRoot: root });
+        const ghost = index.find('guide/ghost.md');
+        assert.ok(ghost, 'файл должен остаться в индексе');
+        assert.equal(ghost.content, '');
+        assert.equal(ghost.title, 'Ghost');
+        assert.equal(ghost.description, '');
+        assert.equal(index.find('guide/real.md').title, 'Реальный');
+    } finally {
+        fs.readFileSync = original;
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test('buildDocsIndex: заголовок из H2, sidebar_label и строковые теги/ключевые слова', () => {
+    const root = makeDocs({
+        'guide/h2-only.md': '## Только второй уровень\n\nТекст.',
+        'guide/fallback-label.md': [
+            '---',
+            'title: 42',
+            'sidebar_label: "Метка сбоку"',
+            'tags: alpha, beta; gamma',
+            'keywords: [delta]',
+            'sidebar_position: "3"',
+            '---',
+            '',
+            'Тело.',
+        ].join('\n'),
+        'guide/bad-position.md': '---\ntitle: Без позиции\nsidebar_position: abc\n---\n\nТело.',
+    });
+    try {
+        const index = buildDocsIndex({ docsRoot: root });
+        assert.equal(index.find('guide/h2-only.md').title, 'Только второй уровень');
+
+        const fallback = index.find('guide/fallback-label.md');
+        assert.equal(fallback.title, 'Метка сбоку');
+        assert.deepEqual(fallback.tags, ['alpha', 'beta', 'gamma', 'delta']);
+        assert.equal(fallback.sidebarPosition, 3);
+        assert.equal(fallback.sidebarLabel, 'Метка сбоку');
+
+        assert.equal(index.find('guide/bad-position.md').sidebarPosition, Number.MAX_SAFE_INTEGER);
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test('buildDocsIndex: незнакомые разделы сортируются после известных и по алфавиту', () => {
+    const root = makeDocs({
+        'guide/one.md': '# Гид',
+        'zeta/a.md': '# Зета',
+        'alpha/a.md': '# Альфа',
+        'alpha/b.md': '# Альфа Б',
+        'custom/c.md': '# Кастом',
+    });
+    try {
+        const index = buildDocsIndex({ docsRoot: root });
+        const unknownSections = index.sections.map((section) => section.name).filter((name) => !['root', 'guide'].includes(name));
+        assert.deepEqual(unknownSections, ['alpha', 'custom', 'zeta']);
+        const alphaPaths = index.docs.filter((doc) => doc.section === 'alpha').map((doc) => doc.path);
+        assert.deepEqual(alphaPaths, ['alpha/a.md', 'alpha/b.md']);
+        assert.equal(index.sections.find((section) => section.name === 'custom').title, 'Custom');
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test('buildDocsIndex: сортировка по sidebar_position внутри раздела', () => {
+    const root = makeDocs({
+        'guide/late.md': '---\ntitle: Поздняя\nsidebar_position: 10\n---\n',
+        'guide/early.md': '---\ntitle: Ранняя\nsidebar_position: 2\n---\n',
+        'guide/no-pos.md': '---\ntitle: Без позиции\n---\n',
+    });
+    try {
+        const paths = buildDocsIndex({ docsRoot: root }).docs.map((doc) => doc.path);
+        assert.deepEqual(paths, ['guide/early.md', 'guide/late.md', 'guide/no-pos.md']);
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test('findDoc: некорректный процент-энкодинг и путь без расширения не падают', () => {
+    const index = buildDocsIndex({ docsRoot: FIXTURES_DOCS });
+    assert.equal(findDoc(index, '%zz/unknown.md'), undefined);
+    assert.equal(findDoc(index, 'guide/unknown'), undefined);
+    assert.equal(findDoc(index, 'guide/variables.md/'), undefined);
+    assert.equal(findDoc(index, 'latent-docs://'), undefined);
+    assert.equal(findDoc(index, 'guide//variables.md').path, 'guide/variables.md');
+    assert.equal(findDoc(index, 42), undefined);
+});
+
+test('findDoc: декодирование %20 и защита от выхода из каталога', () => {
+    const root = makeDocs({
+        'guide/with space.md': '# Пробел',
+        'secret.md': '# Секрет',
+    });
+    try {
+        const index = buildDocsIndex({ docsRoot: root });
+        assert.equal(findDoc(index, 'guide/with%20space.md').path, 'guide/with space.md');
+        assert.equal(findDoc(index, '%2e%2e/secret.md'), undefined);
+        assert.equal(findDoc(index, './guide/with space.md').path, 'guide/with space.md');
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test('renderIndex не добавляет описание, если его нет', () => {
+    const root = makeDocs({
+        'guide/empty.md': '---\ntitle: Пустая страница\n---\n',
+        'custom/one.md': '# Свой раздел',
+    });
+    try {
+        const markdown = buildDocsIndex({ docsRoot: root }).renderIndex();
+        assert.match(markdown, /- \[Пустая страница\]\(latent-docs:\/\/guide\/empty\.md\)$/m);
+        assert.match(markdown, /## Custom \(custom\)/);
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});

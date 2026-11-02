@@ -1,0 +1,60 @@
+// Golden-набор: enum и match — варианты с payload, 0-арные, встроенные
+// Result/Option, литеральные паттерны (int/string), wildcard/identifier.
+// expect-main: 38
+
+enum Shape {
+    Circle(int),
+    Square(int),
+    Empty,
+}
+
+fn area(s: Shape) -> int {
+    return match s {
+        case Circle(r): r * r * 3,
+        case Square(a): a * a,
+        case Empty: 0,
+    };
+}
+
+fn from_result(r) -> int {
+    return match r {
+        case Ok(v): v,
+        case Err(e): -1,
+    };
+}
+
+fn from_option(v) -> int {
+    return match v {
+        case Some(x): x,
+        case None: 0,
+        default: -1,
+    };
+}
+
+fn classify(n: int) -> int {
+    return match n {
+        case 0: 10,
+        case 1: 20,
+        default: 30,
+    };
+}
+
+fn bind(n: int) -> int {
+    return match n {
+        case x: x + 1,
+    };
+}
+
+fn main() -> int {
+    print("area(Circle(3)) =", area(Circle(3)));
+    print("area(Square(4)) =", area(Square(4)));
+    print("area(Empty) =", area(Empty));
+    print("from_result =", from_result(Ok(42)) + from_result(Err("bad")));
+    print("from_option =", from_option(Some(9)) + from_option(None));
+    print("classify =", classify(0) + classify(1) + classify(9));
+    print("bind =", bind(5));
+
+    // 0-арный вариант как значение и сравнение тегов.
+    let c = Empty;
+    return area(c) + from_result(Ok(2)) + from_option(None) + classify(9) + bind(5);
+}

@@ -1,0 +1,51 @@
+// Golden-набор: строки — конкатенация с коэрцией, длина, сравнение,
+// индексация, конвертации int/float/string, методы to_str/to_int.
+// expect-main: 5
+
+fn join(name: string, n: int, f: float, b: bool) -> string {
+    return name + ":" + n + ":" + f + ":" + b;
+}
+
+fn eq(a: string, b: string) -> int {
+    let r = 0;
+    if (a == b) { r = r + 1; }
+    if (a != b) { r = r + 2; }
+    return r;
+}
+
+fn main() -> int {
+    let s = join("v", 7, 1.5, true);
+    print(s);
+    print("len =", s.length, len(s));
+
+    let acc = "";
+    for (let i = 0; i < 3; i = i + 1) {
+        acc = acc + "*";
+    }
+    print("acc =", acc);
+
+    let a = "apple";
+    let b = "banana";
+    print("eq =", eq(a, b), eq(a, a));
+
+    // Индексация строки даёт код байта (UTF-8/ASCII).
+    print("a[0] =", a[0], "a[4] =", a[4]);
+
+    // Конвертации. Литералы с дробной частью обязательны: `2.0` лексер
+    // трактует как int (известное ограничение, зафиксировано golden-набором).
+    print("str(42) =", str(42));
+    print("int(\"123\") =", int("123"));
+    print("float(3) =", float(3));
+    let root = sqrt(2.25) + 0.5;
+    print("sqrt =", root.to_str());
+    print("to_str =", (5).to_str());
+    print("to_int =", "77".to_int());
+    print("str() =", len(str()));
+
+    // Строковый литерал в match.
+    return match "b" {
+        case "a": 1,
+        case "b": 2,
+        default: 3,
+    } + len(s) - len(s) + 3;
+}

@@ -1,0 +1,48 @@
+// Golden-набор: лямбды — выражение и блок, захват переменных, вложенные
+// лямбды, higher-order функции, косвенные вызовы.
+// expect-main: 101
+
+fn apply_twice(f, x) {
+    return f(f(x));
+}
+
+fn map_arr(arr, f) {
+    let r = [];
+    for (let item in arr) {
+        r.push(f(item));
+    }
+    return r;
+}
+
+fn main() -> int {
+    let double = fn(x) => x * 2;
+    print("double(21) =", double(21));
+    let d21 = double(21);
+
+    let scale = fn(x) {
+        let y = x + 1;
+        return y * 10;
+    };
+    print("scale(4) =", scale(4));
+
+    let squared = map_arr([1, 2, 3, 4], fn(x) => x * x);
+    let sq3 = squared[3];
+    print("squared[3] =", sq3);
+
+    let applied = apply_twice(double, 5);
+    print("apply_twice =", applied);
+
+    // Захват переменной в closure.
+    let base = 10;
+    let add = fn(x) => x + base;
+    let added = add(5);
+    print("add(5) =", added);
+
+    // Вложенная лямбда.
+    let make = fn(k) => fn(x) => x + k;
+    let plus2 = make(2);
+    let nested = plus2(6);
+    print("plus2(6) =", nested);
+
+    return sq3 + added + nested + applied + d21;
+}

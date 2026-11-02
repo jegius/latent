@@ -19,3 +19,6 @@ pub use types::{apply_subst, compose_subst, unify, Substitution, Type, TypeError
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod tests_coverage;

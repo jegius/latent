@@ -42,7 +42,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: cargo build --bin latentc
         run: cargo build --bin latentc
       - name: Сборка shc.lat
@@ -50,7 +50,7 @@ jobs:
       - name: Bootstrap и фиксированная точка
         run: node selfhost/bootstrap.mjs
       - name: Регресс-тесты selfhost
-        run: node --test "selfhost/test/*.test.mjs"
+        run: node --test selfhost/test/*.test.mjs
 
   webide:
     name: Web IDE (JS)
@@ -59,9 +59,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Тесты и покрытие ≥90%
-        run: node --experimental-test-coverage --test "web-ide/test/*.test.js"
+        run: node --experimental-test-coverage --test web-ide/test/*.test.js
 
   docs:
     name: Документация
@@ -70,7 +70,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -90,8 +90,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: MCP-сервер документации
-        run: node --test "mcp/docs-mcp/test/*.test.mjs"
+        run: node --test mcp/docs-mcp/test/*.test.mjs
       - name: LSP-сервер
-        run: node --test "tooling/latent-lsp/test/*.test.mjs"
+        run: node --test tooling/latent-lsp/test/*.test.mjs

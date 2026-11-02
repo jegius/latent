@@ -1,0 +1,42 @@
+// Golden-набор: float-арифметика, сравнения, печать f64, match по float,
+// float-параметры и f64-локальные.
+//
+// Литералы обязаны иметь ненулевую дробную часть: `2.0` лексер трактует как
+// int (известное ограничение, зафиксировано golden-набором).
+// expect-main: 10
+
+fn mix(x: float, n: int) -> float {
+    let y = x * 2.25;
+    y = y + float(n);
+    y = y - 0.5;
+    return y;
+}
+
+fn classify(x: float) -> int {
+    return match x {
+        case 1.5: 10,
+        default: 20,
+    };
+}
+
+fn main() -> int {
+    let x = mix(1.25, 3);
+    print("mix =", x);
+    print("classify =", classify(1.5) + classify(2.5));
+    let a = 1.5;
+    let b = 2.5;
+    print("sum =", a + b, "sub =", b - a, "mul =", a * b, "div =", b / a);
+    print("neg =", -a);
+    let root = sqrt(2.25) + 0.5;
+    print("sqrt =", root.to_str());
+    let eq = 0;
+    if (a == 1.5) { eq = eq + 1; }
+    if (a != b) { eq = eq + 2; }
+    if (a < b) { eq = eq + 4; }
+    if (b > a) { eq = eq + 8; }
+    if (a <= b) { eq = eq + 16; }
+    if (b >= a) { eq = eq + 32; }
+    print("eq =", eq);
+    print("int(x) =", int(x), "float(eq) =", float(eq).to_str());
+    return classify(1.5) - 2 + 2;
+}

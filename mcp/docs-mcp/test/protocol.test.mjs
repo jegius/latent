@@ -2,8 +2,16 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-import { createFixtureCore, rpc, callTool, toolData } from './helpers.mjs';
+import { createFixtureCore, rpc, callTool, toolData, FIXTURES_DOCS } from './helpers.mjs';
+import { buildDocsIndex } from '../src/docs-index.mjs';
+import { createExamplesProvider } from '../src/examples.mjs';
+import { SUPPORTED_PROTOCOL_VERSIONS, createHandlers } from '../src/handlers.mjs';
+import { REPO_ROOT } from '../src/paths.mjs';
+import { buildPromptList, getPrompt, requiredArguments } from '../src/prompts.mjs';
 
 const TOOL_NAMES = ['list_docs', 'search_docs', 'read_doc', 'get_language_reference', 'get_example', 'check_code'];
 
@@ -352,4 +360,405 @@ test('shutdown отвечает null и не ломает сервер', async (
     assert.equal(shutdown.result, null);
     const ping = await rpc(core, 'ping');
     assert.ok(ping.result);
+});
+
+// --- граничные случаи протокола, инструментов, ресурсов и prompts -----------
+
+/** Каталог фикстур без документации (для проверки пустого индекса). */
+const MISSING_DOCS = path.join(os.tmpdir(), 'latent-protocol-missing-docs-xyz');
+
+/**
+ * Создаёт диспетчер с подменяемыми зависимостями.
+ * @param {{index?: object, examples?: object, compiler?: object, hooks?: object}} [overrides]
+ * @returns {object}
+ */
+function makeHandlers(overrides = {}) {
+    const index = overrides.index || buildDocsIndex({ docsRoot: FIXTURES_DOCS });
+    const examples = overrides.examples || createExamplesProvider({ repoRoot: REPO_ROOT, docsRoot: FIXTURES_DOCS });
+    const compiler = overrides.compiler || { check: async () => ({ ok: true, errors: [] }), version: async () => 'test' };
+    return createHandlers({
+        index,
+        examples,
+        compiler,
+        docsRoot: FIXTURES_DOCS,
+        hooks: overrides.hooks || {},
+    });
+}
+
+/**
+ * Вызывает инструмент через диспетчер.
+ * @param {object} handlers
+ * @param {string} name
+ * @param {unknown} args
+ * @returns {Promise<object>}
+ */
+function callHandler(handlers, name, args) {
+    return handlers.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } });
+}
+
+test('core: resourceCount и initialized отражают состояние сервера', async () => {
+    const core = createFixtureCore();
+    assert.equal(core.initialized, false);
+    assert.equal(core.resourceCount(), core.index.docs.length + 1);
+
+    await rpc(core, 'initialize', { protocolVersion: '2025-03-26' });
+    assert.equal(core.initialized, true);
+    assert.deepEqual(core.serverInfo, { name: 'latent-docs', version: core.serverInfo.version });
+
+    await rpc(core, 'shutdown');
+    assert.equal(core.initialized, false);
+});
+
+test('batch только из уведомлений не требует ответа', async () => {
+    const core = createFixtureCore();
+    const response = await core.handlePayload([
+        { jsonrpc: '2.0', method: 'notifications/initialized' },
+        { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 1 } },
+    ]);
+    assert.equal(response, null);
+});
+
+test('batch с некорректным элементом возвращает ошибку для него', async () => {
+    const core = createFixtureCore();
+    const response = await core.handlePayload([
+        { jsonrpc: '2.0', id: 1, method: 'ping' },
+        42,
+        null,
+    ]);
+    assert.equal(response.length, 3);
+    assert.equal(response[1].error.code, -32600);
+    assert.equal(response[1].id, null);
+    assert.equal(response[2].error.code, -32600);
+});
+
+test('initialize без params и с нестроковой версией выбирает предпочтительную', async () => {
+    const core = createFixtureCore();
+    const withoutParams = await rpc(core, 'initialize');
+    assert.equal(withoutParams.result.protocolVersion, SUPPORTED_PROTOCOL_VERSIONS[0]);
+
+    const withBadVersion = await rpc(core, 'initialize', { protocolVersion: 20250618 });
+    assert.equal(withBadVersion.result.protocolVersion, SUPPORTED_PROTOCOL_VERSIONS[0]);
+
+    const legacy = await rpc(core, 'initialize', { protocolVersion: '2024-11-05' });
+    assert.equal(legacy.result.protocolVersion, '2024-11-05');
+});
+
+test('tools/call: отсутствие name и не-объектные arguments — InvalidParams', async () => {
+    const core = createFixtureCore();
+
+    const noName = await rpc(core, 'tools/call', { arguments: {} });
+    assert.equal(noName.error.code, -32602);
+    assert.match(noName.error.message, /name/);
+
+    const emptyName = await rpc(core, 'tools/call', { name: '', arguments: {} });
+    assert.equal(emptyName.error.code, -32602);
+
+    const numericName = await rpc(core, 'tools/call', { name: 42, arguments: {} });
+    assert.equal(numericName.error.code, -32602);
+
+    for (const args of [[], 'строка', 42, true]) {
+        const response = await rpc(core, 'tools/call', { name: 'list_docs', arguments: args });
+        assert.equal(response.error.code, -32602, `arguments=${JSON.stringify(args)}`);
+        assert.match(response.error.message, /JSON-объектом/);
+    }
+});
+
+test('tools/call: arguments=null трактуется как пустой объект', async () => {
+    const core = createFixtureCore();
+    const response = await rpc(core, 'tools/call', { name: 'list_docs', arguments: null });
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.structuredContent.docs.length, 9);
+});
+
+test('search_docs: неверные типы query и limit отклоняются', async () => {
+    const core = createFixtureCore();
+
+    for (const query of [null, 42, {}, []]) {
+        const response = await callTool(core, 'search_docs', { query });
+        assert.equal(response.error.code, -32602, `query=${JSON.stringify(query)}`);
+        assert.match(response.error.message, /query/);
+    }
+
+    for (const limit of [0, 51, 2.5, -1, '5', 1e9]) {
+        const response = await callTool(core, 'search_docs', { query: 'типы', limit });
+        assert.equal(response.error.code, -32602, `limit=${JSON.stringify(limit)}`);
+        assert.match(response.error.message, /limit/);
+    }
+});
+
+test('search_docs: границы limit 1 и 50 допустимы, пустой результат объясняется', async () => {
+    const core = createFixtureCore();
+    const one = await callTool(core, 'search_docs', { query: 'latent', limit: 1 });
+    assert.equal(toolData(one).results.length, 1);
+
+    const fifty = await callTool(core, 'search_docs', { query: 'latent', limit: 50 });
+    assert.ok(toolData(fifty).results.length >= 1);
+
+    const none = await callTool(core, 'search_docs', { query: 'квантовый_банан_zzz' });
+    assert.deepEqual(toolData(none).results, []);
+    assert.match(none.result.content[0].text, /ничего не найдено/);
+    assert.match(none.result.content[0].text, /list_docs/);
+});
+
+test('read_doc: неверный path и подсказки при опечатке', async () => {
+    const core = createFixtureCore();
+
+    for (const pathValue of [null, 42, '', '   ']) {
+        const response = await callTool(core, 'read_doc', { path: pathValue });
+        assert.equal(response.error.code, -32602, `path=${JSON.stringify(pathValue)}`);
+    }
+
+    const typo = await callTool(core, 'read_doc', { path: 'функции' });
+    assert.equal(typo.result.isError, true);
+    assert.match(typo.result.content[0].text, /Возможно, вы имели в виду/);
+    assert.match(typo.result.content[0].text, /guide\/functions\.md/);
+
+    const missing = await callTool(core, 'read_doc', { path: 'guide/nope.md' });
+    assert.match(missing.result.content[0].text, /Список всех страниц: list_docs/);
+});
+
+test('get_language_reference: topic по умолчанию all и валидация типа', async () => {
+    const core = createFixtureCore();
+
+    for (const params of [undefined, {}, { topic: null }, { topic: '' }]) {
+        const response = await rpc(core, 'tools/call', { name: 'get_language_reference', arguments: params });
+        assert.equal(toolData(response).topic, 'all');
+    }
+
+    const whitespaceTopic = await callTool(core, 'get_language_reference', { topic: '   ' });
+    assert.equal(whitespaceTopic.error.code, -32602);
+
+    const wrongType = await callTool(core, 'get_language_reference', { topic: 42 });
+    assert.equal(wrongType.error.code, -32602);
+    assert.match(wrongType.error.message, /topic/);
+});
+
+test('get_language_reference: отсутствующий раздел описывается, а не падает', async () => {
+    const core = createFixtureCore();
+    const response = await callTool(core, 'get_language_reference', { topic: 'grammar' });
+    const data = toolData(response);
+
+    assert.equal(data.topic, 'grammar');
+    assert.match(data.content, /пока не найден/);
+    assert.match(data.content, /Доступные страницы справочника/);
+    assert.match(data.content, /reference\/types\.md/);
+    assert.equal(response.result.content[0].text, data.content);
+});
+
+test('list_docs на пустом индексе объясняет причину', async () => {
+    const handlers = makeHandlers({ index: buildDocsIndex({ docsRoot: MISSING_DOCS }) });
+    const response = await callHandler(handlers, 'list_docs', {});
+    assert.match(response.result.content[0].text, /Документация пуста или недоступна/);
+    assert.match(response.result.content[0].text, /не найден/);
+    assert.deepEqual(toolData(response).docs, []);
+});
+
+test('get_example: пустой каталог — isError с понятным сообщением', async () => {
+    const emptyExamples = { list: async () => [], get: async () => null };
+
+    const listHandlers = makeHandlers({ examples: emptyExamples });
+    const listResponse = await callHandler(listHandlers, 'get_example', {});
+    assert.equal(listResponse.result.isError, true);
+    assert.match(listResponse.result.content[0].text, /Примеры не найдены/);
+
+    const byId = await callHandler(listHandlers, 'get_example', { id: 'x' });
+    assert.equal(byId.result.isError, true);
+    assert.match(byId.result.content[0].text, /не найден/);
+    assert.match(byId.result.content[0].text, /\(нет\)/);
+});
+
+test('get_example: id не-строка отклоняется, пробельный id — это список', async () => {
+    const core = createFixtureCore();
+    const wrongType = await callTool(core, 'get_example', { id: 42 });
+    assert.equal(wrongType.error.code, -32602);
+    assert.match(wrongType.error.message, /id/);
+
+    const blank = await callTool(core, 'get_example', { id: '   ' });
+    assert.ok(Array.isArray(toolData(blank).examples));
+});
+
+test('check_code: успех и ошибка с локацией форматируются по контракту', async () => {
+    const okHandlers = makeHandlers({ compiler: { check: async () => ({ ok: true, errors: [] }) } });
+    const ok = await callHandler(okHandlers, 'check_code', { code: 'fn main() {}' });
+    assert.deepEqual(toolData(ok), { ok: true, errors: [] });
+    assert.match(ok.result.content[0].text, /Компиляция успешна/);
+
+    const failHandlers = makeHandlers({
+        compiler: {
+            check: async () => ({
+                ok: false,
+                errors: [
+                    { message: 'Ошибка на строке 1:5', line: 1, column: 5 },
+                    { message: 'Ошибка без локации', line: null, column: null },
+                ],
+            }),
+        },
+    });
+    const fail = await callHandler(failHandlers, 'check_code', { code: 'bad' });
+    const data = toolData(fail);
+    assert.equal(data.ok, false);
+    assert.equal(data.errors.length, 2);
+    const text = fail.result.content[0].text;
+    assert.match(text, /Компиляция не удалась: ошибок 2/);
+    assert.match(text, /строка 1:5/);
+    assert.match(text, /без локации/);
+});
+
+test('check_code: исключения компилятора превращаются в isError', async () => {
+    const errorHandlers = makeHandlers({
+        compiler: { check: async () => { throw new Error('WASM упал'); } },
+    });
+    const withError = await callHandler(errorHandlers, 'check_code', { code: 'x' });
+    assert.equal(withError.result.isError, true);
+    assert.match(withError.result.content[0].text, /WASM упал/);
+
+    const stringHandlers = makeHandlers({
+        compiler: { check: async () => { throw 'строка-ошибка'; } },
+    });
+    const withString = await callHandler(stringHandlers, 'check_code', { code: 'x' });
+    assert.equal(withString.result.isError, true);
+    assert.equal(withString.result.content[0].text, 'строка-ошибка');
+});
+
+test('tools/call: внутреннее исключение инструмента маппится в InternalError', async () => {
+    const core = createFixtureCore();
+    const explodingArgs = new Proxy({}, {
+        get() {
+            throw new Error('геттер сломан');
+        },
+    });
+    const response = await rpc(core, 'tools/call', { name: 'search_docs', arguments: explodingArgs });
+    assert.equal(response.error.code, -32603);
+    assert.match(response.error.message, /геттер сломан/);
+});
+
+test('resources/read: uri обязателен и должен быть непустой строкой', async () => {
+    const core = createFixtureCore();
+    for (const params of [undefined, {}, { uri: null }, { uri: 42 }, { uri: '   ' }]) {
+        const response = await rpc(core, 'resources/read', params);
+        assert.equal(response.error.code, -32602, JSON.stringify(params));
+        assert.match(response.error.message, /uri/);
+    }
+});
+
+test('prompts/get: name и arguments валидируются', async () => {
+    const core = createFixtureCore();
+    for (const params of [undefined, {}, { name: null }, { name: 42 }, { name: '   ' }]) {
+        const response = await rpc(core, 'prompts/get', params);
+        assert.equal(response.error.code, -32602, JSON.stringify(params));
+        assert.match(response.error.message, /name/);
+    }
+
+    for (const args of [[], 'строка', 42]) {
+        const response = await rpc(core, 'prompts/get', { name: 'explain_syntax', arguments: args });
+        assert.equal(response.error.code, -32602, JSON.stringify(args));
+        assert.match(response.error.message, /arguments/);
+    }
+
+    const nullArguments = await rpc(core, 'prompts/get', { name: 'explain_syntax', arguments: null });
+    assert.equal(nullArguments.error.code, -32602);
+    assert.match(nullArguments.error.message, /arguments/);
+
+    const omittedArguments = await rpc(core, 'prompts/get', { name: 'explain_syntax' });
+    assert.equal(omittedArguments.error.code, -32602);
+    assert.match(omittedArguments.error.message, /topic/);
+
+    const nonStringTopic = await rpc(core, 'prompts/get', { name: 'explain_syntax', arguments: { topic: 42 } });
+    assert.equal(nonStringTopic.error.code, -32602);
+});
+
+test('prompts/get: необязательные аргументы не ломают шаблон', async () => {
+    const core = createFixtureCore();
+
+    const write = await rpc(core, 'prompts/get', { name: 'write_program', arguments: { task: 'написать калькулятор' } });
+    const writeText = write.result.messages[0].content.text;
+    assert.match(writeText, /калькулятор/);
+    assert.doesNotMatch(writeText, /Ограничения:/);
+
+    const debug = await rpc(core, 'prompts/get', { name: 'debug_program', arguments: { code: 'fn main() {}' } });
+    const debugText = debug.result.messages[0].content.text;
+    assert.match(debugText, /Не указано — предложи, как его получить/);
+});
+
+test('getPrompt: неизвестный prompt и requiredArguments по умолчанию', async () => {
+    const core = createFixtureCore();
+    assert.equal(await getPrompt({ index: core.index }, 'no_such_prompt', {}), null);
+    assert.deepEqual(requiredArguments('no_such_prompt'), []);
+    assert.deepEqual(requiredArguments('explain_syntax'), ['topic']);
+    assert.deepEqual(requiredArguments('write_program'), ['task']);
+    assert.deepEqual(requiredArguments('debug_program'), ['code']);
+    assert.equal(buildPromptList().prompts.length, 3);
+});
+
+test('getPrompt: пустая и недоступная документация отражается в тексте', async () => {
+    const emptyIndex = buildDocsIndex({ docsRoot: MISSING_DOCS });
+    const emptyPrompt = await getPrompt({ index: emptyIndex }, 'explain_syntax', { topic: 'что-то' });
+    const emptyText = emptyPrompt.messages[0].content.text;
+    assert.match(emptyText, /Документация недоступна/);
+    assert.match(emptyText, /Релевантных страниц/);
+
+    const blankRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'latent-prompt-empty-'));
+    try {
+        const blankIndex = buildDocsIndex({ docsRoot: blankRoot });
+        const blankPrompt = await getPrompt({ index: blankIndex }, 'write_program', { task: 'x' });
+        const blankText = blankPrompt.messages[0].content.text;
+        assert.match(blankText, /Документация пока пуста/);
+        assert.doesNotMatch(blankText, /Готовые примеры/);
+        assert.doesNotMatch(blankText, /## Справочник/);
+    } finally {
+        fs.rmSync(blankRoot, { recursive: true, force: true });
+    }
+});
+
+test('getPrompt: write_program без examples и debug_program без reference/errors', async () => {
+    const blankRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'latent-prompt-bare-'));
+    try {
+        fs.writeFileSync(path.join(blankRoot, 'guide.md'), '# Гид\n\nТекст про функции.', 'utf8');
+        const index = buildDocsIndex({ docsRoot: blankRoot });
+        const write = await getPrompt({ index }, 'write_program', { task: 'задача' });
+        assert.doesNotMatch(write.messages[0].content.text, /Готовые примеры/);
+
+        const debug = await getPrompt({ index }, 'debug_program', { code: 'fn main() {}' });
+        assert.doesNotMatch(debug.messages[0].content.text, /Полный список диагностик/);
+        assert.match(debug.messages[0].content.text, /Релевантных страниц/);
+    } finally {
+        fs.rmSync(blankRoot, { recursive: true, force: true });
+    }
+});
+
+test('handlers.handle: некорректное сообщение и неизвестное уведомление', async () => {
+    const handlers = makeHandlers();
+    const invalid = await handlers.handle({ jsonrpc: '2.0', id: 9 });
+    assert.equal(invalid.error.code, -32600);
+    assert.equal(invalid.id, 9);
+
+    const invalidWithoutId = await handlers.handle(42);
+    assert.equal(invalidWithoutId.error.code, -32600);
+    assert.equal(invalidWithoutId.id, null);
+
+    assert.equal(await handlers.handle({ jsonrpc: '2.0', method: 'notifications/other' }), null);
+    assert.equal(await handlers.handle({ jsonrpc: '2.0', method: 'notifications/initialized' }), null);
+    assert.equal(handlers.initialized, true);
+});
+
+test('handlers.handle: exit вызывает hooks.onExit, если он задан', async () => {
+    let exits = 0;
+    const handlers = makeHandlers({ hooks: { onExit: () => { exits += 1; } } });
+    assert.equal(await handlers.handle({ jsonrpc: '2.0', method: 'exit' }), null);
+    assert.equal(exits, 1);
+
+    const withoutHook = makeHandlers();
+    assert.equal(await withoutHook.handle({ jsonrpc: '2.0', method: 'exit' }), null);
+});
+
+test('handlers.handle: ошибка метода без RpcError становится InternalError', async () => {
+    const handlers = makeHandlers();
+    const params = new Proxy({}, {
+        get() {
+            throw new TypeError('параметры сломаны');
+        },
+    });
+    const response = await handlers.handle({ jsonrpc: '2.0', id: 3, method: 'initialize', params });
+    assert.equal(response.error.code, -32603);
+    assert.match(response.error.message, /параметры сломаны/);
 });

@@ -1,0 +1,11 @@
+// Golden-набор: ошибка кодогена — неизвестное поле класса.
+// expect-error: Unknown field
+
+class Point {
+    x: int;
+}
+
+fn main() -> int {
+    let p = new Point(1);
+    return p.z;
+}

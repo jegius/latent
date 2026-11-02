@@ -18,3 +18,6 @@ pub use event_loop::{EventLoop, EVENT_LOOP};
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod tests_coverage;

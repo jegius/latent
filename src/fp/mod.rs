@@ -23,3 +23,6 @@ pub use value::Value;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod tests_coverage;

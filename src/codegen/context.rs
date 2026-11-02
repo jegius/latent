@@ -183,3 +183,57 @@ pub(super) fn parse_ast_type(ty: &crate::ast::Type) -> Type {
 pub(super) fn ast_to_static(ty: &crate::ast::Type) -> StaticTy {
     latent_to_static(&parse_ast_type(ty))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_static_ty_valtype() {
+        assert_eq!(StaticTy::Float.valtype(), valtype::F64);
+        assert_eq!(StaticTy::Int.valtype(), valtype::I32);
+        assert_eq!(StaticTy::Str.valtype(), valtype::I32);
+        assert_eq!(StaticTy::Fn.valtype(), valtype::I32);
+        assert_eq!(StaticTy::Unknown.valtype(), valtype::I32);
+    }
+
+    #[test]
+    fn test_func_context_locals() {
+        let mut ctx = FuncContext::new(true);
+        assert!(ctx.has_result);
+        let a = ctx.declare_class("a", valtype::I32, StaticTy::Int, None);
+        assert_eq!(ctx.static_of(a), StaticTy::Int);
+        assert_eq!(ctx.class_of(a), None);
+        let b = ctx.declare_class("b", valtype::I32, StaticTy::Unknown, Some("Point".into()));
+        assert_eq!(ctx.class_of(b), Some("Point".to_string()));
+        let c = ctx.reserve_local_ty(valtype::F64);
+        assert_eq!(ctx.static_of(c), StaticTy::Unknown);
+        let d = ctx.reserve_local();
+        assert_eq!(d, c + 1);
+        assert_eq!(ctx.locals.len(), 2);
+        assert_eq!(ctx.static_of(999), StaticTy::Unknown);
+    }
+
+    #[test]
+    fn test_type_conversions() {
+        assert_eq!(latent_to_wasm(&Type::Int), valtype::I32);
+        assert_eq!(latent_to_wasm(&Type::Float), valtype::F64);
+        assert_eq!(latent_to_wasm(&Type::Bool), valtype::I32);
+        assert_eq!(latent_to_wasm(&Type::String), valtype::I32);
+        assert_eq!(latent_to_static(&Type::String), StaticTy::Str);
+        assert_eq!(latent_to_static(&Type::Bool), StaticTy::Bool);
+        assert_eq!(latent_to_static(&Type::Array(Box::new(Type::Int))), StaticTy::Array);
+        assert_eq!(latent_to_static(&Type::Fn(vec![], Box::new(Type::Int))), StaticTy::Fn);
+        assert_eq!(latent_to_static(&Type::Unit), StaticTy::Unknown);
+        use crate::ast::Type as AstType;
+        assert_eq!(ast_to_static(&AstType::Named("int".into())), StaticTy::Int);
+        assert_eq!(parse_ast_type(&AstType::Array(Box::new(AstType::Named("int".into())))),
+                   Type::Array(Box::new(Type::Int)));
+        assert_eq!(latent_to_static(&types_compatible_probe()), StaticTy::Unknown);
+    }
+
+    /// Проверка ветки `_ => Unknown` в `latent_to_static`.
+    fn types_compatible_probe() -> Type {
+        Type::Var("$probe".to_string())
+    }
+}

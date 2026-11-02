@@ -1,0 +1,225 @@
+{
+  "version": 1,
+  "generatedBy": "scripts/check-golden.mjs",
+  "entries": {
+    "scripts/golden/fixtures/01_operators.lat": {
+      "kind": "fixture",
+      "sha256": "718a863fc559747bf608fc2e0ebccb4a437fa4f027818348b44a06eb6233f1b7",
+      "size": 1580
+    },
+    "scripts/golden/fixtures/02_strings.lat": {
+      "kind": "fixture",
+      "sha256": "05a1a3a4fad693374082878246cda818dcbcc10343f67243a78c07a931364065",
+      "size": 1706
+    },
+    "scripts/golden/fixtures/03_arrays.lat": {
+      "kind": "fixture",
+      "sha256": "29186bd910d9ec96d61027bd92bd4f8ef54317e57d4aed58cbe3e0d48df88a6b",
+      "size": 1849
+    },
+    "scripts/golden/fixtures/04_classes.lat": {
+      "kind": "fixture",
+      "sha256": "001d34cb1ea658a44efded61eb6820275b8b2fe6283a3be1e17371c3d4722262",
+      "size": 1452
+    },
+    "scripts/golden/fixtures/05_enum_match.lat": {
+      "kind": "fixture",
+      "sha256": "ee640398ea8a19eb88b652823814fe38842833a741499cb89272f31369ac9f47",
+      "size": 1616
+    },
+    "scripts/golden/fixtures/06_lambdas.lat": {
+      "kind": "fixture",
+      "sha256": "fc979a70fb62047257df9f3c9ca9f50893437504f5778e695ddf3d7553c25608",
+      "size": 1873
+    },
+    "scripts/golden/fixtures/07_control.lat": {
+      "kind": "fixture",
+      "sha256": "2b901f395d0c52282d56c51019f9c98170b152b20b597cd2610288cb19f4f449",
+      "size": 1610
+    },
+    "scripts/golden/fixtures/08_memory.lat": {
+      "kind": "fixture",
+      "sha256": "dcc70130a7269ccfd95c480719ba0cf76a6d9b4e7ebd3f7582d0bcb569b6f607",
+      "size": 1250
+    },
+    "scripts/golden/fixtures/09_float.lat": {
+      "kind": "fixture",
+      "sha256": "d72161324fd0968c820838dcdba975ba46c5e7410e0f70912999f20685aa10ca",
+      "size": 1569
+    },
+    "scripts/golden/fixtures/errors/error_ai_primitive.lat": {
+      "kind": "fixture",
+      "error": "Builtin 'ai_infer' не поддерживается движком №2 (требует host-рантайма)"
+    },
+    "scripts/golden/fixtures/errors/error_channel_send.lat": {
+      "kind": "fixture",
+      "error": "Оператор отправки в канал (ch <- v) требует host-рантайма движка №1"
+    },
+    "scripts/golden/fixtures/errors/error_complex_assign.lat": {
+      "kind": "fixture",
+      "error": "Неверная цель присваивания на строке 9:5"
+    },
+    "scripts/golden/fixtures/errors/error_enum_arity.lat": {
+      "kind": "fixture",
+      "error": "Несовпадение арности на строке 5:13: ожидалось 1 аргументов, найдено 2"
+    },
+    "scripts/golden/fixtures/errors/error_host_builtin.lat": {
+      "kind": "fixture",
+      "error": "Builtin 'tensor' не поддерживается движком №2 (требует host-рантайма)"
+    },
+    "scripts/golden/fixtures/errors/error_lexer.lat": {
+      "kind": "fixture",
+      "error": "Неожиданный символ '#' на строке 5:15"
+    },
+    "scripts/golden/fixtures/errors/error_parser.lat": {
+      "kind": "fixture",
+      "error": "Ошибка парсинга на строке 5:13: ожидалось 'expression', найдено Semicolon"
+    },
+    "scripts/golden/fixtures/errors/error_typecheck.lat": {
+      "kind": "fixture",
+      "error": "Несовпадение типов на строке 9:14: ожидалось 'string', найдено 'int'"
+    },
+    "scripts/golden/fixtures/errors/error_undefined_var.lat": {
+      "kind": "fixture",
+      "error": "Неопределённая переменная 'missing_name' на строке 5:12"
+    },
+    "scripts/golden/fixtures/errors/error_unknown_class.lat": {
+      "kind": "fixture",
+      "error": "Unknown class:"
+    },
+    "scripts/golden/fixtures/errors/error_unknown_field.lat": {
+      "kind": "fixture",
+      "error": "Unknown field: Point.z"
+    },
+    "scripts/golden/fixtures/errors/error_unknown_function.lat": {
+      "kind": "fixture",
+      "error": "Неопределённая переменная 'no_such_function' на строке 5:12"
+    },
+    "scripts/golden/fixtures/errors/error_unknown_variant.lat": {
+      "kind": "fixture",
+      "error": "Unknown enum variant in pattern: Blue"
+    },
+    "scripts/golden/fixtures/errors/error_unsupported_method.lat": {
+      "kind": "fixture",
+      "error": "Метод 'send' не поддерживается движком №2 (требует host-рантайма)"
+    },
+    "web-ide/examples/ai_embed.lat": {
+      "kind": "example",
+      "error": "Builtin 'dot' не поддерживается движком №2 (требует host-рантайма)"
+    },
+    "web-ide/examples/ai_infer.lat": {
+      "kind": "example",
+      "error": "Builtin 'ai_infer' не поддерживается движком №2 (требует host-рантайма)"
+    },
+    "web-ide/examples/ai_pipeline.lat": {
+      "kind": "example",
+      "error": "Метод 'send' не поддерживается движком №2 (требует host-рантайма)"
+    },
+    "web-ide/examples/ai_streaming.lat": {
+      "kind": "example",
+      "error": "Builtin 'ai_stream' не поддерживается движком №2 (требует host-рантайма)"
+    },
+    "web-ide/examples/arrays.lat": {
+      "kind": "example",
+      "sha256": "dd3ba9ed309064e161e8a626183e0f3afce86a266d58469633802a3503615b95",
+      "size": 2010
+    },
+    "web-ide/examples/async_await.lat": {
+      "kind": "example",
+      "sha256": "951f16552df9c39fda9abe6b568eb214e3ae385f733520f2f81738be5fa1258f",
+      "size": 995
+    },
+    "web-ide/examples/builtins_methods.lat": {
+      "kind": "example",
+      "sha256": "c278c10d8a204bc7f394e4907d7c6b1c74d32f8fdd82a39922d8fb131c4224e6",
+      "size": 1752
+    },
+    "web-ide/examples/channels.lat": {
+      "kind": "example",
+      "error": "Метод 'send' не поддерживается движком №2 (требует host-рантайма)"
+    },
+    "web-ide/examples/classes.lat": {
+      "kind": "example",
+      "sha256": "a30e100c027dcd88cd9a99b1121b8235934aa17b53ce47b1969ebaa3877bdc1a",
+      "size": 1199
+    },
+    "web-ide/examples/control_flow.lat": {
+      "kind": "example",
+      "sha256": "ad2e54d3e9d3b2dc4f174266bb5a6fb15ee9e264dc4bc924433bf6f373999670",
+      "size": 1581
+    },
+    "web-ide/examples/edge_cases.lat": {
+      "kind": "example",
+      "sha256": "2333da15ac6d1e82dd99c0ca4a93d433efd01759b0d8d5164f88689565403d5d",
+      "size": 1963
+    },
+    "web-ide/examples/fp_patterns.lat": {
+      "kind": "example",
+      "sha256": "8e42a58d7578ae758bdb366977083fba9534bf296770b46a97f0030777ce14f8",
+      "size": 1568
+    },
+    "web-ide/examples/functions.lat": {
+      "kind": "example",
+      "sha256": "4f252e280872fce08f6ceaf2bac93814e5b61551c3084fe94cfa6f713ccc10dd",
+      "size": 1164
+    },
+    "web-ide/examples/lambdas.lat": {
+      "kind": "example",
+      "sha256": "b5bdebeb486b103a4bffc5f476f26ed2b9e0779401f49345eb14eb341d4c84b3",
+      "size": 1538
+    },
+    "web-ide/examples/match.lat": {
+      "kind": "example",
+      "sha256": "253f3d0acab0c8761b64f9e9080c579d137bdd96b53ad4557b2018f60fabce22",
+      "size": 1370
+    },
+    "web-ide/examples/operators.lat": {
+      "kind": "example",
+      "sha256": "b2789938d99eeadfefab1105b1f6b580b512950fa233eeb58d30078abd75522e",
+      "size": 1514
+    },
+    "web-ide/examples/parallel_sum.lat": {
+      "kind": "example",
+      "error": "Метод 'send' не поддерживается движком №2 (требует host-рантайма)"
+    },
+    "web-ide/examples/recursion.lat": {
+      "kind": "example",
+      "sha256": "ec9dad0969a2769c926493bfc8fc828651df27b355aa20a5c771e63ea5e750d7",
+      "size": 1286
+    },
+    "web-ide/examples/select_yield.lat": {
+      "kind": "example",
+      "error": "Оператор отправки в канал (ch <- v) требует host-рантайма движка №1"
+    },
+    "web-ide/examples/sorting.lat": {
+      "kind": "example",
+      "sha256": "815d19f39d06f2a700309b4d5fc7a227dc6d306aaccd6f89e843a25e2484b5f4",
+      "size": 1530
+    },
+    "web-ide/examples/strings.lat": {
+      "kind": "example",
+      "sha256": "6d00f99d75cb7e4570d099ab1e9f5f92c9bd51a0e4fc125f38e5a83d66a9c746",
+      "size": 1427
+    },
+    "web-ide/examples/tensors.lat": {
+      "kind": "example",
+      "error": "Builtin 'tensor' не поддерживается движком №2 (требует host-рантайма)"
+    },
+    "web-ide/examples/testing_contracts.lat": {
+      "kind": "example",
+      "error": "Builtin 'snapshot' не поддерживается движком №2 (требует host-рантайма)"
+    },
+    "web-ide/examples/variables_types.lat": {
+      "kind": "example",
+      "sha256": "8187ae37241c0d94adefecfd959f128214af4c30bc97f0de8ffabf27149eaf20",
+      "size": 1253
+    },
+    "selfhost/shc.lat": {
+      "kind": "shc",
+      "sourceSha256": "4eac30601eb1a0e23106d31698df5cb0d99f3e8b5216b07cc96444d6943d8c95",
+      "sha256": "59fe4582cc845997728454b2e7d4e927991455f51bb9beae3cf0dccee5f26427",
+      "size": 38858,
+      "error": null
+    }
+  }
+}

@@ -1,0 +1,35 @@
+// Golden-набор: примитивы линейной памяти (alloc/load8/store8/load32/store32/
+// memcopy) — тот путь, которым selfhost-компилятор пишет байты WASM.
+// expect-main: 5
+
+fn write_and_read() -> int {
+    // alloc(8): два 32-битных слова.
+    let p = alloc(8);
+    store32(p, 305419896);
+    store32(p + 4, 195948557);
+    let a = load32(p);
+    let b = load32(p + 4);
+    // load8 читает младший байт little-endian: 0x78 == 120.
+    let lo = load8(p);
+    store8(p, 65);
+    print("a =", a, "b =", b, "lo =", lo);
+    return load8(p);
+}
+
+fn copy_bytes() -> int {
+    let src = alloc(8);
+    let dst = alloc(8);
+    store8(src, 1);
+    store8(src + 1, 2);
+    store8(src + 2, 3);
+    store8(src + 3, 4);
+    memcopy(dst, src, 4);
+    return load8(dst) + load8(dst + 1) + load8(dst + 2) + load8(dst + 3);
+}
+
+fn main() -> int {
+    let x = write_and_read();
+    let y = copy_bytes();
+    print("read =", x, "copied =", y);
+    return copy_bytes() - 5;
+}

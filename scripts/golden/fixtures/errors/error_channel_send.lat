@@ -1,0 +1,8 @@
+// Golden-набор: отправка в канал требует host-рантайма движка №1.
+// expect-error: host-рантайма движка №1
+
+fn main() -> int {
+    let ch = 0;
+    ch <- 1;
+    return 0;
+}
