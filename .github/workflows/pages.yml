@@ -3,11 +3,13 @@ name: Docs & Playground → GitHub Pages
 # Публикация сайта документации Latent и web IDE (playground) на GitHub Pages.
 #
 # Что публикуется:
-#   https://<owner>.github.io/latent/            — документация (Docusaurus)
-#   https://<owner>.github.io/latent/playground/ — web IDE (web-ide/ как статика)
+#   https://<owner>.github.io/latent/            — документация (Docusaurus, RU)
+#   https://<owner>.github.io/latent/en/         — документация (EN)
+#   https://<owner>.github.io/latent/playground/ — web IDE со сборкой Vite
+#   https://<owner>.github.io/latent/demos/      — интерактивные демо
 #
-# Playground собирается из web-ide/ скриптом scripts/sync-playground.mjs и НЕ
-# хранится в git: единственный источник правды — каталог web-ide/.
+# Playground собирается из web-ide/ (production-чанки через vite) скриптом
+# scripts/sync-playground.mjs и НЕ хранится в git.
 #
 # Требования в настройках репозитория: Settings → Pages → Source = GitHub Actions.
 
@@ -43,14 +45,20 @@ jobs:
       - name: pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 11
           run_install: false
 
       - name: Зависимости документации
         working-directory: docs
         run: pnpm install --frozen-lockfile
 
-      - name: Playground из web-ide/
+      - name: Сборка web IDE (ленивые чанки)
+        working-directory: web-ide
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build:chunks
+
+      - name: Playground в статику сайта
         run: node scripts/sync-playground.mjs
 
       - name: Проверка примеров из документации
@@ -60,13 +68,17 @@ jobs:
         working-directory: docs
         run: pnpm run build
 
-      - name: Проверка артефакта (docs + playground)
+      - name: Проверка артефакта (docs + playground + демо)
         run: |
           test -f docs/build/index.html
+          test -f docs/build/en/index.html
           test -f docs/build/playground/index.html
-          test -f docs/build/playground/compiler.wasm
+          # wasm: либо compiler.wasm, либо хешированный ассет в assets/
+          ls docs/build/playground/*.wasm docs/build/playground/assets/*.wasm >/dev/null 2>&1
           test -f docs/build/llms.txt
-          echo "Artifact OK: $(du -sh docs/build | cut -f1)"
+          test -f docs/build/llms-en.txt
+          test -f docs/build/demos/index.html
+          echo "Artifact OK: $(du -sh docs/build | cut -f1), chunks: $(ls docs/build/playground/assets 2>/dev/null | wc -l)"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -81,6 +93,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Test github pages
+        run: echo "Deploying docs and playground to GitHub Pages"
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

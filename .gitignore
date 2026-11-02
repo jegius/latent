@@ -34,8 +34,20 @@ editors/idea/local.properties
 tooling/latent-lsp/node_modules/
 mcp/docs-mcp/node_modules/
 
+# --- web-ide: сборка / чанки / зависимости ---
+web-ide/node_modules/
+web-ide/dist/
+web-ide/.vite/
+web-ide/pnpm-debug.log*
+
+# Генерируемые артефакты демо (wasm собирается build-demos.mjs)
+docs/static/demos/**/*.wasm.build-tmp
+
 # --- Покрытие тестами ---
 coverage/
 lcov.info
 *.profraw
 *.profdata
+tooling/selfhost-coverage/coverage.json
+tooling/selfhost-coverage/coverage.md
+tooling/selfhost-coverage/coverage.wasm
