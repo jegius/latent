@@ -1,0 +1,9 @@
+{
+  "label": "Справочник",
+  "position": 5,
+  "collapsed": false,
+  "link": {
+    "type": "doc",
+    "id": "reference/index"
+  }
+}

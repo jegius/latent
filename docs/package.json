@@ -1,0 +1,26 @@
+{
+  "name": "latent-docs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Документация языка Latent (Docusaurus)",
+  "scripts": {
+    "start": "node scripts/build-llms.mjs && docusaurus start",
+    "build": "node scripts/build-llms.mjs && docusaurus build",
+    "serve": "docusaurus serve",
+    "clear": "docusaurus clear",
+    "swizzle": "docusaurus swizzle",
+    "validate:examples": "node scripts/validate-examples.mjs"
+  },
+  "dependencies": {
+    "@docusaurus/core": "^3.10.0",
+    "@docusaurus/preset-classic": "^3.10.0",
+    "@mdx-js/react": "^3.1.0",
+    "clsx": "^2.1.1",
+    "prism-react-renderer": "^2.4.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "engines": {
+    "node": ">=18.0"
+  }
+}
