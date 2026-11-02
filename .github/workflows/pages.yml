@@ -73,11 +73,12 @@ jobs:
           test -f docs/build/index.html
           test -f docs/build/en/index.html
           test -f docs/build/playground/index.html
-          # wasm: либо compiler.wasm, либо хешированный ассет в assets/
-          ls docs/build/playground/*.wasm docs/build/playground/assets/*.wasm >/dev/null 2>&1
+          # wasm: либо compiler.wasm в корне playground, либо хешированный ассет в assets/
+          test -n "$(find docs/build/playground -name '*.wasm' -print -quit)"
           test -f docs/build/llms.txt
           test -f docs/build/llms-en.txt
           test -f docs/build/demos/index.html
+          test -f docs/build/demos/bench/index.html
           echo "Artifact OK: $(du -sh docs/build | cut -f1), chunks: $(ls docs/build/playground/assets 2>/dev/null | wc -l)"
 
       - name: Upload Pages artifact
