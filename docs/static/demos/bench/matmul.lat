@@ -1,0 +1,60 @@
+// Dense n x n integer matrix multiply, flat row-major buffers.
+// i-k-j loop order keeps the inner loop a linear scan over B and C, which is
+// exactly the kind of code where a predictable WASM memory layout shines.
+
+fn main(n: int) -> int {
+    let a = load32(8);
+    let b = load32(12);
+    let c = load32(16);
+    let size = n * n;
+
+    if (a == 0) {
+        a = alloc(size * 4 + 8);
+        b = alloc(size * 4 + 8);
+        c = alloc(size * 4 + 8);
+        store32(8, a);
+        store32(12, b);
+        store32(16, c);
+        let s = 987654321;
+        let i = 0;
+        while (i < size) {
+            s = (s * 1103515245 + 12345) & 2147483647;
+            store32(a + i * 4, (s >> 9) % 97 - 48);
+            s = (s * 1103515245 + 12345) & 2147483647;
+            store32(b + i * 4, (s >> 9) % 97 - 48);
+            store32(c + i * 4, 0);
+            i = i + 1;
+        }
+    }
+
+    let i = 0;
+    while (i < size) {
+        store32(c + i * 4, 0);
+        i = i + 1;
+    }
+
+    i = 0;
+    while (i < n) {
+        let k = 0;
+        while (k < n) {
+            let aik = load32(a + i * n * 4 + k * 4);
+            let j = 0;
+            while (j < n) {
+                let cij = load32(c + i * n * 4 + j * 4);
+                let bkj = load32(b + k * n * 4 + j * 4);
+                store32(c + i * n * 4 + j * 4, cij + aik * bkj);
+                j = j + 1;
+            }
+            k = k + 1;
+        }
+        i = i + 1;
+    }
+
+    let sum = 0;
+    i = 0;
+    while (i < size) {
+        sum = (sum * 31 + load32(c + i * 4)) & 2147483647;
+        i = i + 1;
+    }
+    return sum;
+}

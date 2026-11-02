@@ -45,7 +45,13 @@ Latent — императивный язык с C-подобным синтак�
 - спецификации: [движки web IDE](../specs/engines.md),
   [AI-рантайм](../specs/ai-runtime.md),
   [внутреннее устройство кодогена](../specs/internals-codegen.md),
-  [карта инструкций](../specs/bytecode.md);
+  [карта инструкций](../specs/bytecode.md),
+  [self-hosted компилятор](../specs/selfhost.md),
+  [функциональный стиль selfhost](../specs/selfhost-style.md),
+  [матрица паритета](../specs/parity-matrix.md);
+- архитектура реализаций:
+  [Rust-компилятор](../specs/rust-architecture.md),
+  [web IDE](../specs/webide-architecture.md);
 - практические разборы: [примеры](../examples/index.md);
 - инструменты: [web IDE](../tooling/web-ide.md), [VS Code](../tooling/vscode.md),
   [IntelliJ IDEA](../tooling/idea.md), [MCP-сервер документации](../tooling/mcp.md).
@@ -81,7 +87,9 @@ Latent — императивный язык с C-подобным синтак�
 ## Статус справочника
 
 Справочник описывает **текущее состояние ветки** `part10-toolchain`. Известные
-ограничения и расхождения (устаревшая сборка `compiler.wasm`, невалидный WASM на
-float-выражениях и т.п.) собраны в
+ограничения (невалидный WASM на float-выражениях, потери статического типа у
+результата метода и т.п.) собраны в
 [паритетной матрице](../specs/parity-matrix.md) и в разделе
 [диагностик](./errors.md#известные-ограничения-движка-2-компилируется-но-невалидный-wasm).
+Поставляемый `web-ide/compiler.wasm` актуален (собран из текущего `src/`,
+memory-builtins в нём есть), поэтому «старых сборок» в описаниях больше нет.

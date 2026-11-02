@@ -14,22 +14,37 @@ sidebar_position: 5
 | Файл | Ответственность |
 |---|---|
 | `bytecode.rs` | `ByteBuffer` (LEB128), константы опкодов/valtype |
-| `module_builder.rs` | структура `WasmCodegen`, проходы сборки, регистрация функций, layout классов |
+| `module_builder/mod.rs` | структура `WasmCodegen`, порядок проходов, `body_returns_value`, layout-хелперы |
+| `module_builder/collect.rs` | первый проход: layout'ы классов, варианты enum, сигнатуры функций и методов |
+| `module_builder/emit_ops.rs` | переиспользуемые эмиттеры (`i32.load/store`, `f64.load/store`, вызов хелпера) |
 | `sections.rs` | эмиссия секций (exports, table, memory, global, element, code, data) |
 | `memory.rs` | bump-аллокатор статической памяти и пул строковых констант |
 | `context.rs` | `FuncContext` (локальные, статические типы), `ClassLayout`, `latent_to_wasm`/`StaticTy` |
 | `compile_fn.rs` | тело функции: локальные, пролог захватов, завершение результата |
 | `emit_stmt.rs` | инструкции (`let`/`if`/`while`/`for`/`return`/`spawn`/`select`/...) |
-| `emit_expr.rs` | выражения, бинарные/унарные операторы, индексация, присваивания |
-| `emit_call.rs` | вызовы: builtins, функции, конструкторы, методы, массивы, память |
+| `emit_expr/mod.rs` | диспетчер выражений и простые (скалярные) формы, `expr_produces_value` |
+| `emit_expr/binary.rs` | бинарные/унарные операторы и строковая коэрция |
+| `emit_expr/access.rs` | индексация, поля, присваивания |
+| `emit_expr/ty.rs` | best-effort `static_ty_of` и имя класса выражения |
+| `emit_call/mod.rs` | диспетчер вызовов |
+| `emit_call/direct.rs` | прямые вызовы функций и builtins (в т.ч. `compile_memory_builtin`) |
+| `emit_call/constructors.rs` | `new Class(...)` |
+| `emit_call/method.rs` | методы объектов и операции над массивами (`push`/`pop`) |
+| `emit_call/array.rs` | литерал массива в линейной памяти |
 | `emit_lambda.rs` | лямбды: регистрация, closure-конвертация, `call_indirect` |
 | `emit_enum.rs` | enum-варианты и паттерны |
 | `emit_match.rs` | `match` как цепочка `if/else` |
-| `runtime_helpers.rs` | 9 рантайм-хелперов, эмитимых в WASM |
+| `runtime_helpers/mod.rs` | регистрация 9 рантайм-хелперов и общие примитивы |
+| `runtime_helpers/alloc.rs` | bump-аллокатор (`__latent_alloc`, `memory.grow`) |
+| `runtime_helpers/mem.rs` | побайтовое копирование и байтовый доступ |
+| `runtime_helpers/string.rs` | строки: длина, конкатенация, равенство, символ |
+| `runtime_helpers/int.rs` | `int` ↔ `string` |
+| `runtime_helpers/f64.rs` | `float` → `string` |
 
 ## Проходы
 
-`WasmCodegen::compile` (`module_builder.rs`):
+`WasmCodegen::compile` (`module_builder/mod.rs`, сбор таблиц —
+`module_builder/collect.rs`):
 
 1. `write_header()` — магия `\0asm`, версия 1;
 2. `collect_class_layouts` — размеры и смещения полей всех классов;
@@ -57,7 +72,7 @@ best-effort `StaticTy` (`context.rs`): `Int`, `Float`, `Bool`, `Str`, `Array`,
 `Fn`, `Unknown`.
 
 - Для литерала числа: `Int`, если `n.fract() == 0.0`, иначе `Float`;
-- `static_ty_of(expr)` (`emit_expr.rs`) — рекурсивная оценка: литералы,
+- `static_ty_of(expr)` (`emit_expr/ty.rs`) — рекурсивная оценка: литералы,
   локальные (по `local_static` из аннотации), бинарные операции (строки →
   `Str`, float → `Float`, иначе `Int`), `len`/`int` → `Int`, `str` → `Str`,
   `float` → `Float`, вызовы — `fn_return_static` функции;
@@ -105,8 +120,8 @@ data(11). Подробный контракт — в [WASM ABI](../reference/was
 
 ## Runtime-хелперы
 
-`runtime_helpers.rs` регистрирует функции (имена в комментариях README —
-`__latent_*`):
+`runtime_helpers/` (`mod.rs` + `alloc`/`mem`/`string`/`int`/`f64`) регистрирует
+функции (имена в комментариях README — `__latent_*`):
 
 | Хелпер | Сигнатура | Что делает |
 |---|---|---|
@@ -129,7 +144,7 @@ data(11). Подробный контракт — в [WASM ABI](../reference/was
   выравнивается по своему размеру; итоговый размер — по 4.
 - Методы: имя манглятся как `ИмяКласса_имяМетода`; первый параметр — `this`
   типа класса (добавляется в `collect_class_methods`).
-- `obj.method(args)` (`emit_call.rs`): имя класса выводится
+- `obj.method(args)` (`emit_call/method.rs`): имя класса выводится
   `infer_class_name` (локальная с классом, `this`, `new Class`); затем прямой
   вызов `Class_method(obj, args...)`.
 - `new Class(args)`: alloc(layout.size) через глобал кучи → компиляция
@@ -185,12 +200,12 @@ wildcard.
 
 ## `void` и значения
 
-- `body_returns_value` (в `module_builder.rs`) рекурсивно ищет `return expr`
+- `body_returns_value` (в `module_builder/mod.rs`) рекурсивно ищет `return expr`
   в теле — от этого зависит, получит ли функция результат `i32` без аннотации.
 - `compile_fn`: `has_result = ret_ty.is_some() || body_returns_value`; если
   результат объявлен, а тело не заканчивается `RETURN`, дописывается
   `i32.const 0` (или `f64.const 0`).
-- `expr_produces_value` (`emit_expr.rs`) сообщает, оставляет ли выражение
+- `expr_produces_value` (`emit_expr/mod.rs`) сообщает, оставляет ли выражение
   значение: `print`/`assert`/`assert_eq`/`store8`/`store32`/`memcopy` и
   void-функции — нет; иначе — да. В позиции инструкции лишнее значение
   снимается `drop`.
@@ -214,7 +229,10 @@ wildcard.
 float-литералы с нулевой дробной частью эмитятся как `i32.const`, что ломает
 f64-контекст; `%` всегда `i32.rem_s`; `sqrt` над int-литералом; float-поля
 классов и enum-payload; `new Class` без `init`; результат лямбды всегда `i32`;
-поставляемый `compiler.wasm` не содержит memory-builtins.
+`static_ty_of` не отслеживает строковый тип результата метода.
+
+> Поставляемый `web-ide/compiler.wasm` этих дефектов **не скрывает и не
+> добавляет**: он собран из текущего `src/`, memory-builtins в нём есть.
 
 ## Как расширять кодоген
 
@@ -223,8 +241,8 @@ f64-контекст; `%` всегда `i32.rem_s`; `sqrt` над int-литер
 1. `src/parser/…` (новая продукция);
 2. `src/ast/…` (узел AST);
 3. `src/typechecker/infer/…` (тип);
-4. `src/codegen/emit_*.rs` (эмиссия);
-5. `src/codegen/module_builder.rs` (если нужен новый проход/таблицы);
+4. `src/codegen/emit_*.rs` / `emit_expr/` / `emit_call/` (эмиссия);
+5. `src/codegen/module_builder/` (если нужен новый проход/таблицы);
 6. `tooling/language-data/language.json`, selfhost, доки, тесты.
 
 Подробный чек-лист — в [contributing](../tooling/contributing.md).
@@ -234,3 +252,7 @@ f64-контекст; `%` всегда `i32.rem_s`; `sqrt` над int-литер
 - [WASM ABI](../reference/wasm-abi.md) — раскладка памяти.
 - [Карта инструкций](./bytecode.md) — какие опкоды используются.
 - [Движки](./engines.md), [selfhost](./selfhost.md).
+- [Архитектура Rust-компилятора](./rust-architecture.md) — слои, декомпозиция,
+  покрытие.
+- [Архитектура web IDE](./webide-architecture.md) — как кодоген используется в
+  браузере.

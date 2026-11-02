@@ -7,7 +7,7 @@ sidebar_position: 5
 # Операторы
 
 Источники: `src/parser/expressions/core.rs` (приоритеты),
-`src/codegen/emit_expr.rs` (`compile_binary`, `compile_string_operand`),
+`src/codegen/emit_expr/binary.rs` (`compile_binary`, `compile_string_operand`),
 `web-ide/compiler/interpreter-expressions.js` (движок №1).
 
 Общая оговорка: **тайпчекер почти не проверяет операнды** (см.

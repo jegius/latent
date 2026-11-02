@@ -14,10 +14,61 @@
 // просто ведёт на /latent/playground/.
 
 const {themes: prismThemes} = require('prism-react-renderer');
+const fs = require('node:fs');
+const path = require('node:path');
 
 // Абсолютный адрес playground (для navbar/footer/customFields). Внутри MDX
 // используйте компонент src/components/Playground.jsx (useBaseUrl).
 const PLAYGROUND_PATH = '/latent/playground/';
+
+// --- Проверка полноты i18n-переводов ---------------------------------------
+// Переводы контента живут в i18n/en/docusaurus-plugin-content-docs/current/.
+// Пока они неполные, относительные markdown-ссылки в переведённых файлах
+// могут указывать на ещё не переведённые страницы — такие ссылки не
+// резолвятся внутри en-плагина. Чтобы сборка обоих языков не падала во время
+// параллельного перевода, onBrokenMarkdownLinks становится 'warn', пока
+// перевод неполный; как только переведены все страницы — 'throw'.
+// Принудительно: DOCS_STRICT_LINKS=1 (throw) / DOCS_STRICT_LINKS=0 (warn).
+function listMarkdown(dir) {
+  /** @type {string[]} */
+  const out = [];
+  if (!fs.existsSync(dir)) return out;
+  for (const entry of fs.readdirSync(dir)) {
+    if (entry.startsWith('.')) continue;
+    const full = path.join(dir, entry);
+    if (fs.statSync(full).isDirectory()) out.push(...listMarkdown(full));
+    else if (/\.mdx?$/i.test(entry)) out.push(path.relative(dir, full).replace(/\\/g, '/'));
+  }
+  return out;
+}
+
+const ruDocsDir = path.join(__dirname, 'docs');
+const enDocsDir = path.join(
+  __dirname,
+  'i18n',
+  'en',
+  'docusaurus-plugin-content-docs',
+  'current',
+);
+const ruDocs = listMarkdown(ruDocsDir);
+const enDocs = listMarkdown(enDocsDir);
+// Переводов ещё нет — fallback на ru, ссылки резолвятся, throw безопасен.
+// Есть и покрывают все ru-страницы — тоже throw.
+const translationsComplete =
+  enDocs.length === 0 || ruDocs.every((rel) => enDocs.includes(rel));
+const strictLinksEnv = process.env.DOCS_STRICT_LINKS;
+const strictLinks =
+  strictLinksEnv === '1'
+    ? true
+    : strictLinksEnv === '0'
+      ? false
+      : translationsComplete;
+// Пока перевод неполный, относительные markdown-ссылки в переведённых файлах
+// могут указывать на ещё не переведённые страницы: такие ссылки не
+// резолвятся, и сборка с 'throw' падает. На время параллельного перевода
+// ставим 'warn' для обоих чекеров; когда переводы полные — 'throw'.
+const brokenLinksMode = strictLinks ? 'throw' : 'warn';
+
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -32,25 +83,30 @@ const config = {
   projectName: 'latent',
   trailingSlash: false,
 
-  // Битые внутренние ссылки — ошибка сборки. Разрыв markdown-ссылок
-  // проверяется через markdown.hooks (top-level onBrokenMarkdownLinks
-  // deprecated в Docusaurus 3.10).
-  onBrokenLinks: 'throw',
+  // Битые внутренние ссылки: 'throw', когда i18n-переводы полные (или их
+  // нет); 'warn', пока переводы неполные — иначе параллельный перевод не
+  // даёт собрать сайт. Принудительно: DOCS_STRICT_LINKS=1|0.
+  onBrokenLinks: brokenLinksMode,
 
   markdown: {
     hooks: {
-      onBrokenMarkdownLinks: 'throw',
+      onBrokenMarkdownLinks: brokenLinksMode,
     },
   },
 
   i18n: {
     defaultLocale: 'ru',
-    locales: ['ru'],
+    locales: ['ru', 'en'],
     localeConfigs: {
       ru: {
         label: 'Русский',
         direction: 'ltr',
         htmlLang: 'ru-RU',
+      },
+      en: {
+        label: 'English',
+        direction: 'ltr',
+        htmlLang: 'en',
       },
     },
   },
@@ -117,6 +173,12 @@ const config = {
             label: 'GitHub',
             position: 'right',
           },
+          {
+            // Переключатель языков: ru (по умолчанию) / en.
+            // Переводы метки задаются в i18n/<locale>/docusaurus-theme-classic.
+            type: 'localeDropdown',
+            position: 'right',
+          },
         ],
       },
       footer: {
@@ -146,6 +208,12 @@ const config = {
                 href: 'https://jegius.github.io/latent/llms.txt',
               },
               {label: 'GitHub', href: 'https://github.com/jegius/latent'},
+              // Ссылка на англоязычную версию сайта. Абсолютный URL — чтобы
+              // не зависеть от onBrokenLinks, пока en-переводы неполные.
+              {
+                label: 'English docs',
+                href: 'https://jegius.github.io/latent/en/',
+              },
             ],
           },
         ],

@@ -31,11 +31,20 @@ fn main() -> int {
 ```bash
 cd editors/vscode
 npx @vscode/vsce package --no-dependencies
-# появится latent-lang-1.0.0.vsix
-code --install-extension latent-lang-1.0.0.vsix
+code --install-extension latent-lang-1.0.0.vsix   # имя — по полю name в package.json
 ```
 
 Для сборки нужен только Node.js (зависимостей нет).
+
+### Готовый `.vsix`
+
+В репозитории лежит уже собранный архив
+`editors/vscode/latent-1.0.0.vsix` (36 095 байт) — его можно установить сразу:
+
+```bash
+code --install-extension editors/vscode/latent-1.0.0.vsix
+# либо: Extensions → … → Install from VSIX…
+```
 
 ## Возможности
 
@@ -96,6 +105,7 @@ editors/vscode/
   src/runner.js                latentc / compiler.wasm → .wasm → запуск в Node
   src/docs.js                  ссылки на документацию и playground
   images/icon.png
+  latent-1.0.0.vsix            собранный архив расширения
   README.md, CHANGELOG.md, LICENSE, .vscodeignore
   test/*.test.mjs              package/grammar/snippets/lsp-client/runner/docs
 ```
@@ -114,12 +124,14 @@ editors/vscode/
 ```bash
 cd editors/vscode
 node --check src/extension.js
-node --test "test/*.test.mjs"
+node --test "test/*.test.mjs"        # 70 тестов, 0 падений
 ```
 
 Тесты проверяют JSON-контрибуции, наличие сниппетов/ключевых слов из
-`tooling/language-data/language.json`, парсинг диагностик и runner на
-валидной/битой программе.
+`tooling/language-data/language.json`, парсинг диагностик, LSP-клиент на
+фейковом сервере и runner на валидной/битой программе. Покрытие строк —
+**98.77%** (по отчёту при сборке расширения). Собранный архив —
+`latent-1.0.0.vsix`.
 
 ## Ограничения
 
@@ -134,7 +146,7 @@ node --test "test/*.test.mjs"
 
 ## Связанные разделы
 
-- [LSP-сервер](#) — `tooling/latent-lsp` (контракт в [PLAN](../reference/index.md)
-  и в README каталога).
+- LSP-сервер — `tooling/latent-lsp` (тесты запускаются как в
+  [bootstrap](./bootstrap.md#5-полный-набор-проверок)).
 - [Web IDE](./web-ide.md) · [IntelliJ IDEA](./idea.md) · [MCP](./mcp.md)
 - [CLI](../reference/cli.md) — запуск WASM в Node.

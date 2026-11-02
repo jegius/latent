@@ -22,6 +22,10 @@ self-hosted компилятор, документацию и прогнать �
 На Windows нет MSVC-линкера, поэтому нативный бинарник собирается под
 GNU-таргет `x86_64-pc-windows-gnu`.
 
+Rust нужен только для `latentc` и разового восстановления seed. Сборка
+self-hosted компилятора и пользовательских программ идёт **без Rust** — см.
+[«Сборка без Rust-тулчейна»](#сборка-без-rust-тулчейна).
+
 ## 1. Нативный `latentc`
 
 ```powershell
@@ -52,16 +56,21 @@ cp target/wasm32-unknown-unknown/release/latent.wasm web-ide/latent.wasm
 (`stable-aarch64-apple-darwin`) — на Windows/Linux используйте команды выше или
 поправьте `TOOLCHAIN_DIR` в скрипте.
 
-:::warning
-**Поставляемый `web-ide/compiler.wasm` старше текущих `src/`**: в нём нет
-memory-builtins (`alloc`, `load8`, `store8`, `load32`, `store32`, `memcopy`) и
-части фиксов. Поэтому:
+:::note
+**Поставляемый `web-ide/compiler.wasm` актуален**: он собран из текущих `src/`
+и содержит memory-builtins (`alloc`, `load8`, `store8`, `load32`, `store32`,
+`memcopy`), `spawn`/`yield`/`async`/`await`/`select`, `test`-блоки и актуальные
+фиксы. Проверено: `alloc(8)` + `store8`/`store32`/`load8`/`load32`/`memcopy`
+компилируются в валидный WASM.
 
-- `docs/scripts/validate-examples.mjs` валидирует блоки **этим** файлом
-  (пересборка меняет результаты);
-- в IDE `alloc(...)` даст «Неопределённая переменная 'alloc'».
-
-Пересоберите `compiler.wasm` перед публикацией, если нужны свежие фичи.
+- Артефакт: `web-ide/compiler.wasm` = `web-ide/latent.wasm` (465 435 байт,
+  версия `latent 0.1.0`), пересобран вместе с декомпозицией `src/`.
+- `docs/scripts/validate-examples.mjs` валидирует блоки **этим** файлом: при
+  пересборке `compiler.wasm` перезапустите проверку — часть маркеров
+  «не компилируется» может устареть.
+- В IDEA-плагине лежит **отдельная, более старая** копия
+  (`editors/idea/src/main/resources/runner/compiler.wasm`), в ней memory-builtins
+  ещё нет — см. [IntelliJ IDEA](./idea.md#ограничения).
 :::
 
 ## 3. Self-hosted компилятор
@@ -82,6 +91,69 @@ node selfhost/bootstrap.mjs
 - ABI компилятора: вход по адресу 3145728, выход по 65536 (см.
   [selfhost](../specs/selfhost.md#abi-компилятора)); поставляемая
   читалка/писалка — в `bootstrap.mjs`.
+
+### Сборка без Rust-тулчейна
+
+Rust нужен только для **первой** сборки компилятора. В репозитории лежит
+`selfhost/seed.wasm` — уже собранный selfhost-компилятор (sha256 в
+`selfhost/seed.json`), которым можно собрать `shc.lat` и замкнуться без
+`cargo`/`latentc`:
+
+```bash
+# shc.lat из частей — только Node
+node selfhost/build.mjs
+
+# seed -> stage1' -> stage2' -> stage3'; ожидается FIXED POINT (без Rust)
+node selfhost/bootstrap-wasm.mjs
+
+# то же, но не писать stage-sh-*.wasm
+node selfhost/bootstrap-wasm.mjs --no-write
+```
+
+Цепочка и артефакты:
+
+```text
+seed.wasm        -> shc.lat -> selfhost/stage-sh-1.wasm
+stage-sh-1.wasm  -> shc.lat -> selfhost/stage-sh-2.wasm
+stage-sh-2.wasm  -> shc.lat -> selfhost/stage-sh-3.wasm
+stage-sh-2 === stage-sh-3   (FIXED POINT, stage2' === stage3')
+```
+
+`stage-sh-*.wasm` покрыты `.gitignore` и не пересекаются с `stage1/2/3.wasm`
+Rust-цепочки.
+
+**CLI без Rust** — seed работает как обычный компилятор:
+
+```bash
+node selfhost/wasm-compiler.mjs compile hello.lat        # -> hello.wasm
+node selfhost/wasm-compiler.mjs check hello.lat          # код 1 + текст ошибки
+node selfhost/wasm-compiler.mjs run hello.lat            # print() + main()
+node selfhost/wasm-compiler.mjs version                  # версия, sha256, fixed point
+node selfhost/wasm-compiler.mjs version --compiler selfhost/stage-sh-2.wasm
+```
+
+**Обновление seed** после правок `selfhost/src/*.lat` (без Rust):
+
+```bash
+node selfhost/build.mjs
+node selfhost/bootstrap-wasm.mjs                  # сначала проверьте FIXED POINT
+node selfhost/bootstrap-wasm.mjs --refresh-seed   # новый seed.wasm + seed.json
+node selfhost/bootstrap-wasm.mjs --refresh-seed --dry-run   # только diff
+node selfhost/bootstrap-wasm.mjs --verify-seed    # sha256 seed + shc.lat
+```
+
+`--refresh-seed` пишет файлы только при фиксированной точке, печатает diff
+(размеры, sha256, число/смещение отличающихся байт) и обновляет `seed.json`
+(`seedSha256`, `seedBytes`, `shcSha256`, `shcBytes`, `seedRevision`, даты).
+`seed.wasm` и `seed.json` коммитятся вместе. Коммитить stage-артефакты не нужно.
+
+`seed` — доверенная начальная точка: `bootstrap-wasm.mjs` сверяет его sha256 с
+`seed.json` при каждом запуске (несовпадение — код 2). Проверить вручную:
+`node selfhost/bootstrap-wasm.mjs --verify-seed` или `sha256sum selfhost/seed.wasm`.
+
+Ограничение: обновление без Rust работает, пока текущий seed компилирует новый
+`shc.lat`. Если изменение требует новой конструкции языка, один раз нужен Rust
+(`node selfhost/bootstrap.mjs --update-seed`), после чего снова можно без Rust.
 
 ## 4. Документация и playground
 
@@ -106,36 +178,56 @@ node scripts/validate-examples.mjs   # все ```latent блоки
 ## 5. Полный набор проверок
 
 ```bash
-# Rust
+# Rust: 265 тестов
 cargo test
+# покрытие Rust (llvm-cov, обход GNU-ld): 91.00% строк / 93.53% функций
+pwsh scripts/coverage-rust.ps1
+# golden-набор: 47 программ совпали байт-в-байт, 0 расхождений
+# (1 пропуск — selfhost/shc.lat изменён selfhost-агентом)
+node scripts/check-golden.mjs
 
-# selfhost
+# selfhost: 166 тестов, покрытие 94.56% функций / 96.68% строк + фиксированная точка (Rust-путь)
 node selfhost/build.mjs
 node selfhost/bootstrap.mjs                 # FIXED POINT
 node --test "selfhost/test/*.test.mjs"
 
-# web-ide
-node --test "web-ide/test/*.test.js"
+# selfhost без Rust: только Node (CI job selfhost-norust)
+node selfhost/build.mjs
+node selfhost/bootstrap-wasm.mjs            # FIXED POINT (stage2' === stage3')
+node selfhost/wasm-compiler.mjs version
+node --test selfhost/test/bootstrap-wasm.test.mjs
 
-# docs
+# web-ide: 368 тестов, 99.53% строк / 96.98% ветвей / 98.39% функций
+cd web-ide && pnpm test
+cd web-ide && pnpm coverage
+cd web-ide && pnpm run check:structure
+
+# docs: 75 страниц RU + 75 EN; llms.txt/llms-en.txt генерируются сборкой
 cd docs && pnpm install && pnpm run build
-node docs/scripts/validate-examples.mjs
+node docs/scripts/validate-examples.mjs     # 194 блока: 165 валидны, 29 помечены
 
-# mcp
+# mcp: 300 тестов
 node --test "mcp/docs-mcp/test/*.test.mjs"
 
-# lsp
+# lsp: 133 теста
 node --test "tooling/latent-lsp/test/*.test.mjs"
 
-# vscode
+# vscode: 70 тестов (покрытие строк 98.77%), собран latent-1.0.0.vsix
 node --check editors/vscode/src/extension.js
 node --test "editors/vscode/test/*.test.mjs"
 
-# idea (нужен JDK 17)
+# idea (нужен JDK 17): Gradle buildPlugin
 cd editors/idea && ./gradlew buildPlugin
 ```
 
 Ожидания: всё зелёное; `bootstrap.mjs` печатает `FIXED POINT`.
+
+:::note Про IDEA-плагин
+`buildPlugin` требует JDK 17, Gradle 8.10.2 (скачивается wrapper'ом) и
+IntelliJ Platform 2024.2 из сети. Если Java-процесс не может писать в каталог
+репозитория (встречалось в песочнице DSH), сборка идёт в копии каталога в
+рабочей папке. Подробности и текущий статус — в [IntelliJ IDEA](./idea.md).
+:::
 
 ## Частые проблемы
 
@@ -145,9 +237,14 @@ cd editors/idea && ./gradlew buildPlugin
 | `can't find crate for std` при wasm-сборке | не установлен `wasm32-unknown-unknown`: `rustup target add …` |
 | `build-wasm.sh` не находит toolchain | скрипт рассчитан на macOS/arm; используйте `cargo build --target wasm32-unknown-unknown` |
 | `bootstrap.mjs: spawn latentc ENOENT` | соберите `latentc` или задайте `LATENTC` |
+| `bootstrap-wasm.mjs: seed.json не совпадает с seed.wasm` | seed повреждён/подменён; восстановите из git или пересоберите доверенным компилятором (`--refresh-seed`), проверьте `--verify-seed` |
+| `stage-sh-2 !== stage-sh-3` | `shc.lat` не воспроизводит себя: устарел seed или регрессия; пересоберите `build.mjs`, проверьте Rust-цепочкой, затем `--refresh-seed` |
+| `seed не скомпилировал shc.lat: error: ...` | новый `shc.lat` использует конструкции, которых нет в текущем seed; разово соберите Rust-путь (`node selfhost/bootstrap.mjs --update-seed`) |
 | `stage2 !== stage3` | изменился `src/`/`shc.lat` без пересборки; пересоберите `build.mjs`; несовпадение — регрессия |
 | `validate-examples: компилятор не найден` | нет `web-ide/compiler.wasm` — соберите (п. 2) |
-| IDE не грузит движок №2 | `compiler.wasm` недоступен/старый; проверьте Network и версию |
+| IDE не грузит движок №2 | `compiler.wasm` недоступен; проверьте Network и вкладку WASM |
+| IDEA: `AccessDeniedException: ...\.intellijPlatform` | Java-процесс не может писать в каталог репозитория (песочница); соберите копию каталога в рабочей папке (см. [idea](./idea.md)) |
+| IDEA: `Could not create parent directory for lock file ...gradle-8.10.2-bin` | задайте `GRADLE_USER_HOME` в путь, куда Java может писать |
 
 ## Связанные разделы
 

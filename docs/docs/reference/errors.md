@@ -137,9 +137,9 @@ sidebar_position: 7
 
 `selfhost/shc.lat` при ошибке возвращает отрицательное число, а по адресу
 `OUTPUT_ADDR+4` (65536+4) кладёт `[len u32][utf8-текст]`. Тексты формирует
-сам компилятор (см. `selfhost/src/45_typecheck.lat`, `ERRB`), они короче
-Rust-диагностик; для паритета ориентируйтесь на `selfhost/test/*.test.mjs`
-и [specs/selfhost](../specs/selfhost.md).
+сам компилятор (`selfhost/src/45a_tc_core.lat` и остальные части `45*`, буфер
+`ERRB`), они короче Rust-диагностик; для паритета ориентируйтесь на
+`selfhost/test/*.test.mjs` и [specs/selfhost](../specs/selfhost.md).
 
 ## Диагностики кодогена и ограничения движка №2
 

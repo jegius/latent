@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Latent в браузере — интерактивные демо</title>
+  <meta name="description" content="Три интерактивных демо Latent: бенчмарки против JS, обработка изображений и физика частиц. Компилятор Latent — это WASM, ядро — тоже WASM." />
+  <script>
+    // Keep relative URLs stable whether the host serves /demos/bench or
+    // /demos/bench/ (Docusaurus serve drops the trailing slash).
+    (() => {
+      const m = location.pathname.match(/^(.*\/demos)(?:\/(bench|image|physics))?\/?$/);
+      if (!m) return;
+      const base = document.createElement('base');
+      base.href = `${m[1]}/${m[2] ? `${m[2]}/` : ''}`;
+      document.head.appendChild(base);
+    })();
+  </script>
+  <link rel="stylesheet" href="./assets/demo.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <a class="brand" href="./"><span class="brand-mark">λ</span> Latent demos</a>
+      <nav class="topnav">
+        <a class="active" href="./">Обзор</a>
+        <a href="./bench/">Бенчмарк</a>
+        <a href="./image/">Изображения</a>
+        <a href="./physics/">Физика</a>
+        <a class="keep" href="../examples/frontend-showcase">Документация</a>
+        <span class="tag">WASM</span>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="wrap hero">
+      <p class="eyebrow">vanilla JS · без зависимостей · запускается на этой странице</p>
+      <h1>Latent в браузере.<br /><span class="grad">Не «hello world», а рабочая нагрузка.</span></h1>
+      <p class="lead">
+        Три демо, где Latent компилируется в <strong>WebAssembly</strong> и делает настоящую работу:
+        гоняет алгоритмы против JS, фильтрует пиксели, считает гравитацию для десятков тысяч частиц.
+        Рядом — исходники <code class="mono">.lat</code>, живые метрики и честное сравнение.
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="./bench/">Открыть бенчмарк <span aria-hidden="true">→</span></a>
+        <a class="btn" href="./image/">Фильтры на canvas</a>
+        <a class="btn" href="./physics/">10 000+ частиц</a>
+      </div>
+      <div class="hero-meta">
+        <span><b id="mod-count">7</b> wasm-модулей</span>
+        <span><b id="mod-size">11.9 KiB</b> суммарно</span>
+        <span><b>0</b> внешних зависимостей</span>
+        <span><b>compiler.wasm</b> компилирует код в браузере</span>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="section-head">
+        <div>
+          <h2>Три сценария, где WASM-ядро уместно</h2>
+          <p class="sub">Не замена React и не «перепишите всё». Вычислительное ядро — да.</p>
+        </div>
+        <span class="badge ok">все демо работают офлайн</span>
+      </div>
+
+      <div class="grid grid-3">
+        <article class="demo-card">
+          <div class="thumb thumb-bench" aria-hidden="true">
+            <i class="bar js" style="height: 62%"></i>
+            <i class="bar js" style="height: 48%"></i>
+            <i class="bar" style="height: 92%"></i>
+            <i class="bar" style="height: 74%"></i>
+            <i class="bar js" style="height: 40%"></i>
+            <i class="bar" style="height: 66%"></i>
+          </div>
+          <div class="card-tags">
+            <span class="chip">FNV-1a</span><span class="chip">sieve</span>
+            <span class="chip">matmul</span><span class="chip">quicksort</span>
+            <span class="chip">UTF-8</span>
+          </div>
+          <h3>JS vs Latent→WASM</h3>
+          <p>
+            Пять одинаковых алгоритмов на двух рантаймах. Живые миллисекунды, медиана из трёх
+            прогонов, проверка совпадения контрольных сумм и компиляция исходника в браузере.
+          </p>
+          <div class="card-foot">
+            <a class="card-link" href="./bench/">Запустить бенчмарк</a>
+            <span class="badge">5 задач</span>
+          </div>
+        </article>
+
+        <article class="demo-card">
+          <div class="thumb thumb-image" aria-hidden="true"></div>
+          <div class="card-tags">
+            <span class="chip">ImageData</span><span class="chip">box blur</span>
+            <span class="chip">sobel</span><span class="chip">threshold</span>
+          </div>
+          <h3>Пиксели в линейной памяти</h3>
+          <p>
+            RGBA-буфер уходит в память WASM, фильтры считаются целочисленно, результат
+            возвращается на canvas. Один и тот же алгоритм на JS — для честного сравнения.
+          </p>
+          <div class="card-foot">
+            <a class="card-link" href="./image/">Открыть фильтры</a>
+            <span class="badge">real-time</span>
+          </div>
+        </article>
+
+        <article class="demo-card">
+          <div class="thumb thumb-physics" aria-hidden="true">
+            <div class="orb b"></div>
+            <div class="orb c"></div>
+            <div class="orb"></div>
+          </div>
+          <div class="card-tags">
+            <span class="chip">fixed-point</span><span class="chip">gravity</span>
+            <span class="chip">30 000 частиц</span>
+          </div>
+          <h3>Физика без сборщика мусора</h3>
+          <p>
+            Три вращающихся аттрактора, интегратор, столкновения с ядрами и стенками.
+            Вся симуляция — в одном линейном буфере; JS-двойник считает те же траектории.
+          </p>
+          <div class="card-foot">
+            <a class="card-link" href="./physics/">Запустить симуляцию</a>
+            <span class="badge">60 fps</span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="section-head">
+        <div>
+          <h2>Почему Latent, а не «просто JS»</h2>
+          <p class="sub">Честно: не всегда и не во всём. Вот где выигрыш реальный.</p>
+        </div>
+      </div>
+      <div class="grid grid-2">
+        <div class="panel panel-flat">
+          <div class="row" style="margin-bottom: 8px"><span class="tag">01</span><h3>Память под контролем</h3></div>
+          <p class="muted small" style="margin: 0">
+            Массивы и буферы — это байты в линейной памяти, а не объекты в куче JS. Аллокации
+            явные (<code class="mono">alloc</code>), сборщика мусора нет: нет пауз GC и
+            непредсказуемых «просадок» кадра. Для аудио, canvas и анимаций это важнее среднего FPS.
+          </p>
+        </div>
+        <div class="panel panel-flat">
+          <div class="row" style="margin-bottom: 8px"><span class="tag">02</span><h3>Компилятор — тоже WASM</h3></div>
+          <p class="muted small" style="margin: 0">
+            <code class="mono">compiler.wasm</code> — это Rust-компилятор Latent, собранный в
+            WebAssembly. Он умеет принимать исходник в браузере и отдавать готовый модуль за
+            миллисекунды. Не нужен сервер, не нужен toolchain на машине пользователя.
+          </p>
+        </div>
+        <div class="panel panel-flat">
+          <div class="row" style="margin-bottom: 8px"><span class="tag">03</span><h3>Песочница по построению</h3></div>
+          <p class="muted small" style="margin: 0">
+            У модуля нет доступа к DOM, сети и cookie. Единственный импорт — <code class="mono">env.print</code>.
+            Если вы исполняете чужой или сгенерированный код, WASM ограничивает его ровно тем,
+            что вы сами передали в память.
+          </p>
+        </div>
+        <div class="panel panel-flat">
+          <div class="row" style="margin-bottom: 8px"><span class="tag">04</span><h3>Числа — не «примерно»</h3></div>
+          <p class="muted small" style="margin: 0">
+            <code class="mono">int</code> — это i32, переполнение предсказуемо, битовые операции
+            на месте. Фиксированная точка позволяет считать физику и графику без
+            <code class="mono">float</code>-сюрпризов — и без разницы между движками JIT.
+          </p>
+        </div>
+      </div>
+      <p class="note" style="margin-top: 16px">
+        <b>О цифрах.</b> JS-движки сегодня отличные, и на многих задачах разница небольшая.
+        Демо не «доказывают», что WASM быстрее всегда: они показывают ваши собственные числа
+        и отдельно — то, что нельзя измерить миллисекундами: отсутствие GC-пауз, контроль
+        аллокаций и исполнение недоверенного кода в песочнице.
+      </p>
+    </section>
+
+    <section class="wrap section">
+      <div class="serction-head section-head">
+        <div>
+          <h2>Как это устроено</h2>
+          <p class="sub">Один и тот же конвейер на всех трёх страницах.</p>
+        </div>
+      </div>
+      <div class="grid grid-3">
+        <div class="panel panel-flat">
+          <div class="metric"><div class="k">шаг 1</div><div class="v" style="font-size:16px">.lat → .wasm</div></div>
+          <p class="muted small" style="margin: 10px 0 0">
+            Модули собираются заранее скриптом <code class="mono">build-demos.mjs</code> через
+            настоящий компилятор. На странице рядом лежит исходник — его можно прочитать.
+          </p>
+        </div>
+        <div class="panel panel-flat">
+          <div class="metric"><div class="k">шаг 2</div><div class="v" style="font-size:16px">JS ⇄ memory</div></div>
+          <p class="muted small" style="margin: 10px 0 0">
+            Хост вызывает <code class="mono">main(...)</code>, кладёт данные по указателю в
+            линейную память и читает результат. Строки — <code class="mono">[len][utf8]</code>,
+            массивы — <code class="mono">[len][i32…]</code>.
+          </p>
+        </div>
+        <div class="panel panel-flat">
+          <div class="metric"><div class="k">шаг 3</div><div class="v" style="font-size:16px">canvas / DOM</div></div>
+          <p class="muted small" style="margin: 10px 0 0">
+            Результат — байты или числа. Рисует их обычный canvas, а не «магия». Поэтому демо и
+            остаются статическими страницами без сборки и зависимостей.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="panel" style="display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap">
+        <div>
+          <h2 style="font-size:22px">Хотите те же приёмы в своём проекте?</h2>
+          <p class="sub" style="margin-bottom:0">
+            В документации — ABI, передача массивов и строк, React-обёртка и разбор каждого демо.
+          </p>
+        </div>
+        <a class="btn btn-primary" href="../examples/frontend-showcase">Читать frontend-showcase <span aria-hidden="true">→</span></a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap footer">
+    <span>Latent · MIT · компилятор и демо собраны из одного репозитория</span>
+    <span class="row">
+      <a href="./bench/">bench</a><span class="dim">/</span>
+      <a href="./image/">image</a><span class="dim">/</span>
+      <a href="./physics/">physics</a><span class="dim">/</span>
+      <a href="../examples/frontend-showcase">docs</a>
+    </span>
+  </footer>
+
+  <script type="module">
+    const files = [
+      'bench/hash.wasm', 'bench/sieve.wasm', 'bench/matmul.wasm', 'bench/sort.wasm',
+      'bench/utf8.wasm', 'image/filter.wasm', 'physics/particles.wasm',
+    ];
+    let total = 0;
+    let loaded = 0;
+    for (const file of files) {
+      try {
+        const res = await fetch(file, {method: 'HEAD'});
+        if (res.ok) {
+          total += Number(res.headers.get('content-length') || 0);
+          loaded += 1;
+        }
+      } catch { /* static host without HEAD */ }
+    }
+    if (loaded) {
+      document.getElementById('mod-count').textContent = String(loaded);
+      document.getElementById('mod-size').textContent = `${(total / 1024).toFixed(1)} KiB`;
+    }
+  </script>
+</body>
+</html>

@@ -192,12 +192,12 @@ Windows: `%APPDATA%\Claude\`):
 ## Проверка
 
 ```bash
-node --test "mcp/docs-mcp/test/*.test.mjs"
+node --test "mcp/docs-mcp/test/*.test.mjs"     # 300 тестов, 0 падений
 ```
 
 Тесты покрывают `initialize`, `tools/list`, `tools/call` (включая
 `check_code`), `resources/list|read`, `prompts/list|get`, HTTP-транспорт
-(запуск на порту 0), поиск и парсинг ошибок.
+(запуск на порту 0), поиск, парсинг ошибок, индекс документации и примеры.
 
 ```bash
 curl -s http://127.0.0.1:8765/health
@@ -213,9 +213,9 @@ curl -s http://127.0.0.1:8765/mcp -X POST \
 - Если документация недоступна, сервер стартует с пустым индексом и
   предупреждением в stderr.
 - `check_code` зависит от наличия `web-ide/compiler.wasm`; путь можно задать
-  `--wasm`/`LATENT_COMPILER_WASM`.
-- Компилятор в поставляемой сборке может быть старше `src/` (см.
-  [bootstrap](./bootstrap.md)).
+  `--wasm`/`LATENT_COMPILER_WASM`. Поставляемый артефакт актуален (собран из
+  текущего `src/`), поэтому `check_code` понимает те же конструкции, что и
+  движок №2 в IDE, включая memory-builtins.
 
 ## Связанные разделы
 

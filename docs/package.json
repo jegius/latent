@@ -5,10 +5,12 @@
   "description": "Документация языка Latent (Docusaurus)",
   "scripts": {
     "start": "node scripts/build-llms.mjs && docusaurus start",
-    "build": "node scripts/build-llms.mjs && docusaurus build",
+    "build": "node scripts/build-llms.mjs && node scripts/build-site.mjs",
     "serve": "docusaurus serve",
     "clear": "docusaurus clear",
     "swizzle": "docusaurus swizzle",
+    "write-translations": "docusaurus write-translations",
+    "write-translations:en": "docusaurus write-translations --locale en",
     "validate:examples": "node scripts/validate-examples.mjs"
   },
   "dependencies": {

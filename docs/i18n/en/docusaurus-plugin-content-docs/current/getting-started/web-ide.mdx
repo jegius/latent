@@ -1,0 +1,118 @@
+---
+title: Web IDE (playground)
+sidebar_label: Web IDE
+sidebar_position: 4
+description: The Latent browser IDE — two engines, running, examples, keyboard shortcuts, and limitations.
+---
+
+import {PlaygroundFrame, PlaygroundLink} from '@site/src/components/Playground';
+
+# Web IDE (playground)
+
+The playground is a browser IDE in the style of IntelliJ IDEA Darcula: an editor
+with highlighting, a file tree, examples, an output console, and an AI mode. It
+lives at <PlaygroundLink>/latent/playground/</PlaygroundLink> and is built from
+`web-ide/`.
+
+<PlaygroundFrame height="640px" title="Latent playground" />
+
+## How the engines work in the IDE
+
+| Engine | What it does in the IDE | Where |
+|---|---|---|
+| **#1** | **Executes the program** (`Run`, `Run with AI`): a tree-walking interpreter in JS. Supports most of the language, including channels, goroutines, tensors, and AI primitives; does **not** support `enum`, bitwise operators, or block comments. | `web-ide/compiler/` |
+| **#2** | **Compiles** the program with the real Rust compiler into WASM bytes and shows the result in the WASM tab. Execution of the compiled module does not happen in the IDE. | `web-ide/compiler.wasm` |
+
+Important: `Run` always starts engine #1, even if engine #2 is loaded. Engine #2
+is a compiler: it checks the program and emits WASM bytes
+(`Compiled by engine #2 (Rust → WASM)`). To execute the resulting module you
+need an external WASM host — for example, Node.js
+(see [hello-world](./hello-world.md)).
+
+If `compiler.wasm` is unavailable, engine #2 simply does not load — the IDE
+keeps working on engine #1. The active engine indicator is on the right side of
+the status bar.
+
+## What is actually supported
+
+| Feature | #1 (JS, execution) | #2 (Rust → WASM, compilation) |
+|---|:---:|:---:|
+| `let`, `if/else`, `while`, `for`, `for-in`, `return`, `print` | ✅ | ✅ |
+| functions, recursion, lambdas, closures | ✅ | ✅ |
+| arrays, indexing, `push`/`pop`/`length`, `len` | ✅ | ✅ (see the caveats in the guide) |
+| `class`/`new`/`this` (fields, `init`, methods) | ✅ | ✅ (integer fields) |
+| `match`/`case`/`default` | ✅ | ✅ |
+| `enum` | ❌ | ✅ |
+| bitwise operators `& \| ^ << >>` | ❌ | ✅ |
+| `async`/`await` | ✅ | ✅ (`await` is a passthrough) |
+| `channel`, `spawn`, `select`, `yield` | ✅ (fully) | `spawn`/`select`/`yield` — surrogates; `channel` — an error |
+| `tensor`, `semantic`, `matmul`, `cosine_similarity` | ✅ | ⚠️ host runtime error |
+| `ai_infer`, `ai_embed`, `ai_stream`, `ai_generate!` | ✅ (AI mode required) | ⚠️ host runtime error |
+| `test` blocks, `assert`, `assert_eq` | ✅ | `assert`/`assert_eq`; test blocks are not executed |
+| block comments `/* ... */` | ❌ | ✅ |
+
+## How to run
+
+1. Open <PlaygroundLink>playground</PlaygroundLink>.
+2. Write a program or pick an example: `File → Examples` or the `examples/`
+   folder in the project tree.
+3. **Run** (`Ctrl/⌘+Enter`) — execute with engine #1.
+4. **Run with AI** (`Ctrl/⌘+Shift+Enter`) — execution with self-repair, up to 3
+   attempts, and AI insights.
+5. **Compile / Engine #2** — compile with the Rust compiler and view the WASM
+   bytes.
+
+## IDE features
+
+- **Editor**: canvas rendering, line numbers, current-line highlighting,
+  scrolling, selection; input through a hidden `textarea` (IME/Cyrillic/undo).
+  Auto-indent on Enter, auto-closing brackets/quotes, Tab/Shift+Tab.
+- **Formatting**: `Edit → Format Code` (`Ctrl/⌘+Alt+L`) — alignment by curly
+  braces and whitespace normalization (strings and comments are left
+  untouched); the same algorithm is in `web-ide/services/formatter-service.js`.
+- **Modals**: a custom layer (`views/modal-view.js`) instead of the browser's
+  `confirm`/`prompt`/`alert` — overlay, animation, focus trap, Enter/Escape.
+- **File tree**: creating (`＋`), renaming, and deleting `.lat` files;
+  everything is persisted to `localStorage`.
+- **Tabs and status bar**: Ln/Col, active engine, file name; middle-clicking a
+  tab closes the file.
+- **Examples**: real `.lat` files in `web-ide/examples/` (a single source of
+  truth) — Language, Algorithms, Data, Functional, Concurrency, AI, Misc.
+- **Share**: the code is encoded as base64 right in the URL — the link can be
+  shared.
+- **auto-run**: debounced auto-run while editing.
+- **Keyboard shortcuts**: `Ctrl/⌘+Enter` — Run, `Ctrl/⌘+Shift+Enter` — Run with
+  AI, `Ctrl/⌘+S` — save.
+
+## Running locally
+
+The playground is static files. It needs an HTTP server (not `file://`):
+
+```bash
+cd web-ide
+python3 -m http.server 8000
+# http://localhost:8000
+```
+
+Or through the built documentation site: `docs/static/playground/` is a copy of
+`web-ide/`, which `scripts/sync-playground.mjs` makes during the build.
+
+## Limitations
+
+- Engine #2 is a subset of the language; host features produce an explicit
+  error. The full list of differences is in the
+  ["Engine #2 limitations"](../guide/wasm-and-execution.md#engine-2-limitations)
+  section.
+- In engine #2, `print` outputs each argument on a new line (the host function
+  `env.print` is called for each argument), whereas in engine #1 it is a single
+  line separated by spaces.
+- Formatting is not an AST printer: it is normalization of indentation and
+  whitespace.
+- The AI mode works through the AI gateway; without a configured provider, mock
+  mode is enabled.
+
+## See also
+
+- [Hello, world](./hello-world.md) — running in Node.js without the IDE.
+- [Running WASM](../guide/wasm-and-execution.md) — the ABI, env.print, engines.
+- [Tutorial](../tutorial/index.md) — step-by-step programs for the playground.

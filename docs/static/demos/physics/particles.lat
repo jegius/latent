@@ -1,0 +1,204 @@
+// Particle gravity simulation, fixed-point integer math.
+//
+// Positions: 1/16 px. Velocities: 1/256 px per step.
+// Three attractors orbit a common centre; the force is a softened inverse
+// square, so there is no sqrt/float in the hot loop. Particles reflect off the
+// attractor cores and the walls. The host reads x/y/vx/vy straight out of
+// linear memory and renders them.
+//
+// Layout (absolute addresses):
+//   40 base, 44 count, 48..68 attractor offsets, 76 w, 80 h
+//   arrays: x | y | vx | vy, each MAX * 4 bytes
+
+fn init(count: int, w: int, h: int) -> int {
+    let base = load32(40);
+    if (base == 0) {
+        base = alloc(30000 * 16 + 64);
+        store32(40, base);
+    }
+    // Reset the attractor phase on every init, so a host-side reset and the
+    // JS twin start from exactly the same state.
+    store32(48, w * 3);
+    store32(52, 0);
+    store32(56, 0 - (w * 3) / 2);
+    store32(60, (w * 3 * 443) / 512);
+    store32(64, 0 - (w * 3) / 2);
+    store32(68, 0 - (w * 3 * 443) / 512);
+    store32(44, count);
+    store32(76, w);
+    store32(80, h);
+
+    let stride = 120000;
+    let s = 88172645;
+    let cx = w * 8;
+    let cy = h * 8;
+    let rr = w * 4;
+    let i = 0;
+    while (i < count) {
+        // Rejection-sample a disk, then give the particle a tangential kick:
+        // the cloud starts rotating instead of exploding like a gas.
+        let x = 0;
+        let y = 0;
+        let ok = 0;
+        while (ok == 0) {
+            s = (s * 1103515245 + 12345) & 2147483647;
+            x = s % (w * 16);
+            s = (s * 1103515245 + 12345) & 2147483647;
+            y = s % (h * 16);
+            let ddx = x - cx;
+            let ddy = y - cy;
+            if (ddx * ddx + ddy * ddy < rr * rr) {
+                ok = 1;
+            }
+        }
+        s = (s * 1103515245 + 12345) & 2147483647;
+        let vx = (0 - (y - cy)) / 10 + (s % 161) - 80;
+        s = (s * 1103515245 + 12345) & 2147483647;
+        let vy = (x - cx) / 10 + (s % 161) - 80;
+        store32(base + i * 4, x);
+        store32(base + stride + i * 4, y);
+        store32(base + stride * 2 + i * 4, vx);
+        store32(base + stride * 3 + i * 4, vy);
+        i = i + 1;
+    }
+    return base;
+}
+
+fn step(count: int, gravity: int, w: int, h: int) -> int {
+    let base = load32(40);
+    if (base == 0) {
+        return 0;
+    }
+    let stride = 120000;
+
+    // Rotate the three attractor offsets by ~2 degrees (16.16 fixed point).
+    let r0x = load32(48);
+    let r0y = load32(52);
+    let r1x = load32(56);
+    let r1y = load32(60);
+    let r2x = load32(64);
+    let r2y = load32(68);
+    let c = 65501;
+    let s = 2287;
+    let n0x = (r0x * c - r0y * s) >> 16;
+    let n0y = (r0y * c + r0x * s) >> 16;
+    let n1x = (r1x * c - r1y * s) >> 16;
+    let n1y = (r1y * c + r1x * s) >> 16;
+    let n2x = (r2x * c - r2y * s) >> 16;
+    let n2y = (r2y * c + r2x * s) >> 16;
+    store32(48, n0x);
+    store32(52, n0y);
+    store32(56, n1x);
+    store32(60, n1y);
+    store32(64, n2x);
+    store32(68, n2y);
+
+    let cx = w * 8;
+    let cy = h * 8;
+    let ax0 = cx + n0x;
+    let ay0 = cy + n0y;
+    let ax1 = cx + n1x;
+    let ay1 = cy + n1y;
+    let ax2 = cx + n2x;
+    let ay2 = cy + n2y;
+
+    let i = 0;
+    while (i < count) {
+        let x = load32(base + i * 4);
+        let y = load32(base + stride + i * 4);
+        let vx = load32(base + stride * 2 + i * 4);
+        let vy = load32(base + stride * 3 + i * 4);
+
+        // Attractor 0.
+        let dx = ax0 - x;
+        let dy = ay0 - y;
+        let d2 = dx * dx + dy * dy;
+        if (d2 < 90000) {
+            let vn = vx * dx + vy * dy;
+            if (vn > 0 && d2 > 0) {
+                vx = vx - (2 * vn * dx) / d2;
+                vy = vy - (2 * vn * dy) / d2;
+            }
+        } else {
+            let f = (gravity << 24) / (d2 + 40000);
+            vx = vx + ((dx * f) >> 13) - ((dy * f) >> 13);
+            vy = vy + ((dy * f) >> 13) + ((dx * f) >> 13);
+        }
+
+        // Attractor 1.
+        dx = ax1 - x;
+        dy = ay1 - y;
+        d2 = dx * dx + dy * dy;
+        if (d2 < 90000) {
+            let vn2 = vx * dx + vy * dy;
+            if (vn2 > 0 && d2 > 0) {
+                vx = vx - (2 * vn2 * dx) / d2;
+                vy = vy - (2 * vn2 * dy) / d2;
+            }
+        } else {
+            let f2 = (gravity << 24) / (d2 + 40000);
+            vx = vx + ((dx * f2) >> 13) - ((dy * f2) >> 13);
+            vy = vy + ((dy * f2) >> 13) + ((dx * f2) >> 13);
+        }
+
+        // Attractor 2.
+        dx = ax2 - x;
+        dy = ay2 - y;
+        d2 = dx * dx + dy * dy;
+        if (d2 < 90000) {
+            let vn3 = vx * dx + vy * dy;
+            if (vn3 > 0 && d2 > 0) {
+                vx = vx - (2 * vn3 * dx) / d2;
+                vy = vy - (2 * vn3 * dy) / d2;
+            }
+        } else {
+            let f3 = (gravity << 24) / (d2 + 40000);
+            vx = vx + ((dx * f3) >> 13) - ((dy * f3) >> 13);
+            vy = vy + ((dy * f3) >> 13) + ((dx * f3) >> 13);
+        }
+
+        // Damping and integration.
+        vx = (vx * 252) >> 8;
+        vy = (vy * 252) >> 8;
+        x = x + (vx >> 4);
+        y = y + (vy >> 4);
+
+        // Walls: clamp and bounce with half speed.
+        if (x < 0) {
+            x = 0;
+            vx = 0 - (vx / 2);
+        }
+        if (x > w * 16) {
+            x = w * 16;
+            vx = 0 - (vx / 2);
+        }
+        if (y < 0) {
+            y = 0;
+            vy = 0 - (vy / 2);
+        }
+        if (y > h * 16) {
+            y = h * 16;
+            vy = 0 - (vy / 2);
+        }
+
+        store32(base + i * 4, x);
+        store32(base + stride + i * 4, y);
+        store32(base + stride * 2 + i * 4, vx);
+        store32(base + stride * 3 + i * 4, vy);
+        i = i + 1;
+    }
+    return base;
+}
+
+fn main(cmd: int, count: int, gravity: int, w: int, h: int) -> int {
+    if (cmd == 0) {
+        return init(count, w, h);
+    }
+    if (cmd == 1) {
+        return step(count, gravity, w, h);
+    }
+    if (cmd == 2) {
+        return init(count, w, h);
+    }
+    return load32(40);
+}

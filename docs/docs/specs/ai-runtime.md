@@ -13,7 +13,7 @@ host-рантайма — браузера/IDE с AI-гейтвеем. Движ�
 
 Источники: `web-ide/compiler/interpreter-builtins.js`,
 `interpreter-ai.js`, `interpreter.js`, `ai-config.js`, `ai-gateway.js`,
-`run.js`, `repair.js`, `src/codegen/emit_call.rs` (host-список),
+`run.js`, `repair.js`, `src/codegen/emit_call/mod.rs` (host-список),
 `src/parser/expressions/prefix.rs` (`ai_generate!`).
 
 ## Сводка примитивов
@@ -162,7 +162,7 @@ mock или локальный Ollama.
 - `ai_infer`, `ai_embed`, `ai_stream`, `stream_next`, `tensor`, `semantic`,
   `matmul`, `cosine_similarity`, `dot`, `magnitude`, `zeros`, `ones`,
   `snapshot`, `ai_contract`, `enforce_contract`, `channel` — в списке
-  `HOST_BUILTINS` (`src/codegen/emit_call.rs`) и дают ошибку компиляции:
+  `HOST_BUILTINS` (`src/codegen/emit_call/mod.rs`) и дают ошибку компиляции:
   `Builtin '<имя>' не поддерживается движком №2 (требует host-рантайма)`.
 - `ch.send(...)`/`ch.recv()` — `Метод '…' не поддерживается движком №2
   (требует host-рантайма)`.

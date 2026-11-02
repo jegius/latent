@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Latent — физика частиц на canvas</title>
+  <meta name="description" content="20 000 частиц, три вращающихся аттрактора и фиксированная точка в Latent→WASM. Живой FPS, график шага симуляции и честное сравнение с JS." />
+  <script>
+    // Keep relative URLs stable whether the host serves /demos/physics or
+    // /demos/physics/ (Docusaurus serve drops the trailing slash).
+    (() => {
+      const m = location.pathname.match(/^(.*\/demos)(?:\/(bench|image|physics))?\/?$/);
+      if (!m) return;
+      const base = document.createElement('base');
+      base.href = `${m[1]}/${m[2] ? `${m[2]}/` : ''}`;
+      document.head.appendChild(base);
+    })();
+  </script>
+  <link rel="stylesheet" href="../assets/demo.css" />
+  <style>
+    .sim-stage {
+      position: relative;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: #01030a;
+      aspect-ratio: 8 / 5;
+    }
+    .sim-stage canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .sim-stage::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: radial-gradient(ellipse at center, transparent 55%, rgba(1, 3, 10, 0.55) 100%);
+    }
+    .graph-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(2, 6, 16, 0.6);
+      padding: 8px 10px;
+    }
+    .graph-card canvas { width: 100%; height: 54px; display: block; }
+    .stat-line { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+    .stat-line b { font-family: var(--mono); color: var(--text); font-weight: 600; }
+    .swatches { display: flex; gap: 10px; align-items: center; font-size: 11px; color: var(--dim); }
+    .swatches i { width: 22px; height: 4px; border-radius: 99px; display: inline-block; margin-right: 4px; vertical-align: middle; }
+    @media (max-width: 620px) { .sim-stage { aspect-ratio: 4 / 3; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <a class="brand" href="../"><span class="brand-mark">λ</span> Latent demos</a>
+      <nav class="topnav">
+        <a href="../">Обзор</a>
+        <a href="../bench/">Бенчмарк</a>
+        <a href="../image/">Изображения</a>
+        <a class="active" href="./">Физика</a>
+        <a class="keep" href="../../examples/frontend-showcase">Документация</a>
+        <span class="tag">CANVAS</span>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="wrap hero">
+      <p class="eyebrow">fixed-point i32 · 3 аттрактора · до 30 000 частиц</p>
+      <h1>Гравитация без<br /><span class="grad">сборщика мусора.</span></h1>
+      <p class="lead">
+        Симуляция целиком живёт в одном линейном буфере: позиции, скорости, аттракторы.
+        Ни одной аллокации на кадр и ни одного объекта на частицу. Переключатель
+        <strong>Latent→WASM / JS</strong> запускает два одинаковых интегратора — цифры и
+        траектории можно сравнить.
+      </p>
+      <div class="hero-actions">
+        <span class="badge ok" id="sim-status"><span class="spinner"></span> загрузка particles.wasm…</span>
+        <span class="badge" id="parity-badge">parity: —</span>
+        <span class="badge" id="mode-badge">WASM</span>
+      </div>
+      <div class="hero-meta">
+        <span><b>30 000</b> частиц максимум</span>
+        <span><b>0</b> объектов на частицу</span>
+        <span><b>1</b> шаг = 1 вызов main</span>
+        <span><b>0</b> GC-пауз в WASM</span>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="grid grid-hero">
+        <div class="panel" style="padding: 14px">
+          <div class="sim-stage">
+            <canvas id="sim" width="960" height="600"></canvas>
+          </div>
+          <div class="legend" style="display:flex;justify-content:space-between;margin-top:9px;color:var(--dim);font-family:var(--mono);font-size:10.5px">
+            <span id="sim-caption">latent particles.wasm</span>
+            <span>960 × 600</span>
+          </div>
+        </div>
+
+        <aside class="panel">
+          <div class="segmented" id="mode-seg" style="width:100%;margin-bottom:14px">
+            <button type="button" class="active" data-mode="wasm" style="flex:1">Latent → WASM</button>
+            <button type="button" data-mode="js" style="flex:1">JavaScript</button>
+          </div>
+
+          <div class="stack">
+            <div class="field">
+              <div class="field-row"><span>Частиц</span><output id="count-out">12 000</output></div>
+              <input type="range" id="count" min="2000" max="30000" value="12000" step="1000" />
+            </div>
+            <div class="field">
+              <div class="field-row"><span>Гравитация</span><output id="gravity-out">20</output></div>
+              <input type="range" id="gravity" min="0" max="60" value="20" step="1" />
+            </div>
+            <div class="field">
+              <div class="field-row"><span>Длина трейлов</span><output id="trail-out">86%</output></div>
+              <input type="range" id="trail" min="60" max="97" value="86" step="1" />
+            </div>
+
+            <div class="row">
+              <button class="btn btn-primary" id="reset" type="button">Сбросить</button>
+              <button class="btn" id="pause" type="button">Пауза</button>
+            </div>
+            <div class="row">
+              <button class="btn btn-sm" id="check" type="button">Проверить parity (120 шагов)</button>
+              <button class="btn btn-sm" id="bench" type="button">Замер 120 шагов</button>
+            </div>
+
+            <div class="graph-card">
+              <div class="stat-line" style="margin-bottom:4px"><span class="dim">шаг симуляции</span><b id="graph-label">—</b></div>
+              <canvas id="graph" width="300" height="54"></canvas>
+            </div>
+
+            <div class="stack-sm small" id="bench-out">
+              <div class="dim">Замер сравнивает только интегратор: рендер и rAF — снаружи.</div>
+            </div>
+
+            <div class="swatches">
+              <span><i style="background:#5eead4"></i>медленно</span>
+              <span><i style="background:#7dd3fc"></i>средне</span>
+              <span><i style="background:#fda4af"></i>быстро</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="metrics">
+        <div class="metric accent">
+          <div class="k">sim step</div>
+          <div class="v" id="m-step">—</div>
+        </div>
+        <div class="metric blue">
+          <div class="k">FPS</div>
+          <div class="v" id="m-fps">—</div>
+        </div>
+        <div class="metric">
+          <div class="k">p95 step</div>
+          <div class="v" id="m-p95">—</div>
+        </div>
+        <div class="metric">
+          <div class="k">частиц</div>
+          <div class="v" id="m-count">—</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="grid grid-hero">
+        <div class="panel">
+          <h2 style="font-size:20px">Почему здесь Latent, а не JS</h2>
+          <div class="stack-sm" style="margin-top: 12px">
+            <p class="muted small" style="margin:0">
+              <b style="color:var(--text)">Один буфер вместо 20 000 объектов.</b> Частица — это
+              четыре i32 по фиксированным смещениям. Нет массива объектов, нет ссылок, нет
+              работы для сборщика мусора. Память выделяется один раз на 30 000 частиц.
+            </p>
+            <p class="muted small" style="margin:0">
+              <b style="color:var(--text)">Предсказуемый кадр.</b> Интегратор — это цикл с
+              арифметикой и ветвлениями. В WASM нет GC-пауз и деоптимизаций: p95 шага близок
+              к медиане, а не «иногда 16 мс, иногда 3 мс».
+            </p>
+            <p class="muted small" style="margin:0">
+              <b style="color:var(--text)">Фиксированная точка.</b> Позиции — 1/16 px, скорости —
+              1/256 px/шаг. Все операции целочисленные, поэтому JS-двойник и WASM дают
+              побитово одинаковые траектории (проверено на 600 шагах).
+            </p>
+            <p class="muted small" style="margin:0">
+              <b style="color:var(--text)">Столкновения.</b> Частицы отражаются от трёх ядер
+              аттракторов и от стенок; ядра вращаются вокруг центра. Это не N-body попарно —
+              честно: O(N·3), зато 20 000 частиц укладываются в доли миллисекунды.
+            </p>
+          </div>
+        </div>
+        <div class="panel panel-flat">
+          <h3>Что внутри</h3>
+          <div class="stack-sm small mono" style="margin-top:10px">
+            <div class="spread"><span class="dim">позиция</span><span>1/16 px (i32)</span></div>
+            <div class="spread"><span class="dim">скорость</span><span>1/256 px/шаг</span></div>
+            <div class="spread"><span class="dim">сила</span><span>softened 1/r², i32</span></div>
+            <div class="spread"><span class="dim">аттракторы</span><span>3, 16.16 rotation</span></div>
+            <div class="spread"><span class="dim">аллокации</span><span style="color:var(--ok)">одна на старте</span></div>
+          </div>
+          <hr class="hr" />
+          <p class="small dim" style="margin:0">
+            Всё, что видно на canvas, читается из памяти модуля: <code class="mono">x</code>,
+            <code class="mono">y</code>, <code class="mono">vx</code>, <code class="mono">vy</code>.
+            Никакой сериализации.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="code">
+        <div class="code-head">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span>physics/particles.lat</span>
+          <span style="margin-left:auto" id="source-meta">—</span>
+        </div>
+        <pre><code id="source">// загрузка исходника…</code></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap footer">
+    <span>Latent demos · 20 000 частиц в одном линейном буфере</span>
+    <span class="row">
+      <a href="../">Все демо</a><span class="dim">/</span>
+      <a href="../bench/">Бенчмарк</a><span class="dim">/</span>
+      <a href="../image/">Изображения</a><span class="dim">/</span>
+      <a href="../../examples/frontend-showcase">frontend-showcase</a>
+    </span>
+  </footer>
+
+  <script type="module">
+    import {PhysicsJS, PHYSICS_MAX} from '../assets/physics.js';
+    import {
+      instantiateLatent, formatMs, median, p95, nextFrame,
+    } from '../assets/wasm.js';
+    import {highlightLatent} from '../assets/highlight.js';
+
+    const W = 960;
+    const H = 600;
+    const STRIDE = 120000;
+    const $ = (id) => document.getElementById(id);
+
+    const canvas = $('sim');
+    const ctx = canvas.getContext('2d');
+    const image = ctx.createImageData(W, H);
+    const data = image.data;
+
+    const state = {
+      mode: 'wasm',
+      count: 12000,
+      gravity: 20,
+      fade: 0.86,
+      paused: false,
+    };
+
+    let wasm = null;
+    let views = null;
+    let base = 0;
+    let jsSim = null;
+
+    // ---- palette (slow → fast) ----
+    const palette = new Uint8Array(256 * 3);
+    for (let i = 0; i < 256; i++) {
+      const t = i / 255;
+      let r, g, b;
+      if (t < 0.5) {
+        const u = t * 2;
+        r = 94 + (125 - 94) * u;
+        g = 234 + (211 - 234) * u;
+        b = 212 + (252 - 212) * u;
+      } else {
+        const u = (t - 0.5) * 2;
+        r = 125 + (253 - 125) * u;
+        g = 211 + (164 - 211) * u;
+        b = 252 + (175 - 252) * u;
+      }
+      palette[i * 3] = r;
+      palette[i * 3 + 1] = g;
+      palette[i * 3 + 2] = b;
+    }
+
+    async function loadWasm() {
+      try {
+        const res = await fetch('./particles.wasm');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        const instance = await instantiateLatent(bytes);
+        wasm = instance.exports;
+        initWasm();
+        $('sim-status').className = 'badge ok';
+        $('sim-status').textContent = `particles.wasm · ${(bytes.length / 1024).toFixed(1)} KiB`;
+      } catch (err) {
+        console.error(err);
+        $('sim-status').className = 'badge bad';
+        $('sim-status').textContent = 'particles.wasm не загрузился';
+        setMode('js');
+      }
+    }
+
+    function initWasm() {
+      if (!wasm) return;
+      base = wasm.main(0, state.count, state.gravity, W, H);
+      views = {
+        x: new Int32Array(wasm.memory.buffer, base, PHYSICS_MAX),
+        y: new Int32Array(wasm.memory.buffer, base + STRIDE, PHYSICS_MAX),
+        vx: new Int32Array(wasm.memory.buffer, base + STRIDE * 2, PHYSICS_MAX),
+        vy: new Int32Array(wasm.memory.buffer, base + STRIDE * 3, PHYSICS_MAX),
+      };
+    }
+
+    function stepWasm() {
+      wasm.main(1, state.count, state.gravity, W, H);
+    }
+
+    function stepJS() {
+      jsSim.step(state.count, state.gravity, W, H);
+    }
+
+    function currentArrays() {
+      if (state.mode === 'wasm' && views) return views;
+      return jsSim;
+    }
+
+    function reset() {
+      if (state.mode === 'wasm') initWasm();
+      else {
+        jsSim = jsSim || new PhysicsJS();
+        jsSim.init(state.count, W, H);
+      }
+      ctx.fillStyle = '#01030a';
+      ctx.fillRect(0, 0, W, H);
+      history.length = 0;
+      frameStepTimes.length = 0;
+    }
+
+    function setMode(next) {
+      state.mode = next;
+      document.querySelectorAll('#mode-seg button').forEach((b) => {
+        b.classList.toggle('active', b.dataset.mode === next);
+      });
+      $('mode-badge').textContent = next === 'wasm' ? 'WASM' : 'JS';
+      $('sim-caption').textContent = next === 'wasm' ? 'latent particles.wasm' : 'javascript twin';
+      reset();
+    }
+
+    function attractors() {
+      if (state.mode === 'wasm' && wasm) {
+        const dv = new DataView(wasm.memory.buffer);
+        return [
+          [W * 8 + dv.getInt32(48, true), H * 8 + dv.getInt32(52, true)],
+          [W * 8 + dv.getInt32(56, true), H * 8 + dv.getInt32(60, true)],
+          [W * 8 + dv.getInt32(64, true), H * 8 + dv.getInt32(68, true)],
+        ];
+      }
+      return [
+        [W * 8 + jsSim.r0x, H * 8 + jsSim.r0y],
+        [W * 8 + jsSim.r1x, H * 8 + jsSim.r1y],
+        [W * 8 + jsSim.r2x, H * 8 + jsSim.r2y],
+      ];
+    }
+
+    // ---- rendering: additive particles + trails ----
+    function render() {
+      const arr = currentArrays();
+      if (!arr) return;
+      const fade = state.fade;
+
+      for (let i = 0; i < data.length; i += 4) {
+        data[i] = data[i] * fade;
+        data[i + 1] = data[i + 1] * fade;
+        data[i + 2] = data[i + 2] * fade;
+        data[i + 3] = 255;
+      }
+
+      const n = Math.min(state.count, PHYSICS_MAX);
+      for (let i = 0; i < n; i++) {
+        const px = arr.x[i] >> 4;
+        const py = arr.y[i] >> 4;
+        if (px < 1 || py < 1 || px >= W - 1 || py >= H - 1) continue;
+        const speed = (Math.abs(arr.vx[i]) + Math.abs(arr.vy[i])) >> 3;
+        const ci = speed > 255 ? 255 : speed;
+        const cr = palette[ci * 3];
+        const cg = palette[ci * 3 + 1];
+        const cb = palette[ci * 3 + 2];
+        const o = (py * W + px) * 4;
+        data[o] = data[o] + cr;
+        data[o + 1] = data[o + 1] + cg;
+        data[o + 2] = data[o + 2] + cb;
+        // 4-neighbour halo
+        data[o - 4] = data[o - 4] + (cr >> 1);
+        data[o - 3] = data[o - 3] + (cg >> 1);
+        data[o - 2] = data[o - 2] + (cb >> 1);
+        data[o + 4] = data[o + 4] + (cr >> 1);
+        data[o + 5] = data[o + 5] + (cg >> 1);
+        data[o + 6] = data[o + 6] + (cb >> 1);
+        data[o - W * 4] = data[o - W * 4] + (cr >> 2);
+        data[o - W * 4 + 1] = data[o - W * 4 + 1] + (cg >> 2);
+        data[o - W * 4 + 2] = data[o - W * 4 + 2] + (cb >> 2);
+        data[o + W * 4] = data[o + W * 4] + (cr >> 2);
+        data[o + W * 4 + 1] = data[o + W * 4 + 1] + (cg >> 2);
+        data[o + W * 4 + 2] = data[o + W * 4 + 2] + (cb >> 2);
+      }
+
+      ctx.putImageData(image, 0, 0);
+
+      // attractor cores
+      ctx.globalCompositeOperation = 'lighter';
+      const cores = attractors();
+      const colors = ['94, 234, 212', '253, 164, 175', '196, 181, 253'];
+      for (let i = 0; i < cores.length; i++) {
+        const [ax, ay] = cores[i];
+        const x = ax / 16;
+        const y = ay / 16;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, 34);
+        g.addColorStop(0, `rgba(${colors[i]}, 0.9)`);
+        g.addColorStop(0.25, `rgba(${colors[i]}, 0.32)`);
+        g.addColorStop(1, `rgba(${colors[i]}, 0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, 34, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    // ---- graph ----
+    const history = [];
+    const graph = $('graph');
+    const gctx = graph.getContext('2d');
+
+    function drawGraph(stepMs) {
+      history.push(stepMs);
+      if (history.length > 90) history.shift();
+      const w = graph.width;
+      const h = graph.height;
+      gctx.clearRect(0, 0, w, h);
+      gctx.strokeStyle = 'rgba(148, 180, 220, 0.12)';
+      gctx.lineWidth = 1;
+      for (let y = 0; y < h; y += 18) {
+        gctx.beginPath();
+        gctx.moveTo(0, y + 0.5);
+        gctx.lineTo(w, y + 0.5);
+        gctx.stroke();
+      }
+      const max = 1.5;
+      gctx.beginPath();
+      for (let i = 0; i < history.length; i++) {
+        const x = (i / Math.max(1, history.length - 1)) * w;
+        const y = h - Math.min(1, history[i] / max) * (h - 4) - 2;
+        if (i === 0) gctx.moveTo(x, y);
+        else gctx.lineTo(x, y);
+      }
+      gctx.strokeStyle = '#5eead4';
+      gctx.lineWidth = 1.6;
+      gctx.stroke();
+      const last = history[history.length - 1] || 0;
+      gctx.fillStyle = '#fda4af';
+      gctx.beginPath();
+      gctx.arc(w - 2, h - Math.min(1, last / max) * (h - 4) - 2, 2.2, 0, Math.PI * 2);
+      gctx.fill();
+    }
+
+    // ---- metrics / loop ----
+    const frameStepTimes = [];
+    let lastTick = performance.now();
+    let fpsSmooth = 60;
+    let lastMetrics = 0;
+
+    function loop(now) {
+      requestAnimationFrame(loop);
+      const dt = now - lastTick;
+      lastTick = now;
+      if (dt > 0 && dt < 500) fpsSmooth = fpsSmooth * 0.9 + (1000 / dt) * 0.1;
+      if (state.paused) return;
+
+      const t0 = performance.now();
+      if (state.mode === 'wasm') stepWasm();
+      else stepJS();
+      const stepMs = performance.now() - t0;
+      frameStepTimes.push(stepMs);
+      if (frameStepTimes.length > 180) frameStepTimes.shift();
+
+      render();
+      drawGraph(stepMs);
+
+      if (now - lastMetrics > 300) {
+        lastMetrics = now;
+        const recent = frameStepTimes.slice(-60);
+        const med = median(recent);
+        $('m-step').textContent = formatMs(med);
+        $('m-p95').textContent = formatMs(p95(recent));
+        $('m-fps').textContent = fpsSmooth.toFixed(0);
+        $('m-count').textContent = state.count.toLocaleString('ru-RU');
+        $('graph-label').textContent = `${formatMs(med)} · p95 ${formatMs(p95(recent))}`;
+      }
+    }
+
+    // ---- controls ----
+    document.querySelectorAll('#mode-seg button').forEach((b) => {
+      b.addEventListener('click', () => setMode(b.dataset.mode));
+    });
+    $('count').addEventListener('input', (e) => {
+      state.count = Number(e.target.value);
+      $('count-out').textContent = state.count.toLocaleString('ru-RU');
+      reset();
+    });
+    $('gravity').addEventListener('input', (e) => {
+      state.gravity = Number(e.target.value);
+      $('gravity-out').textContent = String(state.gravity);
+    });
+    $('trail').addEventListener('input', (e) => {
+      state.fade = Number(e.target.value) / 100;
+      $('trail-out').textContent = `${e.target.value}%`;
+    });
+    $('reset').addEventListener('click', reset);
+    $('pause').addEventListener('click', () => {
+      state.paused = !state.paused;
+      $('pause').textContent = state.paused ? 'Продолжить' : 'Пауза';
+    });
+
+    function checksumOf(arrays, n) {
+      let h = 0;
+      for (let i = 0; i < n; i++) {
+        h = (Math.imul(h, 31) + arrays.x[i]) | 0;
+        h = (Math.imul(h, 31) + arrays.y[i]) | 0;
+        h = (Math.imul(h, 31) + arrays.vx[i]) | 0;
+        h = (Math.imul(h, 31) + arrays.vy[i]) | 0;
+      }
+      return h >>> 0;
+    }
+
+    $('check').addEventListener('click', async () => {
+      const btn = $('check');
+      btn.disabled = true;
+      const out = $('bench-out');
+      out.innerHTML = '<div class="row"><span class="spinner"></span><span class="dim">120 шагов в двух рантаймах…</span></div>';
+      await nextFrame();
+      try {
+        // fresh state for both
+        jsSim = jsSim || new PhysicsJS();
+        jsSim.init(state.count, W, H);
+        initWasm();
+        for (let i = 0; i < 120; i++) {
+          stepWasm();
+          jsSim.step(state.count, state.gravity, W, H);
+        }
+        const a = checksumOf(views, state.count);
+        const b = checksumOf(jsSim, state.count);
+        let diffs = 0;
+        for (let i = 0; i < state.count; i++) {
+          if (views.x[i] !== jsSim.x[i] || views.y[i] !== jsSim.y[i] ||
+              views.vx[i] !== jsSim.vx[i] || views.vy[i] !== jsSim.vy[i]) diffs++;
+        }
+        const ok = a === b && diffs === 0;
+        $('parity-badge').className = 'badge ' + (ok ? 'ok' : 'bad');
+        $('parity-badge').textContent = ok ? 'parity ✓ 120 шагов' : `parity ✗ ${diffs}`;
+        out.innerHTML = `<div class="badge ${ok ? 'ok' : 'bad'}">${ok ? '✓ траектории совпали бит в бит' : `✗ ${diffs} частиц расходятся`}</div>
+          <div class="dim">checksum ${a} · шагов 120 · частиц ${state.count}</div>`;
+        reset();
+      } catch (err) {
+        out.innerHTML = `<div class="badge bad">ошибка: ${err.message}</div>`;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    $('bench').addEventListener('click', async () => {
+      const btn = $('bench');
+      btn.disabled = true;
+      const out = $('bench-out');
+      out.innerHTML = '<div class="row"><span class="spinner"></span><span class="dim">по 120 шагов, только интегратор…</span></div>';
+      await nextFrame();
+      try {
+        jsSim = jsSim || new PhysicsJS();
+        jsSim.init(state.count, W, H);
+        initWasm();
+
+        // warm-up
+        for (let i = 0; i < 10; i++) { stepWasm(); jsSim.step(state.count, state.gravity, W, H); }
+
+        const jsTimes = [];
+        const wasmTimes = [];
+        for (let b = 0; b < 12; b++) {
+          let t = performance.now();
+          for (let i = 0; i < 10; i++) stepJS();
+          jsTimes.push((performance.now() - t) / 10);
+          t = performance.now();
+          for (let i = 0; i < 10; i++) stepWasm();
+          wasmTimes.push((performance.now() - t) / 10);
+        }
+        const jsMs = median(jsTimes);
+        const wasmMs = median(wasmTimes);
+        const ratio = jsMs / wasmMs;
+        const max = Math.max(jsMs, wasmMs);
+        const ok = checksumOf(views, state.count) === checksumOf(jsSim, state.count);
+        out.innerHTML = `
+          <div class="bench-row js"><span>JS</span><span class="bar"><i style="width:${(jsMs / max) * 100}%"></i></span><span class="mono">${formatMs(jsMs)}</span></div>
+          <div class="bench-row wasm"><span>WASM</span><span class="bar"><i style="width:${(wasmMs / max) * 100}%"></i></span><span class="mono">${formatMs(wasmMs)}</span></div>
+          <div class="spread">
+            <span class="badge ${ratio >= 1 ? 'ok' : 'warn'}">${ratio >= 1 ? `Latent ×${ratio.toFixed(2)}` : `JS ×${(1 / ratio).toFixed(2)}`}</span>
+            <span class="badge ${ok ? 'ok' : 'bad'}">${ok ? 'checksum ✓' : 'checksum ✗'}</span>
+          </div>
+          <div class="dim">p95: JS ${formatMs(p95(jsTimes))} · WASM ${formatMs(p95(wasmTimes))}</div>
+        `;
+        reset();
+      } catch (err) {
+        out.innerHTML = `<div class="badge bad">ошибка: ${err.message}</div>`;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // ---- source ----
+    fetch('./particles.lat')
+      .then((r) => (r.ok ? r.text() : '// не удалось загрузить particles.lat'))
+      .then((text) => {
+        $('source').innerHTML = highlightLatent(text);
+        $('source-meta').textContent = `${text.split('\n').length} строк`;
+      });
+
+    await loadWasm();
+    if (!wasm) setMode('js');
+    else reset();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

@@ -2,7 +2,7 @@
 
 Документ описывает `src/` — компилятор Latent → WebAssembly («движок №2»),
 принципы его декомпозиции, публичный контракт и инварианты. Обзор всего
-репозитория — в корневом [`ARCHITECTURE.md`](../../../ARCHITECTURE.md).
+репозитория — в корневом [`ARCHITECTURE.md`](https://github.com/jegius/latent/blob/part10-toolchain/ARCHITECTURE.md).
 
 ## 1. Слои и поток данных
 
@@ -118,7 +118,7 @@ pub extern "C" fn latent_version() -> *mut u8;
 ## 6. Тесты и покрытие
 
 ```pwsh
-# все тесты (202 базовых + новые на покрытие)
+# все тесты: 265 (было 202 до декомпозиции и добавления тестов на покрытие)
 cargo +stable-x86_64-pc-windows-gnu test
 
 # golden: 48 программ (23 фикстуры + 24 примера web-ide + selfhost/shc.lat)

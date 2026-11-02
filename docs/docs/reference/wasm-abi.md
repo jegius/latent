@@ -6,8 +6,8 @@ sidebar_position: 9
 
 # WASM ABI
 
-Источники: `src/codegen/module_builder.rs`, `sections.rs`, `memory.rs`,
-`runtime_helpers.rs`, `emit_lambda.rs`, `emit_enum.rs`, `context.rs`,
+Источники: `src/codegen/module_builder/`, `sections.rs`, `memory.rs`,
+`runtime_helpers/`, `emit_lambda.rs`, `emit_enum.rs`, `context.rs`,
 `src/lib.rs` (C-ABI компилятора). Модуль собирается вручную байт-в-байт — без
 `wasm-bindgen` и без WASI.
 

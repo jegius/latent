@@ -18,14 +18,17 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const SRC = join(ROOT, "web-ide");
+// Если собрана production-версия web-ide (vite build:chunks → dist/ с
+// ленивыми чанками), публикуем её; иначе — исходники (dev-режим без сборки).
+const DIST = join(ROOT, "web-ide", "dist");
+const SRC = existsSync(DIST) ? DIST : join(ROOT, "web-ide");
 const DST = join(ROOT, "docs", "static", "playground");
 
 // Всё, что не нужно в опубликованной IDE: тесты, метаданные пакета, README.
 const EXCLUDE_DIRS = new Set(["node_modules", "test", ".git"]);
 const EXCLUDE_FILES = new Set(["package.json", "pnpm-lock.yaml", "package-lock.json", "README.md"]);
 
-/** Рекурсивно копирует web-ide → docs/static/playground с фильтрацией. */
+/** Рекурсивно копирует web-ide (dist или source) → docs/static/playground. */
 function sync() {
   if (!existsSync(SRC)) {
     console.error(`[sync-playground] нет каталога ${SRC}`);
@@ -45,18 +48,23 @@ function sync() {
   });
 
   const count = countFiles(DST);
-  console.log(`[sync-playground] web-ide → ${DST} (${count} файлов)`);
+  const mode = SRC === DIST ? "production-сборка (dist, ленивые чанки)" : "исходники (dev)";
+  console.log(`[sync-playground] ${mode} → ${DST} (${count} файлов)`);
 }
 
 /** Проверяет, что playground собран и web IDE там есть. */
 function check() {
   const index = join(DST, "index.html");
-  const wasm = join(DST, "compiler.wasm");
-  const ok = existsSync(index) && existsSync(wasm);
+  const wasmDirect = join(DST, "compiler.wasm");
+  const wasmInAssets = existsSync(DST)
+    ? readdirSync(join(DST, "assets"), { recursive: true })
+        .some((f) => String(f).endsWith(".wasm"))
+    : false;
+  const ok = existsSync(index) && (existsSync(wasmDirect) || wasmInAssets);
   console.log(
     ok
-      ? `[sync-playground] OK: ${DST} готов (index.html + compiler.wasm)`
-      : `[sync-playground] playground не собран: ${index} / ${wasm}`,
+      ? `[sync-playground] OK: ${DST} готов (index.html + wasm${wasmInAssets ? " в assets/" : ""})`
+      : `[sync-playground] playground не собран: ${index} / wasm`,
   );
   return ok;
 }

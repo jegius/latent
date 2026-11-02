@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Latent — фильтры изображений на canvas</title>
+  <meta name="description" content="Grayscale, box blur, Sobel и threshold в Latent→WASM против того же кода на JS. ImageData живёт в линейной памяти, canvas показывает результат." />
+  <script>
+    // Keep relative URLs stable whether the host serves /demos/image or
+    // /demos/image/ (Docusaurus serve drops the trailing slash).
+    (() => {
+      const m = location.pathname.match(/^(.*\/demos)(?:\/(bench|image|physics))?\/?$/);
+      if (!m) return;
+      const base = document.createElement('base');
+      base.href = `${m[1]}/${m[2] ? `${m[2]}/` : ''}`;
+      document.head.appendChild(base);
+    })();
+  </script>
+  <link rel="stylesheet" href="../assets/demo.css" />
+  <style>
+    .stage {
+      position: relative;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: #02040a;
+      aspect-ratio: 4 / 3;
+    }
+    .stage canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    #view-original {
+      clip-path: inset(0 calc(100% - var(--split, 0%)) 0 0);
+      transition: clip-path 0.04s linear;
+    }
+    .stage::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 3px);
+      mix-blend-mode: overlay;
+    }
+    .split-line {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: var(--split, 0%);
+      width: 2px;
+      background: linear-gradient(180deg, transparent, var(--teal), transparent);
+      box-shadow: 0 0 18px rgba(94, 234, 212, 0.8);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .split-line.on { opacity: 1; }
+    .stage-wrap { display: flex; flex-direction: column; gap: 12px; }
+    .legend {
+      display: flex;
+      justify-content: space-between;
+      color: var(--dim);
+      font-family: var(--mono);
+      font-size: 10.5px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .filter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .filter-btn {
+      appearance: none;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--muted);
+      border-radius: 11px;
+      padding: 11px 12px;
+      text-align: left;
+      cursor: pointer;
+      font: 600 12.5px/1.25 var(--sans);
+      transition: 0.15s;
+    }
+    .filter-btn small { display: block; font: 500 10.5px/1.4 var(--mono); color: var(--dim); margin-top: 4px; }
+    .filter-btn:hover { border-color: var(--line-strong); color: var(--text); }
+    .filter-btn.active { border-color: rgba(94, 234, 212, 0.4); background: rgba(94, 234, 212, 0.09); color: var(--teal); }
+    .filter-btn.active small { color: rgba(94, 234, 212, 0.7); }
+    .compare { display: flex; flex-direction: column; gap: 6px; }
+    @media (max-width: 620px) { .filter-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <a class="brand" href="../"><span class="brand-mark">λ</span> Latent demos</a>
+      <nav class="topnav">
+        <a href="../">Обзор</a>
+        <a href="../bench/">Бенчмарк</a>
+        <a class="active" href="./">Изображения</a>
+        <a href="../physics/">Физика</a>
+        <a class="keep" href="../../examples/frontend-showcase">Документация</a>
+        <span class="tag">CANVAS</span>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="wrap hero">
+      <p class="eyebrow">480 × 360 RGBA · ImageData ⇄ linear memory · 60 fps</p>
+      <h1>Пиксели.<br /><span class="grad">Целочисленно и предсказуемо.</span></h1>
+      <p class="lead">
+        Слева — <strong>Latent→WASM</strong>, справа — тот же алгоритм на JavaScript.
+        RGBA-байты лежат в линейной памяти, фильтр проходит по ним одним циклом,
+        результат возвращается на canvas. Переключайте режим и фильтр: миллисекунды
+        считает ваш браузер.
+      </p>
+      <div class="hero-actions">
+        <span class="badge ok" id="wasm-status"><span class="spinner"></span> загрузка filter.wasm…</span>
+        <span class="badge" id="parity-badge">parity: —</span>
+        <button class="btn btn-sm" id="pause" type="button">Пауза</button>
+      </div>
+      <div class="hero-meta">
+        <span><b>4</b> фильтра</span>
+        <span><b>691 200</b> байтов на кадр</span>
+        <span><b>0</b> аллокаций в кадре</span>
+        <span><b>1</b> линейный буфер</span>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="grid grid-2">
+        <div class="panel">
+          <div class="stage-wrap">
+            <div class="stage" id="stage">
+              <canvas id="view" width="480" height="360"></canvas>
+              <canvas id="view-original" width="480" height="360"></canvas>
+              <div class="split-line" id="split-line"></div>
+            </div>
+            <div class="legend">
+              <span id="legend-left">Latent → WASM</span>
+              <span id="legend-right">исходник</span>
+            </div>
+            <div class="compare">
+              <div class="field-row"><span>Сравнить с оригиналом</span><output id="split-out">0%</output></div>
+              <input type="range" id="split" min="0" max="100" value="0" step="1" aria-label="Сравнение с оригиналом" />
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="spread" style="margin-bottom: 10px">
+            <h2 style="font-size:19px">Управление</h2>
+            <span class="badge" id="mode-badge">WASM</span>
+          </div>
+
+          <div class="stack">
+            <div>
+              <div class="field-row" style="margin-bottom: 6px"><span>Рантайм</span></div>
+              <div class="segmented" id="mode-seg">
+                <button type="button" class="active" data-mode="wasm">Latent → WASM</button>
+                <button type="button" data-mode="js">JavaScript</button>
+              </div>
+            </div>
+
+            <div>
+              <div class="field-row" style="margin-bottom: 6px"><span>Фильтр</span></div>
+              <div class="filter-grid" id="filter-grid">
+                <button class="filter-btn active" type="button" data-filter="1">Grayscale<small>luma = (77r+150g+29b)>>8</small></button>
+                <button class="filter-btn" type="button" data-filter="2">Box blur<small>скользящее окно</small></button>
+                <button class="filter-btn" type="button" data-filter="3">Sobel<small>края по luma</small></button>
+                <button class="filter-btn" type="button" data-filter="4">Threshold<small>бинаризация</small></button>
+              </div>
+            </div>
+
+            <div class="field" id="radius-field">
+              <div class="field-row"><span>Радиус blur</span><output id="radius-out">6 px</output></div>
+              <input type="range" id="radius" min="0" max="16" value="6" step="1" />
+            </div>
+
+            <div class="field hidden" id="cut-field">
+              <div class="field-row"><span>Порог</span><output id="cut-out">140</output></div>
+              <input type="range" id="cut" min="0" max="255" value="140" step="1" />
+            </div>
+
+            <div class="row">
+              <button class="btn btn-primary" id="bench" type="button">Сравнить 40 кадров</button>
+              <button class="btn" id="check" type="button">Проверить parity</button>
+            </div>
+
+            <div class="stack-sm small" id="bench-out">
+              <div class="dim">Запустите сравнение — JS и WASM выполнят одинаковую работу на одном кадре.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="metrics">
+        <div class="metric accent">
+          <div class="k">фильтр</div>
+          <div class="v" id="m-ms">—</div>
+        </div>
+        <div class="metric blue">
+          <div class="k">FPS</div>
+          <div class="v" id="m-fps">—</div>
+        </div>
+        <div class="metric">
+          <div class="k">p95</div>
+          <div class="v" id="m-p95">—</div>
+        </div>
+        <div class="metric">
+          <div class="k">throughput</div>
+          <div class="v" id="m-mp">—</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="grid grid-hero">
+        <div class="panel">
+          <h2 style="font-size:20px">Почему здесь Latent, а не JS</h2>
+          <div class="stack-sm" style="margin-top: 12px">
+            <p class="muted small" style="margin:0">
+              <b style="color:var(--text)">Ноль копий на кадр.</b> Хост один раз пишет
+              <code class="mono">ImageData</code> в память модуля, дальше фильтр работает с
+              указателем. Наружу — тоже указатель: <code class="mono">new ImageData(view)</code>
+              читает память WASM напрямую, без промежуточного массива.
+            </p>
+            <p class="muted small" style="margin:0">
+              <b style="color:var(--text)">Только целые числа.</b> Luma, blur и Sobel считаются
+              в <code class="mono">i32</code>. Никаких <code class="mono">float</code>-округлений
+              и различий между браузерами: результат совпадает бит в бит с JS-двойником.
+            </p>
+            <p class="muted small" style="margin:0">
+              <b style="color:var(--text)">Стабильное время кадра.</b> В горячем цикле нет
+              объектов и аллокаций — нечему запускать GC. Для видео, эффектов и игр важна
+              не средняя скорость, а отсутствие редких «залипаний».
+            </p>
+            <p class="muted small" style="margin:0">
+              <b style="color:var(--text)">Песочница.</b> Модуль не видит DOM и сеть; вы сами
+              решаете, какие байты положить в его память. Это удобно, если фильтр пришёл
+              из недоверенного источника.
+            </p>
+          </div>
+        </div>
+        <div class="panel panel-flat">
+          <h3>Что именно измеряется</h3>
+          <p class="sub">
+            Только вызов фильтра. <code class="mono">putImageData</code>, отрисовка и rAF —
+            снаружи замера, чтобы сравнивать алгоритмы, а не canvas.
+          </p>
+          <hr class="hr" />
+          <div class="stack-sm small mono">
+            <div class="spread"><span class="dim">вход</span><span>480×360×4 = 691 200 B</span></div>
+            <div class="spread"><span class="dim">blur</span><span>2 прохода, окно 2r+1</span></div>
+            <div class="spread"><span class="dim">sobel</span><span>9 luma на пиксель</span></div>
+            <div class="spread"><span class="dim">аллокации</span><span style="color:var(--ok)">0 / кадр</span></div>
+          </div>
+          <hr class="hr" />
+          <p class="small dim" style="margin:0">
+            Исходник модуля — <code class="mono">image/filter.lat</code>. Компилируется тем же
+            <code class="mono">compiler.wasm</code>, что и остальные демо.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="code">
+        <div class="code-head">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span>image/filter.lat</span>
+          <span style="margin-left:auto" id="source-meta">—</span>
+        </div>
+        <pre><code id="source">// загрузка исходника…</code></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap footer">
+    <span>Latent demos · ImageData → linear memory → canvas</span>
+    <span class="row">
+      <a href="../">Все демо</a><span class="dim">/</span>
+      <a href="../bench/">Бенчмарк</a><span class="dim">/</span>
+      <a href="../physics/">Физика</a><span class="dim">/</span>
+      <a href="../../examples/frontend-showcase">frontend-showcase</a>
+    </span>
+  </footer>
+
+  <script type="module">
+    import {filterJS, checksum} from '../assets/imaging.js';
+    import {
+      instantiateLatent, formatBytes, formatMs, median, p95, nextFrame,
+    } from '../assets/wasm.js';
+    import {highlightLatent} from '../assets/highlight.js';
+
+    const W = 480;
+    const H = 360;
+    const SIZE = W * H * 4;
+    const $ = (id) => document.getElementById(id);
+
+    const view = $('view');
+    const ctx = view.getContext('2d');
+    const origView = $('view-original');
+    const origCtx = origView.getContext('2d');
+
+    function paintSource() {
+      const c = document.createElement('canvas');
+      c.width = W;
+      c.height = H;
+      const g = c.getContext('2d');
+
+      const sky = g.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0, '#0b1e3a');
+      sky.addColorStop(0.42, '#1d4f7a');
+      sky.addColorStop(0.58, '#f59e0b');
+      sky.addColorStop(0.75, '#7c2d12');
+      sky.addColorStop(1, '#140a12');
+      g.fillStyle = sky;
+      g.fillRect(0, 0, W, H);
+
+      const sunX = 322;
+      const sunY = 168;
+      const glow = g.createRadialGradient(sunX, sunY, 4, sunX, sunY, 130);
+      glow.addColorStop(0, 'rgba(255, 244, 214, 0.95)');
+      glow.addColorStop(0.25, 'rgba(251, 191, 36, 0.55)');
+      glow.addColorStop(1, 'rgba(251, 191, 36, 0)');
+      g.fillStyle = glow;
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = '#fff7d6';
+      g.beginPath();
+      g.arc(sunX, sunY, 26, 0, Math.PI * 2);
+      g.fill();
+
+      const layers = [
+        {y: 232, color: '#17324d', peak: 0.32, seed: 1.1},
+        {y: 258, color: '#102538', peak: 0.24, seed: 2.3},
+        {y: 282, color: '#0a1824', peak: 0.18, seed: 3.7},
+      ];
+      for (const layer of layers) {
+        g.fillStyle = layer.color;
+        g.beginPath();
+        g.moveTo(0, H);
+        g.lineTo(0, layer.y + 30);
+        for (let x = 0; x <= W; x += 6) {
+          const t = x / W;
+          const h =
+            Math.sin(t * 9 * layer.seed + layer.seed) * 22 * layer.peak * 6 +
+            Math.sin(t * 23 + layer.seed * 2) * 10 * layer.peak * 6 +
+            Math.cos(t * 5 + layer.seed) * 14;
+          g.lineTo(x, layer.y + h);
+        }
+        g.lineTo(W, H);
+        g.closePath();
+        g.fill();
+      }
+
+      const water = g.createLinearGradient(0, 282, 0, H);
+      water.addColorStop(0, 'rgba(13, 148, 136, 0.32)');
+      water.addColorStop(1, 'rgba(2, 6, 23, 0.92)');
+      g.fillStyle = water;
+      g.fillRect(0, 282, W, H - 282);
+      for (let i = 0; i < 60; i++) {
+        const y = 286 + i * 1.3;
+        const w = 30 + Math.random() * 150;
+        g.fillStyle = `rgba(251, 191, 36, ${0.03 + Math.random() * 0.05})`;
+        g.fillRect(sunX - w / 2 + Math.sin(i) * 20, y, w, 1);
+      }
+
+      g.strokeStyle = 'rgba(94, 234, 212, 0.28)';
+      g.lineWidth = 1;
+      for (let x = 0; x < W; x += 32) {
+        g.beginPath();
+        g.moveTo(x, 300);
+        g.lineTo(x + 60, H);
+        g.stroke();
+      }
+      for (let y = 300; y < H; y += 14) {
+        g.beginPath();
+        g.moveTo(0, y);
+        g.lineTo(W, y);
+        g.stroke();
+      }
+
+      g.fillStyle = 'rgba(2, 6, 23, 0.55)';
+      g.strokeStyle = 'rgba(94, 234, 212, 0.5)';
+      g.lineWidth = 1.5;
+      g.beginPath();
+      g.roundRect(28, 38, 250, 86, 14);
+      g.fill();
+      g.stroke();
+
+      g.fillStyle = '#eafffb';
+      g.font = '800 40px Inter, system-ui, sans-serif';
+      g.fillText('LATENT', 46, 88);
+      g.fillStyle = 'rgba(94, 234, 212, 0.85)';
+      g.font = '600 12px "JetBrains Mono", Consolas, monospace';
+      g.fillText('WASM · 480×360 · RGBA', 47, 109);
+
+      const discs = [
+        [86, 292, 22, '#f472b6'],
+        [150, 305, 15, '#5eead4'],
+        [405, 300, 26, '#a78bfa'],
+        [445, 330, 12, '#bef264'],
+        [380, 252, 9, '#fda4af'],
+      ];
+      for (const [x, y, r, color] of discs) {
+        const rg = g.createRadialGradient(x - r * 0.3, y - r * 0.3, 1, x, y, r);
+        rg.addColorStop(0, '#ffffff');
+        rg.addColorStop(0.35, color);
+        rg.addColorStop(1, 'rgba(2, 6, 23, 0.1)');
+        g.fillStyle = rg;
+        g.beginPath();
+        g.arc(x, y, r, 0, Math.PI * 2);
+        g.fill();
+      }
+
+      const img = g.getImageData(0, 0, W, H);
+      const d = img.data;
+      let seed = 7;
+      for (let i = 0; i < d.length; i += 4) {
+        seed = (Math.imul(seed, 1103515245) + 12345) | 0;
+        const n = ((seed >>> 16) & 15) - 7;
+        d[i] = Math.max(0, Math.min(255, d[i] + n));
+        d[i + 1] = Math.max(0, Math.min(255, d[i + 1] + n));
+        d[i + 2] = Math.max(0, Math.min(255, d[i + 2] + n));
+      }
+      g.putImageData(img, 0, 0);
+      return img;
+    }
+
+    const sourceImage = paintSource();
+    const src = sourceImage.data;
+    origCtx.putImageData(sourceImage, 0, 0);
+
+    const jsDst = new Uint8ClampedArray(SIZE);
+    const jsTmp = new Uint8ClampedArray(SIZE);
+    const jsImage = new ImageData(jsDst, W, H);
+
+    let wasmReady = false;
+    let wasmDstView = null;
+    let wasmImage = null;
+
+    async function loadWasm() {
+      try {
+        const res = await fetch('./filter.wasm');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        const instance = await instantiateLatent(bytes);
+        const base = instance.exports.main(0, W, H, 0, 0);
+        new Uint8Array(instance.exports.memory.buffer).set(src, base);
+        const dst = instance.exports.main(1, W, H, 0, 0);
+        wasmDstView = new Uint8ClampedArray(instance.exports.memory.buffer, dst, SIZE);
+        wasmImage = new ImageData(wasmDstView, W, H);
+        window.__filterMain = instance.exports.main;
+        wasmReady = true;
+        $('wasm-status').className = 'badge ok';
+        $('wasm-status').textContent =
+          `filter.wasm · ${formatBytes(bytes.length)} · ${(instance.exports.memory.buffer.byteLength / 1048576).toFixed(1)} MiB memory`;
+      } catch (err) {
+        console.error(err);
+        $('wasm-status').className = 'badge bad';
+        $('wasm-status').textContent = 'filter.wasm не загрузился — остаётся JS';
+        mode = 'js';
+      }
+    }
+
+    const state = {
+      mode: 'wasm',
+      filter: 1,
+      radius: 6,
+      cut: 140,
+      paused: false,
+    };
+    let mode = state.mode;
+
+    function applyFilter() {
+      if (mode === 'wasm' && wasmReady) {
+        const t0 = performance.now();
+        window.__filterMain(state.filter, W, H, state.radius, state.cut);
+        const ms = performance.now() - t0;
+        ctx.putImageData(wasmImage, 0, 0);
+        return ms;
+      }
+      const t0 = performance.now();
+      filterJS(src, jsDst, W, H, state.filter, state.radius, state.cut, jsTmp);
+      const ms = performance.now() - t0;
+      ctx.putImageData(jsImage, 0, 0);
+      return ms;
+    }
+
+    const frameTimes = [];
+    let lastTick = performance.now();
+    let fpsSmooth = 60;
+    let lastMetrics = 0;
+
+    function loop(now) {
+      requestAnimationFrame(loop);
+      const dt = now - lastTick;
+      lastTick = now;
+      if (dt > 0 && dt < 500) fpsSmooth = fpsSmooth * 0.9 + (1000 / dt) * 0.1;
+      if (state.paused) return;
+      const ms = applyFilter();
+      frameTimes.push(ms);
+      if (frameTimes.length > 120) frameTimes.shift();
+      if (now - lastMetrics > 300) {
+        lastMetrics = now;
+        const recent = frameTimes.slice(-60);
+        const med = median(recent);
+        $('m-ms').textContent = formatMs(med);
+        $('m-p95').textContent = formatMs(p95(recent));
+        $('m-fps').textContent = fpsSmooth.toFixed(0);
+        $('m-mp').textContent = med > 0
+          ? `${((W * H) / 1e6 / (med / 1000)).toFixed(1)} MP/s`
+          : '—';
+      }
+    }
+
+    function setMode(next) {
+      mode = next;
+      state.mode = next;
+      document.querySelectorAll('#mode-seg button').forEach((b) => {
+        b.classList.toggle('active', b.dataset.mode === next);
+      });
+      $('mode-badge').textContent = next === 'wasm' ? 'WASM' : 'JS';
+      $('legend-left').textContent = next === 'wasm' ? 'Latent → WASM' : 'JavaScript';
+      frameTimes.length = 0;
+    }
+
+    function setFilter(f) {
+      state.filter = f;
+      document.querySelectorAll('#filter-grid button').forEach((b) => {
+        b.classList.toggle('active', Number(b.dataset.filter) === f);
+      });
+      $('radius-field').classList.toggle('hidden', f !== 2);
+      $('cut-field').classList.toggle('hidden', f !== 4);
+      frameTimes.length = 0;
+    }
+
+    document.querySelectorAll('#mode-seg button').forEach((b) => {
+      b.addEventListener('click', () => setMode(b.dataset.mode));
+    });
+    document.querySelectorAll('#filter-grid button').forEach((b) => {
+      b.addEventListener('click', () => setFilter(Number(b.dataset.filter)));
+    });
+    $('radius').addEventListener('input', (e) => {
+      state.radius = Number(e.target.value);
+      $('radius-out').textContent = `${state.radius} px`;
+    });
+    $('cut').addEventListener('input', (e) => {
+      state.cut = Number(e.target.value);
+      $('cut-out').textContent = String(state.cut);
+    });
+    $('split').addEventListener('input', (e) => {
+      const v = Number(e.target.value);
+      $('stage').style.setProperty('--split', `${v}%`);
+      $('split-out').textContent = `${v}%`;
+      $('split-line').style.left = `${v}%`;
+      $('split-line').classList.toggle('on', v > 0 && v < 100);
+    });
+    $('pause').addEventListener('click', () => {
+      state.paused = !state.paused;
+      $('pause').textContent = state.paused ? 'Продолжить' : 'Пауза';
+    });
+
+    function runOnce(filter, r, cut, useWasm) {
+      if (useWasm) {
+        window.__filterMain(filter, W, H, r, cut);
+        return checksum(wasmDstView);
+      }
+      filterJS(src, jsDst, W, H, filter, r, cut, jsTmp);
+      return checksum(jsDst);
+    }
+
+    $('check').addEventListener('click', () => {
+      if (!wasmReady) return;
+      const a = runOnce(state.filter, state.radius, state.cut, false);
+      const b = runOnce(state.filter, state.radius, state.cut, true);
+      let diff = 0;
+      for (let i = 0; i < SIZE; i++) if (jsDst[i] !== wasmDstView[i]) diff++;
+      const ok = a === b && diff === 0;
+      $('parity-badge').className = 'badge ' + (ok ? 'ok' : 'bad');
+      $('parity-badge').textContent = ok
+        ? `parity ✓ ${diff} байт различий`
+        : `parity ✗ ${diff} байт различий`;
+    });
+
+    $('bench').addEventListener('click', async () => {
+      if (!wasmReady) return;
+      const btn = $('bench');
+      btn.disabled = true;
+      const out = $('bench-out');
+      out.innerHTML = '<div class="row"><span class="spinner"></span><span class="dim">40 кадров × 2 рантайма…</span></div>';
+      await nextFrame();
+
+      const samples = {js: [], wasm: []};
+      let jsCheck = 0;
+      let wasmCheck = 0;
+      runOnce(state.filter, state.radius, state.cut, false);
+      runOnce(state.filter, state.radius, state.cut, true);
+      for (let i = 0; i < 40; i++) {
+        let t = performance.now();
+        if (i % 2 === 0) {
+          jsCheck = runOnce(state.filter, state.radius, state.cut, false);
+          samples.js.push(performance.now() - t);
+          t = performance.now();
+          wasmCheck = runOnce(state.filter, state.radius, state.cut, true);
+          samples.wasm.push(performance.now() - t);
+        } else {
+          wasmCheck = runOnce(state.filter, state.radius, state.cut, true);
+          samples.wasm.push(performance.now() - t);
+          t = performance.now();
+          jsCheck = runOnce(state.filter, state.radius, state.cut, false);
+          samples.js.push(performance.now() - t);
+        }
+      }
+      const jsMs = median(samples.js);
+      const wasmMs = median(samples.wasm);
+      const max = Math.max(jsMs, wasmMs);
+      const ok = jsCheck === wasmCheck;
+      const ratio = jsMs / wasmMs;
+      out.innerHTML = `
+        <div class="bench-row js"><span>JS</span><span class="bar"><i style="width:${(jsMs / max) * 100}%"></i></span><span class="mono">${formatMs(jsMs)}</span></div>
+        <div class="bench-row wasm"><span>WASM</span><span class="bar"><i style="width:${(wasmMs / max) * 100}%"></i></span><span class="mono">${formatMs(wasmMs)}</span></div>
+        <div class="spread" style="margin-top:6px">
+          <span class="badge ${ratio >= 1 ? 'ok' : 'warn'}">${ratio >= 1 ? `Latent ×${ratio.toFixed(2)} быстрее` : `JS ×${(1 / ratio).toFixed(2)} быстрее`}</span>
+          <span class="badge ${ok ? 'ok' : 'bad'}">${ok ? 'checksum ✓' : 'checksum ✗'}</span>
+        </div>
+        <div class="dim">p95: JS ${formatMs(p95(samples.js))} · WASM ${formatMs(p95(samples.wasm))}</div>
+      `;
+      $('parity-badge').className = 'badge ' + (ok ? 'ok' : 'bad');
+      $('parity-badge').textContent = ok ? 'parity ✓' : 'parity ✗';
+      btn.disabled = false;
+    });
+
+    fetch('./filter.lat')
+      .then((r) => (r.ok ? r.text() : '// не удалось загрузить filter.lat'))
+      .then((text) => {
+        $('source').innerHTML = highlightLatent(text);
+        $('source-meta').textContent = `${text.split('\n').length} строк · ${formatBytes(new Blob([text]).size)}`;
+      });
+
+    await loadWasm();
+    setFilter(1);
+    if (!wasmReady) setMode('js');
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

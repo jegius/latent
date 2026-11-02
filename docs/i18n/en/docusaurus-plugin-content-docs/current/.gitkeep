@@ -1,0 +1,8 @@
+# Каталог переводов контента (locale: en).
+#
+# Сюда кладутся markdown/mdx-переводы с той же структурой, что docs/docs/:
+#   i18n/en/docusaurus-plugin-content-docs/current/index.mdx
+#   i18n/en/docusaurus-plugin-content-docs/current/guide/functions.md
+# и т.д. Непереведённые страницы автоматически отдаются из defaultLocale (ru).
+#
+# Файл-заглушка, чтобы пустой каталог попадал в git.

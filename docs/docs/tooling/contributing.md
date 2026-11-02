@@ -16,15 +16,18 @@ sidebar_position: 6
 Cargo.toml               пакет latent (lib + bin latentc)
 src/                     Rust-компилятор Latent → WASM
   lexer/ ast/ parser/ typechecker/ codegen/ runtime/ ai/ fp/
+  codegen/emit_expr/ emit_call/ module_builder/ runtime_helpers/  подмодули кодогена
+  typechecker/infer/expr/  вызовы/builtins/эффекты тайп-чекера
   syntax.rs types.rs     «витринные» модели (в пайплайне не используются)
   lib.rs                 compile_source + C-ABI (latent_alloc/compile/...)
   bin/latentc.rs         CLI
 web-ide/                 браузерная IDE (ES-модули, без сборки)
   compiler/              движок №1 (JS) + загрузчик движка №2
   examples/              примеры *.lat (единый источник правды)
-  compiler.wasm          движок №2 (Rust→WASM), генерируемый артефакт
+  compiler.wasm          движок №2 (Rust→WASM), пересобран из текущего src/
 selfhost/                компилятор на Latent: src/*.lat, shc.lat, bootstrap
-scripts/                 sync-playground.mjs, build-wasm.sh
+scripts/                 sync-playground.mjs, build-wasm.sh, coverage-rust.ps1,
+                         check-golden.mjs, verify-wasm.mjs, integration.mjs
 docs/                    Docusaurus-сайт документации
 mcp/docs-mcp/            MCP-сервер документации
 tooling/language-data/   machine-readable данные о языке (JSON)
@@ -68,10 +71,10 @@ editors/idea/            плагин IntelliJ IDEA
 2. **AST** — `src/ast/expr.rs` или `src/ast/stmt.rs` (+ `ast/mod.rs` реэкспорт).
 3. **Парсер** — `src/parser/declarations.rs` / `statements.rs` /
    `expressions/` (+ `type_parser.rs`, если синтаксис в аннотациях).
-4. **Тайпчекер** — `src/typechecker/infer/expr.rs` / `stmt.rs` (+ `types/mod.rs`,
-   если нужен новый тип); решите, что именно проверяется.
-5. **Кодоген** — `src/codegen/emit_expr.rs` / `emit_stmt.rs` /
-   `emit_call.rs` / `module_builder.rs`; проверьте, что WASM валиден
+4. **Тайпчекер** — `src/typechecker/infer/expr/{mod,call,effects}.rs` / `stmt.rs`
+   (+ `types/mod.rs`, если нужен новый тип); решите, что именно проверяется.
+5. **Кодоген** — `src/codegen/emit_expr/` / `emit_call/` / `emit_stmt.rs` /
+   `module_builder/` / `runtime_helpers/`; проверьте, что WASM валиден
    (`WebAssembly.validate`).
 6. **Selfhost** — `selfhost/src/*.lat` (лексер/парсер/эмиссия) + пересборка
    `node selfhost/build.mjs`; сохраните фиксированную точку.
@@ -92,16 +95,26 @@ regression-тест, который проверяет `WebAssembly.validate`, �
 
 ## Тесты
 
-- Rust: `cargo test` (`src/lexer/tests`, `src/parser/tests`,
+Текущие цифры (см. [bootstrap](./bootstrap.md#5-полный-набор-проверок)):
+
+- Rust: `cargo test` — **265 тестов**; покрытие **91.00% строк / 93.53%
+  функций** (`pwsh scripts/coverage-rust.ps1`); golden-набор
+  `node scripts/check-golden.mjs` — **47 программ совпали байт-в-байт, 0
+  расхождений** (1 пропуск: `selfhost/shc.lat` изменён selfhost-агентом после
+  снятия эталона). Тесты: `src/lexer/tests`, `src/parser/tests`,
   `src/typechecker/tests`, `src/codegen/tests`, `src/runtime/tests`,
-  `src/ai/tests`, `src/fp/tests`).
-- web IDE: `node --test "web-ide/test/*.test.js"` — лексер/парсер/
-  интерпретатор, планировщик, AI, workspace, загрузчик движка №2, компиляция
-  примеров, продвинутые фичи.
-- selfhost: `node --test "selfhost/test/*.test.mjs"` — bootstrap, lexer,
-  scoping, differential features, детерминизм сборки.
-- docs: `node docs/scripts/validate-examples.mjs`.
-- mcp/lsp/vscode — см. [bootstrap](./bootstrap.md#5-полный-набор-проверок).
+  `src/ai/tests`, `src/fp/tests`.
+- web IDE: `node --test "web-ide/test/*.test.js"` — **368 тестов** (359 JS-тестов), покрытие **99.53% строк / 96.98% ветвей / 98.39% функций**; структурный аудит —
+  `pnpm run check:structure`.
+- selfhost: `node --test "selfhost/test/*.test.mjs"` — **166 тестов** (17 сьютов; 25 Rust-free в `bootstrap-wasm.test.mjs`), покрытие **94.56% функций / 96.68% строк**; `bootstrap.mjs` — фиксированная точка.
+- MCP: `node --test "mcp/docs-mcp/test/*.test.mjs"` — **300 тестов**.
+- LSP: `node --test "tooling/latent-lsp/test/*.test.mjs"` — **133 теста**.
+- VS Code: `node --test "editors/vscode/test/*.test.mjs"` — **70 тестов**,
+  покрытие строк 98.77%.
+- IDEA: `cd editors/idea && ./gradlew test` — **49 тестов**, `buildPlugin` —
+  zip в `build/distributions/`.
+- docs: `node docs/scripts/validate-examples.mjs` — **194 блока** (165 валидны, 29 помечены); сайт — **75 страниц RU + 75 EN**, `llms.txt`/`llms-en.txt` генерируются сборкой. Частые проблемы — см.
+  [bootstrap](./bootstrap.md).
 
 ## Git-процесс
 
@@ -124,7 +137,7 @@ regression-тест, который проверяет `WebAssembly.validate`, �
 | `tooling/language-data/**`, `tooling/latent-lsp/**` | language-lsp |
 | `mcp/docs-mcp/**` | docs-mcp |
 | `editors/vscode/**` / `editors/idea/**` | vscode / idea |
-| `selfhost/**` (+ `src/codegen/emit_call.rs` при необходимости) | selfhost |
+| `selfhost/**` (+ `src/codegen/emit_call/` при необходимости) | selfhost |
 | `README.md`, `.gitignore`, `scripts/sync-playground.mjs`, git-коммиты | Lead |
 
 ## Документация: правила примеров

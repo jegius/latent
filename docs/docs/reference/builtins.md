@@ -6,7 +6,8 @@ sidebar_position: 6
 
 # Встроенные функции и методы
 
-Источники: `src/codegen/emit_call.rs` (движок №2), `src/typechecker/infer/expr.rs`
+Источники: `src/codegen/emit_call/{mod,direct,method,constructors,array}.rs`
+(движок №2), `src/typechecker/infer/expr/{mod,call,effects}.rs`
 (типы builtins), `web-ide/compiler/interpreter-builtins.js` и
 `web-ide/compiler/value-utils.js` (движок №1).
 
@@ -194,14 +195,28 @@ memcopy(dst, src, len)
 
 Это небезопасные операции без проверки границ; добавлены для self-hosting
 (самим компилятором Latent на Latent они используются для записи байтов WASM —
-см. `selfhost/src/10_buffer.lat`). Подробности раскладки и аллокатора —
+см. `selfhost/src/10_buffer.lat`). Исходники — `src/codegen/emit_call/direct.rs`
+(`compile_memory_builtin`). Подробности раскладки и аллокатора —
 в [WASM ABI](./wasm-abi.md#память-и-аллокатор).
 
+```latent
+fn main() -> int {
+    let p = alloc(8);
+    store8(p, 65);          // p[0] = 65 ('A')
+    store32(p + 4, 12345);  // p[4..8] = 12345, little-endian
+    print(load32(p + 4));   // 12345
+    memcopy(p + 8, p, 4);   // копия 4 байт
+    print(load8(p + 8));    // 65
+    return 0;
+}
+```
+
 :::note
-Поставляемая сборка `web-ide/compiler.wasm` **старше** текущих `src/` и этих
-функций не содержит: попытка скомпилировать `alloc(4)` даёт «Неопределённая
-переменная 'alloc'». Свежая сборка (`cargo build --release --target
-wasm32-unknown-unknown`) их поддерживает. Пересборка описана в
+Memory-builtins **есть в поставляемой сборке** `web-ide/compiler.wasm`
+(465 435 байт, собрана из текущего `src/`): пример выше компилируется в валидный
+WASM и печатает `12345`, затем `65`. Если вы взяли более старый артефакт
+(например, копию из `editors/idea/src/main/resources/runner/`), `alloc` даст
+«Неопределённая переменная 'alloc'» — пересоберите, см.
 [tooling/bootstrap](../tooling/bootstrap.md).
 :::
 
@@ -210,7 +225,7 @@ wasm32-unknown-unknown`) их поддерживает. Пересборка о�
 - `Ok(v)`, `Err(e)`, `Some(v)`, `None` — встроенные варианты, доступные без
   объявления enum. Теги: `Ok`/`Some` = 0, `Err` = 1, `None` = 0-арный.
   Карта вариантов **глобальная по имени** (`enum_variants` в
-  `src/codegen/module_builder.rs`), поэтому пользовательский вариант с именем
+  `src/codegen/module_builder/mod.rs`), поэтому пользовательский вариант с именем
   `Some` переопределит встроенный.
 - `new Class(args)`:
   - выделяет `size` из layout класса в куче (bump-аллокатор),

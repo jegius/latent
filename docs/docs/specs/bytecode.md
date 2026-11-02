@@ -132,7 +132,7 @@ sidebar_position: 6
 | `yield` | ничего |
 | `print(x)` | код `x` → конверсия в строку (`i32_to_str`/`f64_to_str`) → `call import0`; на каждый аргумент отдельно |
 | `len(x)` | код `x`, `i32.load` |
-| `str/int/float/sqrt` | код `x` + нужные конверсии (см. `emit_call.rs`) |
+| `str/int/float/sqrt` | код `x` + нужные конверсии (см. `emit_call/direct.rs`) |
 | `assert(c)` | код `c`, `i32.eqz`, `if void`, `unreachable`, `end` |
 | `assert_eq(a,b)` | код `a`, `b`, `i32.eq`, `i32.eqz`, `if void`, `unreachable`, `end` |
 | `arr.push(v)` | arr → local; v → local; `arr[len]=v`; `arr.len=len+1`; push arr |

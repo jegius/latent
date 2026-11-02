@@ -46,7 +46,7 @@ fn main() -> int {
 
 Один вид — десятичные числа; всё хранится как `f64` (`TokenType::Number(f64)`),
 а кодогенератор выбирает `i32.const` или `f64.const` по тому, есть ли дробная
-часть (`src/codegen/emit_expr.rs`).
+часть (`src/codegen/emit_expr/`).
 
 ```
 Number   ::= Digit+ ('.' Digit+)? ([eE] ('+'|'-')? Digit+)?

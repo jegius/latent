@@ -20,6 +20,30 @@ sidebar_position: 1
 | [ООП](./oop.md) | `classes.lat` |
 | [Функциональный стиль](./functional.md) | `fp_patterns.lat`, `lambdas.lat` |
 
+## Веб и фронтенд
+
+Отдельная серия самодостаточных кейсов — Latent как WASM-ядро в браузере
+(каждый содержит `.lat`, JS-обвязку и разбор того, что видно на странице):
+
+| Кейс | Чему учит |
+|---|---|
+| [Калькулятор](./frontend-calculator.md) | парсер выражений на Latent; константа в исходнике и компиляция на лету через `compiler.wasm` |
+| [Данные и массивы](./frontend-data-processing.md) | передача `[len][i32...]` через память, сортировка/агрегация, чтение результата |
+| [Строки и UTF-8](./frontend-strings.md) | `[len][utf8]`, байтовая длина и индексация, `load8` |
+| [React](./frontend-react.md) | компонент на TypeScript, `useEffect` + `ref`, Vite |
+| [Canvas](./frontend-canvas.md) | WASM считает кадр/шаг сортировки, canvas рисует |
+| [Компилятор в браузере](./frontend-compiler-playground.md) | `latent_alloc`/`latent_compile`/`latent_free`, свой playground |
+| [Интерактивные демо](./frontend-showcase.md) | бенчмарк JS против WASM, фильтры изображений и физика частиц; живые метрики в браузере |
+
+## Демо и производительность
+
+Три самодостаточных демо запускаются прямо на странице и показывают Latent на
+реальной нагрузке: [бенчмарк против JS, фильтры canvas и физика частиц](./frontend-showcase.md).
+Рядом с каждым — исходник `.lat`, живые миллисекунды и честное сравнение.
+
+Общая теория — в [«Latent во фронтенде»](../guide/web-and-frontend.md) и
+[«Latent в браузере за 5 минут»](../getting-started/web-browser.md).
+
 ## Как запускать
 
 1. Откройте [Web IDE](../tooling/web-ide.md) — playground собирается из
@@ -40,9 +64,9 @@ sidebar_position: 1
   (компиляция) или только в №1 (исполнение).
 - Host-only примеры (AI, тензоры, каналы, контракты) помечены в разборах:
   движок №2 на них выдаёт ошибку «требует host-рантайма» — это ожидаемо.
-- Поставляемый `web-ide/compiler.wasm` может быть старше `src/` (см.
-  [bootstrap](../tooling/bootstrap.md)); это влияет на то, что примет
-  Engine #2.
+- Поставляемый `web-ide/compiler.wasm` актуален — собран из текущего `src/` и
+  включает memory-builtins (см. [bootstrap](../tooling/bootstrap.md)); Engine #2
+  принимает то же, что описано в этом разделе.
 
 ## Проверка кода примеров
 

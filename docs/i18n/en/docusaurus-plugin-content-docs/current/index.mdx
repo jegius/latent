@@ -1,0 +1,148 @@
+---
+title: Latent — an AI-native language that compiles to WebAssembly
+sidebar_label: Overview
+sidebar_position: 1
+description: What Latent is, its key features, a map of the documentation, and a quick example program.
+slug: /
+---
+
+import {PlaygroundFrame, PlaygroundLink} from '@site/src/components/Playground';
+
+# Latent
+
+**Latent** is a compact statically typed programming language with type
+inference that compiles to **WebAssembly**. The language is designed as
+AI-native: primitives for inference, embeddings, and tensors are part of the
+grammar rather than a library, and tests and contracts are ordinary language
+constructs.
+
+The project is built around two engines, and this is important to understand
+from the very start:
+
+| Engine | What it is | Where it lives |
+|---|---|---|
+| **#1** | A tree-walking interpreter in JavaScript. A broad subset of the language plus host features: channels, goroutines, AI primitives, self-repair. Does not support `enum`, bitwise operators, or block comments. | `web-ide/compiler/` |
+| **#2** | A real compiler in Rust, built to WASM (`web-ide/compiler.wasm`). Compiles a subset of the language into a valid WASM module. | `src/`, `web-ide/compiler.wasm` |
+
+The documentation honestly notes what works in which engine: at the end of most
+guide pages there is an **"Engine #2 limitations"** section, and the differences
+between the engines are collected in
+[wasm-and-execution](./guide/wasm-and-execution.md#engine-differences).
+
+## Key features
+
+- **Static typing with type inference.** Type annotations are optional:
+  `let x = 42;` infers the type from the value. `int`, `float`, `bool`,
+  `string`, arrays `[T]`, functions `fn(T) -> R`, channels, and user-defined
+  types (classes, enum) all work.
+- **Compilation to WASM.** A `.lat` source file becomes a binary WebAssembly
+  module that exports `main` and imports `env.print(i32)`. The same code runs
+  in the browser (web IDE) and in Node.js, and the module itself can be embedded
+  into a page as a computational core — see
+  [Latent in the frontend](./guide/web-and-frontend.md).
+- **First-class functions.** Lambdas `fn(x) => x * 2` and block lambdas
+  `fn(x) { ... }`, closures, higher-order functions, mutual recursion.
+- **Classes and enum.** Fields, methods, `this`, the `init` constructor; sum
+  types `enum` and `match`/`case`/`default` pattern matching.
+- **Arrays and strings.** Literals, indexing, `length`, `push`/`pop`, `len`,
+  string concatenation, comparison by content.
+- **CSP-style concurrency.** `spawn`, `channel`, `select`, `yield`, the
+  `ch <- v` and `<-ch` operators (engine #1).
+- **AI primitives as syntax.** `ai_infer`, `ai_embed`, `ai_stream`,
+  `tensor`, `semantic`, `matmul`, `cosine_similarity` (engine #1).
+- **Tests and contracts.** `test "name" { ... }`, `assert`, `assert_eq`,
+  `snapshot`, the `@forall` and `@ai_contract` decorators.
+- **Low-level primitives.** `alloc`, `load8`, `store8`, `load32`,
+  `store32`, `memcopy` — the self-hosted compiler in `selfhost/` is written on
+  top of them.
+
+## Quick example
+
+```latent
+fn square(x: int) -> int {
+    return x * x;
+}
+
+fn main() -> int {
+    let numbers = [1, 2, 3, 4, 5];
+    let total = 0;
+    for (let n in numbers) {
+        total = total + square(n);
+    }
+    print("sum of squares:", total);
+    return total;
+}
+```
+
+The program will print `sum of squares:` and `55` (in engine #1 — on a single
+line, `sum of squares: 55`; in engine #2 — on two lines: `print` calls
+`env.print` for each argument) and return `55`.
+
+Run it in the browser: <PlaygroundLink>open the playground</PlaygroundLink>.
+
+<PlaygroundFrame height="520px" title="Latent playground — quick example" />
+
+Compile it locally:
+
+```bash
+cargo build --bin latentc
+./target/debug/latentc compile hello.lat hello.wasm
+```
+
+## Documentation map
+
+| Section | Why read it |
+|---|---|
+| [Introduction](./intro/why-latent.md) | Why the language is needed, what ideas stand behind it, and what to compare it with. |
+| [Getting started](./getting-started/install.md) | Building the compiler, the first `.lat` file, the CLI, the web IDE. |
+| [Tutorial](./tutorial/index.md) | Step by step from `Hello, world` to a capstone project with classes, enum, match, and tests. |
+| [Language guide](./guide/index.md) | A topic-by-topic reference: types, operators, control flow, functions, classes, enum, closures, concurrency, AI, tests, memory, WASM. |
+
+The repository also has other sections of the site: the **reference**
+(`reference/` — grammar, built-in functions, types, errors, ABI), the
+**specifications** (`specs/` — self-host and its final parity, engine parity,
+bytecode, the architecture of the Rust compiler and of the web IDE), the
+**tooling** (`tooling/` — web IDE, VS Code, IntelliJ, the MCP documentation
+server), and the **example walkthroughs** (`examples/`). Use the sidebar on the
+left to navigate them.
+
+## Tooling around the language
+
+- **Playground** — a <PlaygroundLink>browser IDE</PlaygroundLink>: two
+  engines, examples, formatting, an AI mode with self-repair.
+- **Latent on the web** — a compiled `.wasm` as a core for the browser:
+  [Latent in the browser in 5 minutes](./getting-started/web-browser.md) and
+  [Latent in the frontend](./guide/web-and-frontend.md) (ABI, React/Vue,
+  Workers, canvas).
+- **Interactive demos** — [a Latent→WASM benchmark against JS, image filters,
+  and particle physics](./examples/frontend-showcase.md): live metrics in the
+  browser, with no build step or dependencies.
+- **The `latentc` CLI** — `compile`, `check`, `version`; it works with files and
+  emits WASM. In detail — [getting-started/cli](./getting-started/cli.md).
+- **MCP documentation server** — serves the docs and code checking to AI agents
+  over the Model Context Protocol (`mcp/docs-mcp/`).
+- **IDE plugins** — a VS Code extension and an IntelliJ IDEA plugin:
+  highlighting, completion, diagnostics, running (`editors/`).
+- **llms.txt** — a machine-readable index of the documentation:
+  <a href="/latent/llms.txt">llms.txt</a> and
+  <a href="/latent/llms-full.txt">llms-full.txt</a> (generated from Markdown
+  when the site is built).
+
+## Project status
+
+Latent is a young language: compiler version `0.1.0`, and the ecosystem is
+only taking shape. The language has no modules/packages, no class inheritance,
+no user-defined generics, no `break`/`continue`, and no garbage collection.
+This is not an oversight but a fixed language scope — see the
+[philosophy](./intro/philosophy.md) and the
+[comparison with other languages](./intro/comparison.md).
+
+The self-hosted compiler written in Latent itself has reached parity with the
+Rust reference: the fixed point `stage2 === stage3`, 166 tests, 64/65 cases of
+the parity matrix — details in [specs/selfhost](./specs/selfhost.md). Rust is
+not required: the bootstrap runs autonomously from `selfhost/seed.wasm`
+(`node selfhost/bootstrap-wasm.mjs`), and Rust is needed only to refresh the
+seed.
+
+If you are an AI agent: start with <a href="/latent/llms.txt">llms.txt</a>, and
+look up exact built-in function signatures in `guide/` and `reference/`.

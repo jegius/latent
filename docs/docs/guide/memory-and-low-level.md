@@ -52,7 +52,9 @@ fn main() -> int {
 
 ## Примитивы линейной памяти
 
-В компиляторе HEAD (исходники `src/`) есть шесть builtin'ов для селф-хостинга:
+В компиляторе (движок №2, `src/`) есть шесть builtin'ов для селф-хостинга, и они
+**есть в поставляемом `web-ide/compiler.wasm`** — пример ниже компилируется и
+исполняется:
 
 | Функция | Арность | Смысл |
 |---|---|---|
@@ -63,31 +65,28 @@ fn main() -> int {
 | `store32(addr, value)` | 2 | записать 32-битное слово |
 | `memcopy(dst, src, len)` | 3 | побайтовое копирование |
 
-Пример на псевдокоде (не проверяется компилятором — примитивы могут
-отсутствовать в предсобранном `web-ide/compiler.wasm`, см. ниже):
-
-```text
-let p = alloc(8);       // 8 байт
-store8(p, 65);          // p[0] = 65 ('A')
-store32(p + 4, 12345);  // p[4..8] = 12345, little-endian
-print(load8(p));        // 65
-print(load32(p + 4));   // 12345
-memcopy(p + 8, p, 8);   // копия 8 байт
+```latent
+fn main() -> int {
+    let p = alloc(8);
+    store8(p, 65);          // p[0] = 65 ('A')
+    store32(p + 4, 12345);  // p[4..8] = 12345, little-endian
+    print(load8(p));        // 65
+    print(load32(p + 4));   // 12345
+    memcopy(p + 16, p, 8);  // копия 8 байт
+    print(load8(p + 16));   // 65
+    return 0;
+}
 ```
 
-:::caution Предсобранный compiler.wasm может быть старше исходников
+Программа печатает `65`, `12345`, `65` (по строке на аргумент `print`).
 
-`memory`-builtins добавлены в HEAD, но артефакт `web-ide/compiler.wasm` может
-быть собран с более старого коммита — тогда `alloc` даёт
-`Неопределённая переменная 'alloc'`. Пересоберите движок:
-
-```bash
-bash scripts/build-wasm.sh
-# или вручную:
-cargo build --release --target wasm32-unknown-unknown
-cp target/wasm32-unknown-unknown/release/latent.wasm web-ide/compiler.wasm
-```
-
+:::note
+Исходники builtin'ов — `src/codegen/emit_call/direct.rs`
+(`compile_memory_builtin`), регистрация вызовов — `emit_call/mod.rs`.
+Если вы работаете со **старой** сборкой `compiler.wasm`, `alloc` даст
+«Неопределённая переменная 'alloc'»; актуальная сборка (465 435 байт, собрана
+из текущего `src/`) их поддерживает. Пересборка — в
+[bootstrap](../tooling/bootstrap.md#2-compilerwasm-для-web-ide-движок-2).
 :::
 
 ## Зачем это нужно
@@ -108,7 +107,9 @@ cp target/wasm32-unknown-unknown/release/latent.wasm web-ide/compiler.wasm
   [массивах](./arrays-and-strings.md).
 - `pop()` на пустом массиве читает `arr[-1]`.
 - Массивы `float` невалидны (элементы пишутся `i32.store`).
-- `memory`-builtins могут отсутствовать в предсобранном WASM — пересоберите.
+- Memory-builtins есть в актуальной сборке `compiler.wasm`; если вы взяли
+  старый артефакт (например, встроенный в IDEA-плагин) — пересоберите или
+  укажите актуальный путь.
 - `f64_to_str` ограничен диапазоном `i32` для целой части; экстремальные float
   могут дать trap.
 

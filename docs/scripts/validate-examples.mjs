@@ -131,16 +131,22 @@ function extractLatentBlocks(file, text) {
   return blocks;
 }
 
-/** Маркер «ожидаемо невалидного» блока. */
+/** Маркер «ожидаемо невалидного» блока (русский и английский). */
 function expectsError(block) {
   const meta = block.meta.trim().toLowerCase();
-  if (/expected-error|не компилируется|ошибка|host-only/.test(meta)) return true;
+  if (
+    /expected-error|не компилируется|ошибка|host-only|does not compile|doesn't compile|not compiled|expected error|invalid/.test(
+      meta,
+    )
+  ) {
+    return true;
+  }
   const firstLine = block.code
     .split(/\r?\n/)
     .map((s) => s.trim())
     .find((s) => s.length > 0);
   if (!firstLine) return false;
-  return /^\/\/\s*(ошибка|не компилируется|expected[- ]error|host-only)/i.test(
+  return /^\/\/\s*(ошибка|не компилируется|expected[- ]error|host-only|does not compile|doesn't compile|not compiled|invalid)/i.test(
     firstLine,
   );
 }
