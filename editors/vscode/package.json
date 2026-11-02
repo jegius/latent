@@ -1,0 +1,283 @@
+{
+  "name": "latent-lang",
+  "displayName": "Latent Language",
+  "description": "Поддержка языка Latent в VS Code: подсветка синтаксиса, сниппеты, LSP-диагностика, автодополнение, hover, сигнатуры, форматирование, компиляция в WebAssembly и запуск.",
+  "version": "1.0.0",
+  "publisher": "jegius",
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jegius/latent.git",
+    "directory": "editors/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/jegius/latent/issues"
+  },
+  "homepage": "https://jegius.github.io/latent/",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets",
+    "Linters"
+  ],
+  "keywords": [
+    "latent",
+    "wasm",
+    "webassembly",
+    "ai",
+    "language",
+    "programming language"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onLanguage:latent",
+    "onCommand:latent.compile",
+    "onCommand:latent.run",
+    "onCommand:latent.check",
+    "onCommand:latent.format",
+    "onCommand:latent.openDocs",
+    "onCommand:latent.openPlayground",
+    "onCommand:latent.restartLsp"
+  ],
+  "files": [
+    "src/**",
+    "syntaxes/**",
+    "snippets/**",
+    "images/**",
+    "language-configuration.json",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --experimental-test-coverage --test \"test/*.test.mjs\"",
+    "package": "vsce package --no-dependencies"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "latent",
+        "aliases": [
+          "Latent",
+          "latent"
+        ],
+        "extensions": [
+          ".lat"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "latent",
+        "scopeName": "source.latent",
+        "path": "./syntaxes/latent.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "latent",
+        "path": "./snippets/latent.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "latent.compile",
+        "title": "Скомпилировать в WASM",
+        "category": "Latent",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "latent.run",
+        "title": "Запустить",
+        "category": "Latent",
+        "icon": "$(play)"
+      },
+      {
+        "command": "latent.check",
+        "title": "Проверить",
+        "category": "Latent",
+        "icon": "$(check)"
+      },
+      {
+        "command": "latent.format",
+        "title": "Форматировать документ",
+        "category": "Latent",
+        "icon": "$(wand)"
+      },
+      {
+        "command": "latent.openDocs",
+        "title": "Открыть документацию",
+        "category": "Latent",
+        "icon": "$(book)"
+      },
+      {
+        "command": "latent.openPlayground",
+        "title": "Открыть Playground",
+        "category": "Latent",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "latent.restartLsp",
+        "title": "Перезапустить LSP-сервер",
+        "category": "Latent",
+        "icon": "$(refresh)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "latent.run",
+        "key": "ctrl+alt+r",
+        "mac": "cmd+alt+r",
+        "when": "editorLangId == latent"
+      },
+      {
+        "command": "latent.compile",
+        "key": "ctrl+alt+c",
+        "mac": "cmd+alt+c",
+        "when": "editorLangId == latent"
+      },
+      {
+        "command": "latent.check",
+        "key": "ctrl+alt+k",
+        "mac": "cmd+alt+k",
+        "when": "editorLangId == latent"
+      },
+      {
+        "command": "latent.format",
+        "key": "ctrl+alt+f",
+        "mac": "cmd+alt+f",
+        "when": "editorLangId == latent"
+      },
+      {
+        "command": "latent.openDocs",
+        "key": "ctrl+alt+d",
+        "mac": "cmd+alt+d"
+      },
+      {
+        "command": "latent.openPlayground",
+        "key": "ctrl+alt+p",
+        "mac": "cmd+alt+p"
+      },
+      {
+        "command": "latent.restartLsp",
+        "key": "ctrl+alt+shift+r",
+        "mac": "cmd+alt+shift+r"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "latent.run",
+          "when": "editorLangId == latent",
+          "group": "navigation@1"
+        },
+        {
+          "command": "latent.compile",
+          "when": "editorLangId == latent",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "latent.compile",
+          "when": "editorLangId == latent"
+        },
+        {
+          "command": "latent.run",
+          "when": "editorLangId == latent"
+        },
+        {
+          "command": "latent.check",
+          "when": "editorLangId == latent"
+        },
+        {
+          "command": "latent.format",
+          "when": "editorLangId == latent"
+        },
+        {
+          "command": "latent.openDocs"
+        },
+        {
+          "command": "latent.openPlayground"
+        },
+        {
+          "command": "latent.restartLsp"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "latent.run",
+          "when": "editorLangId == latent",
+          "group": "latent@1"
+        },
+        {
+          "command": "latent.compile",
+          "when": "editorLangId == latent",
+          "group": "latent@2"
+        },
+        {
+          "command": "latent.check",
+          "when": "editorLangId == latent",
+          "group": "latent@3"
+        },
+        {
+          "command": "latent.format",
+          "when": "editorLangId == latent",
+          "group": "latent@4"
+        },
+        {
+          "command": "latent.openDocs",
+          "group": "latent@5"
+        },
+        {
+          "command": "latent.openPlayground",
+          "group": "latent@6"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Latent",
+      "properties": {
+        "latent.latentcPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Путь к CLI-компилятору `latentc`. Если пусто, расширение ищет `<repo>/target/debug/latentc.exe` (Windows) или `latentc` (Linux/macOS), затем `latentc` в `PATH`. CLI используется для `Latent: Компилировать` и `Latent: Запустить`; если его нет — компиляция идёт через `compiler.wasm`."
+        },
+        "latent.nodePath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Путь к Node.js. Нужен для запуска LSP-сервера (`server.mjs`) и `.mjs`-скриптов. Если пусто — используется Node, запустивший VS Code (если доступен), иначе `node` из `PATH`."
+        },
+        "latent.lspServerPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Путь к `server.mjs` LSP-сервера Latent. Если пусто — `<repo>/tooling/latent-lsp/bin/server.mjs` (рядом с папкой расширения). Если сервер не найден, расширение работает без LSP: остаются подсветка, сниппеты и запуск."
+        },
+        "latent.compilerWasmPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Путь к `compiler.wasm` (Rust-компилятор Latent → WASM). Если пусто — `<repo>/web-ide/compiler.wasm`. Используется для компиляции и диагностики, когда CLI недоступен."
+        },
+        "latent.enableDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Показывать диагностику компилятора в панели «Проблемы» и подчёркивать ошибки в редакторе."
+        },
+        "latent.enableLsp": {
+          "type": "boolean",
+          "default": true,
+          "description": "Запускать LSP-сервер Latent (автодополнение, hover, сигнатуры, форматирование, диагностика). Если выключено, эти возможности недоступны."
+        },
+        "latent.formatOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Форматировать документ Latent при сохранении через LSP-сервер."
+        }
+      }
+    }
+  }
+}
