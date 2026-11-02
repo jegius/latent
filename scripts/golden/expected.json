@@ -216,9 +216,9 @@
     },
     "selfhost/shc.lat": {
       "kind": "shc",
-      "sourceSha256": "4eac30601eb1a0e23106d31698df5cb0d99f3e8b5216b07cc96444d6943d8c95",
-      "sha256": "59fe4582cc845997728454b2e7d4e927991455f51bb9beae3cf0dccee5f26427",
-      "size": 38858,
+      "sourceSha256": "f0a64c4cb6636f4b77a4b729205e2f3a016e73d7699b0358cd2041232593a1d8",
+      "sha256": "bea6c3a0c77421d24a72760c129abee16fe56539263f8dce30e94420b2aabde7",
+      "size": 42679,
       "error": null
     }
   }

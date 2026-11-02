@@ -1,0 +1,5 @@
+// entry: true
+// expect-error: export
+export let x = 1;
+
+fn main() -> int { return 0; }

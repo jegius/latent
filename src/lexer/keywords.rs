@@ -27,6 +27,12 @@ pub(super) fn keyword_map() -> HashMap<String, TokenType> {
         ("yield", TokenType::Yield),
         ("match", TokenType::Match),
         ("enum", TokenType::Enum),
+        // Модули: import/export — жёсткие; from/as — контекстные (см.
+        // TokenType::soft_keyword_lexeme).
+        ("import", TokenType::Import),
+        ("export", TokenType::Export),
+        ("from", TokenType::From),
+        ("as", TokenType::As),
         ("true", TokenType::Bool(true)),
         ("false", TokenType::Bool(false)),
         ("null", TokenType::Null),

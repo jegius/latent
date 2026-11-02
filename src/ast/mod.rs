@@ -13,7 +13,9 @@ mod stmt;
 
 pub use expr::{ClassField, EnumVariant, Expr, ExprKind, MatchArm, Param, Pattern, Type};
 pub use ops::{BinaryOp, UnaryOp};
-pub use stmt::{Program, SelectArm, Stmt, StmtKind};
+pub use stmt::{
+    ExportFlag, ImportDecl, ImportSpecifier, ImportSpecifiers, Program, SelectArm, Stmt, StmtKind,
+};
 
 #[cfg(test)]
 mod tests;

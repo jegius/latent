@@ -15,18 +15,21 @@ mod cursor;
 mod declarations;
 mod error;
 mod expressions;
+mod imports;
 mod statements;
 mod type_parser;
 
 pub use error::ParserError;
 
-use crate::ast::Program;
+use crate::ast::{ExportFlag, Program};
 use crate::lexer::{Token, TokenType};
 
 /// Синтаксический анализатор
 pub struct Parser {
     pub(super) tokens: Vec<Token>,
     pub(super) pos: usize,
+    /// Флаги `export`, собранные при разборе верхнего уровня.
+    pub(super) exports: Vec<ExportFlag>,
 }
 
 impl Parser {
@@ -37,16 +40,30 @@ impl Parser {
             .into_iter()
             .filter(|t| !matches!(t.token_type, TokenType::Comment(_)))
             .collect();
-        Self { tokens, pos: 0 }
+        Self { tokens, pos: 0, exports: Vec::new() }
     }
 
     /// Точка входа — парсинг всей программы.
+    ///
+    /// `import`/`export` распознаются только здесь: внутри блоков
+    /// `parse_declaration` сообщает, что они допустимы лишь на верхнем уровне.
     pub fn parse(&mut self) -> Result<Program, ParserError> {
         let mut statements = Vec::new();
+        let mut imports = Vec::new();
         while !self.is_at_end() {
-            statements.push(self.parse_declaration()?);
+            if self.check(&TokenType::Import) {
+                imports.push(self.parse_import()?);
+            } else if self.check(&TokenType::Export) {
+                statements.push(self.parse_export()?);
+            } else {
+                statements.push(self.parse_declaration()?);
+            }
         }
-        Ok(Program { statements })
+        Ok(Program {
+            statements,
+            imports,
+            exports: std::mem::take(&mut self.exports),
+        })
     }
 }
 

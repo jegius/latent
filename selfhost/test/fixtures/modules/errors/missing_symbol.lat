@@ -1,0 +1,5 @@
+// entry: true
+// expect-error: не экспортирован
+import { nope } from "../basic/math.lat";
+
+fn main() -> int { return 0; }

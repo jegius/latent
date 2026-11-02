@@ -17,6 +17,10 @@ pub struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
     pub fn new(source: &'a str) -> Self {
+        // UTF-8 BOM не является частью программы. Без этого позиция первого
+        // токена считалась бы как `column - 3` (underflow/panic), а файлы,
+        // сохранённые редакторами с BOM, не компилировались бы.
+        let source = source.strip_prefix('\u{feff}').unwrap_or(source);
         let mut lexer = Self {
             source,
             chars: source.chars(),

@@ -1,0 +1,12 @@
+// entry: true
+// expect-main: 29
+// Многофайловый пример: импорт функций/класса/enum, алиас, match.
+import { square, Point, Shape, norm } from "./math.lat";
+import { square as sq } from "./math.lat";
+
+fn main() -> int {
+    let p = new Point(3, 4);
+    let s = Circle(2);
+    let v = match s { case Circle(r): norm(p) + sq(r), default: 0 };
+    return v;
+}

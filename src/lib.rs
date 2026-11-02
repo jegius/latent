@@ -8,11 +8,15 @@ pub mod ast;
 pub mod codegen;
 pub mod fp;
 pub mod lexer;
+pub mod modules;
 pub mod parser;
 pub mod runtime;
 pub mod syntax;
 pub mod typechecker;
 pub mod types;
+
+// Публичный API модулей — на корне крейта (`latent::compile_files`, ...).
+pub use modules::{bundle_files, compile_files, SourceFile};
 
 /// Версия компилятора
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -39,6 +43,7 @@ pub fn is_keyword(word: &str) -> bool {
             | "null" | "ai" | "model" | "agent" | "embedding" | "tensor" | "semantic"
             | "test" | "assert" | "assert_eq" | "forall" | "snapshot" | "ai_contract"
             | "enforce_contract"
+            | "import" | "export" | "from" | "as"
     )
 }
 
@@ -61,11 +66,24 @@ pub fn compile_source(source: &str) -> Result<Vec<u8>, String> {
     let tokens = lexer.tokenize().map_err(|e| e.to_string())?;
     let mut parser = parser::Parser::new(tokens);
     let program = parser.parse().map_err(|e| e.to_string())?;
+    if !program.imports.is_empty() {
+        return Err(
+            "Импорты не поддерживаются в однофайловой компиляции: используйте \
+             latent::compile_files / latentc compile <entry.lat> (проект из нескольких файлов)"
+                .to_string(),
+        );
+    }
+    compile_program(&program)
+}
+
+/// Общий хвост пайплайна: AST (уже связанный) → WASM-байты.
+pub(crate) fn compile_program(program: &ast::Program) -> Result<Vec<u8>, String> {
     let mut checker = typechecker::TypeChecker::new();
-    checker.check_program(&program)
+    checker
+        .check_program(program)
         .map_err(|errs| errs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("; "))?;
     let mut codegen = codegen::WasmCodegen::new();
-    codegen.compile(&program)
+    codegen.compile(program)
 }
 
 // ============================================================================
@@ -151,6 +169,65 @@ pub extern "C" fn latent_version() -> *mut u8 {
     ptr
 }
 
+/// Читает входной буфер C-ABI как байты (пустой/null → пусто).
+fn read_abi_bytes(ptr: *const u8, len: usize) -> Vec<u8> {
+    unsafe {
+        if ptr.is_null() || len == 0 {
+            Vec::new()
+        } else {
+            std::slice::from_raw_parts(ptr, len).to_vec()
+        }
+    }
+}
+
+/// Формирует ответ `[status u32 LE][len u32 LE][payload...]` в линейной памяти.
+fn abi_response(status: u32, payload: Vec<u8>) -> *mut u8 {
+    let mut out = Vec::with_capacity(8 + payload.len());
+    out.extend_from_slice(&status.to_le_bytes());
+    out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    out.extend_from_slice(&payload);
+    let ptr = out.as_mut_ptr();
+    std::mem::forget(out);
+    ptr
+}
+
+/// Компилирует мультифайловый проект из манифеста `LPF1` (см.
+/// [`modules::manifest`]). Ответ — тот же формат, что у [`latent_compile`].
+///
+/// # Safety
+/// `manifest_ptr` должен указывать на валидный участок памяти длиной
+/// `manifest_len`, записанный хостом.
+#[no_mangle]
+pub extern "C" fn latent_compile_files(manifest_ptr: *const u8, manifest_len: usize) -> *mut u8 {
+    let bytes = read_abi_bytes(manifest_ptr, manifest_len);
+    let (status, payload): (u32, Vec<u8>) = match modules::manifest::decode(&bytes) {
+        Ok((files, entry)) => match modules::compile_files(&files, &entry) {
+            Ok(wasm) => (1, wasm),
+            Err(msg) => (0, msg.into_bytes()),
+        },
+        Err(msg) => (0, msg.into_bytes()),
+    };
+    abi_response(status, payload)
+}
+
+/// Собирает bundle (`LPF1` → плоский Latent-исходник). Ответ того же формата:
+/// status=1 → payload это UTF-8 исходник, status=0 → текст ошибки.
+///
+/// # Safety
+/// См. [`latent_compile_files`].
+#[no_mangle]
+pub extern "C" fn latent_bundle_files(manifest_ptr: *const u8, manifest_len: usize) -> *mut u8 {
+    let bytes = read_abi_bytes(manifest_ptr, manifest_len);
+    let (status, payload): (u32, Vec<u8>) = match modules::manifest::decode(&bytes) {
+        Ok((files, entry)) => match modules::bundle_files(&files, &entry) {
+            Ok(text) => (1, text.into_bytes()),
+            Err(msg) => (0, msg.into_bytes()),
+        },
+        Err(msg) => (0, msg.into_bytes()),
+    };
+    abi_response(status, payload)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,6 +250,10 @@ mod tests {
         assert!(is_keyword("ai"));
         assert!(is_keyword("spawn"));
         assert!(is_keyword("channel"));
+        assert!(is_keyword("import"));
+        assert!(is_keyword("export"));
+        assert!(is_keyword("from"));
+        assert!(is_keyword("as"));
         assert!(!is_keyword("hello"));
         assert!(!is_keyword("world"));
     }

@@ -1,0 +1,6 @@
+// entry: true
+// expect-error: дубликат
+import { square } from "../basic/math.lat";
+import { square } from "../basic/math.lat";
+
+fn main() -> int { return square(2); }

@@ -4,10 +4,58 @@ use super::expr::{ClassField, EnumVariant, Expr, Param};
 use super::expr::Type;
 use crate::lexer::Position;
 
-/// Программа — корневой узел AST
-#[derive(Debug, Clone, PartialEq)]
+/// Программа — корневой узел AST.
+///
+/// `imports`/`exports` вынесены на уровень программы, а не в [`StmtKind`]:
+/// объявления импорта живут только на верхнем уровне, а флаг `export` — это
+/// модификатор объявления, который линкер снимает при сборке единого `Program`
+/// (см. `crate::modules`). Однофайловый пайплайн эти поля игнорирует.
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Program {
     pub statements: Vec<Stmt>,
+    pub imports: Vec<ImportDecl>,
+    pub exports: Vec<ExportFlag>,
+}
+
+impl Program {
+    /// Программа без модульных объявлений (обычный однофайловый случай).
+    pub fn new(statements: Vec<Stmt>) -> Self {
+        Self { statements, imports: Vec::new(), exports: Vec::new() }
+    }
+}
+
+/// Спецификатор именованного импорта: `name` либо `name as alias`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportSpecifier {
+    pub name: String,
+    pub alias: Option<String>,
+    pub pos: Position,
+}
+
+/// Что именно импортирует объявление.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImportSpecifiers {
+    /// `import "./x.lat";` — подключить модуль ради побочного эффекта.
+    SideEffect,
+    /// `import { a, b as c } from "./x.lat";`
+    Named(Vec<ImportSpecifier>),
+}
+
+/// Объявление импорта верхнего уровня.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportDecl {
+    /// Путь в том виде, как он записан в исходнике (`./math.lat`).
+    pub path: String,
+    pub specifiers: ImportSpecifiers,
+    pub pos: Position,
+}
+
+/// Флаг `export` перед top-level `fn`/`class`/`enum`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExportFlag {
+    /// Имя экспортируемого объявления.
+    pub name: String,
+    pub pos: Position,
 }
 
 /// Инструкция (statement)

@@ -123,5 +123,6 @@ fn test_while() {
 }
 
 mod new_features;
+mod modules;
 mod stmts_exprs;
 mod errors;

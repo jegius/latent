@@ -1,0 +1,5 @@
+// entry: true
+// expect-error: не найден
+import { f } from "./nope.lat";
+
+fn main() -> int { return 0; }

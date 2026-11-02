@@ -1,0 +1,7 @@
+// Цикл импорта: cycle_a импортирует even из cycle_b, cycle_b — odd из cycle_a.
+import { even } from "./cycle_b.lat";
+
+export fn odd(n: int) -> int {
+    if (n == 0) { return 0; }
+    return even(n - 1);
+}

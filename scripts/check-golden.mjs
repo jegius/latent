@@ -23,7 +23,16 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -32,9 +41,12 @@ const ROOT = resolve(HERE, '..');
 const GOLDEN_DIR = join(HERE, 'golden');
 const FIXTURES = join(GOLDEN_DIR, 'fixtures');
 const EXPECTED_FILE = join(GOLDEN_DIR, 'expected.json');
+// Многофайловые fixtures для selfhost-паритета: entry помечен `// entry: true`.
+const MODULE_FIXTURES = join(ROOT, 'selfhost', 'test', 'fixtures', 'modules');
 
 const argv = new Set(process.argv.slice(2));
 const UPDATE = argv.has('--update');
+const STRICT = argv.has('--strict');
 const QUIET = argv.has('--quiet');
 
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
@@ -162,6 +174,85 @@ function behaviorChecks() {
   return { checked, failures };
 }
 
+// --- дифференциальный тест модулей ----------------------------------------
+
+/** Запускает latentc; возвращает { ok, error }. */
+function runLatentc(args) {
+  try {
+    execFileSync(LATENTC, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    return { ok: true, error: null };
+  } catch (e) {
+    const stderr = (e.stderr || Buffer.alloc(0)).toString('utf8').trim();
+    return { ok: false, error: stderr.replace(/^error:\s*/, '') || String(e.message) };
+  }
+}
+
+/**
+ * Fixtures `selfhost/test/fixtures/modules/**`:
+ *   entry помечается `// entry: true`;
+ *   `// expect-main: N` — проверить возврат main();
+ *   `// expect-error: ...` — ожидается ошибка компиляции с подстрокой.
+ * Для успешных entry: compile_files(entry) == compile(bundle) байт-в-байт.
+ */
+function moduleChecks() {
+  const failures = [];
+  let checked = 0;
+  for (const path of walk(MODULE_FIXTURES)) {
+    const text = readFileSync(path, 'utf8');
+    if (annotation(text, 'entry') !== 'true') continue;
+    checked += 1;
+    const expectError = annotation(text, 'expect-error');
+    const dir = mkdtempSync(join(tmpdir(), 'latent-modules-'));
+    try {
+      if (expectError !== null) {
+        const res = runLatentc(['compile', path, join(dir, 'out.wasm')]);
+        if (res.ok) {
+          failures.push(`${rel(path)}: ожидалась ошибка «${expectError}», но компиляция успешна`);
+        } else if (!res.error.includes(expectError)) {
+          failures.push(`${rel(path)}: в ошибке нет «${expectError}»: ${res.error}`);
+        }
+        continue;
+      }
+
+      const directWasm = join(dir, 'direct.wasm');
+      const bundlePath = join(dir, 'bundle.lat');
+      const bundledWasm = join(dir, 'bundle.wasm');
+
+      const direct = runLatentc(['compile', path, directWasm]);
+      if (!direct.ok) { failures.push(`${rel(path)}: compile_files: ${direct.error}`); continue; }
+      const bundled = runLatentc(['bundle', path, bundlePath]);
+      if (!bundled.ok) { failures.push(`${rel(path)}: bundle: ${bundled.error}`); continue; }
+      const fromBundle = runLatentc(['compile', bundlePath, bundledWasm]);
+      if (!fromBundle.ok) { failures.push(`${rel(path)}: compile(bundle): ${fromBundle.error}`); continue; }
+
+      const a = readFileSync(directWasm);
+      const b = readFileSync(bundledWasm);
+      if (!a.equals(b)) {
+        failures.push(`${rel(path)}: compile_files != compile(bundle) (${a.length} vs ${b.length} bytes)`);
+      }
+
+      const expectMain = annotation(text, 'expect-main');
+      if (expectMain !== null) {
+        try {
+          const instance = new WebAssembly.Instance(
+            new WebAssembly.Module(a),
+            { env: { print: () => {} } },
+          );
+          const actual = instance.exports.main();
+          if (actual !== Number(expectMain)) {
+            failures.push(`${rel(path)}: main() = ${actual}, ожидалось ${expectMain}`);
+          }
+        } catch (e) {
+          failures.push(`${rel(path)}: запуск main: ${e.message}`);
+        }
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  return { checked, failures };
+}
+
 // --- основные режимы -------------------------------------------------------
 
 function buildExpected() {
@@ -208,23 +299,36 @@ function main() {
   log(`Поведенческих проверок: ${behavior.checked}, провалов: ${behavior.failures.length}`);
   for (const f of behavior.failures) console.error(`  FAIL ${f}`);
 
+  const modules = moduleChecks();
+  log(`Модульных fixtures: ${modules.checked}, провалов: ${modules.failures.length}`);
+  for (const f of modules.failures) console.error(`  FAIL ${f}`);
+
   if (UPDATE) {
     const data = buildExpected();
     writeFileSync(EXPECTED_FILE, JSON.stringify(data, null, 2) + '\n');
     const total = Object.keys(data.entries).length;
     console.log(`Эталон обновлён: ${rel(EXPECTED_FILE)} (${total} программ)`);
-    process.exit(behavior.failures.length === 0 ? 0 : 1);
+    process.exit(behavior.failures.length === 0 && modules.failures.length === 0 ? 0 : 1);
   }
 
   const result = compare();
   if (result === 2) process.exit(2);
   const { failures, compared, skipped } = result;
+  // --strict: SKIP считается провалом (в CI эталон обязан быть свежим,
+  // иначе изменение shc.lat могло бы скрыть регресс компилятора).
+  if (STRICT && skipped > 0) {
+    failures.push(`${skipped} программ(ы) пропущены (SKIP) — обновите эталон: node scripts/check-golden.mjs --update`);
+  }
   console.log(
     `Golden-сверка: ${compared} программ совпало, расхождений ${failures.length}` +
       (skipped ? `, пропущено ${skipped} (shc.lat изменён)` : ''),
   );
   for (const f of failures) console.error(`  FAIL ${f}`);
-  process.exit(failures.length === 0 && behavior.failures.length === 0 ? 0 : 1);
+  process.exit(
+    failures.length === 0 && behavior.failures.length === 0 && modules.failures.length === 0
+      ? 0
+      : 1,
+  );
 }
 
 main();

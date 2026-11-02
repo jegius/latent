@@ -258,4 +258,77 @@ fn test_nested_block_comments() {
     );
 }
 
+#[test]
+fn test_module_keywords_tokenize() {
+    assert_token(
+        "import export from as",
+        vec![
+            TokenType::Import,
+            TokenType::Export,
+            TokenType::From,
+            TokenType::As,
+            TokenType::Eof,
+        ],
+    );
+}
+
+#[test]
+fn test_import_statement_tokens() {
+    assert_token(
+        r#"import { a, b as c } from "./x.lat";"#,
+        vec![
+            TokenType::Import,
+            TokenType::LBrace,
+            TokenType::Identifier("a".to_string()),
+            TokenType::Comma,
+            TokenType::Identifier("b".to_string()),
+            TokenType::As,
+            TokenType::Identifier("c".to_string()),
+            TokenType::RBrace,
+            TokenType::From,
+            TokenType::String("./x.lat".to_string()),
+            TokenType::Semicolon,
+            TokenType::Eof,
+        ],
+    );
+}
+
+#[test]
+fn test_utf8_bom_is_skipped() {
+    let src = "\u{feff}fn main() -> int { return 0; }";
+    let mut lexer = Lexer::new(src);
+    let tokens = lexer.tokenize().unwrap();
+    assert_eq!(tokens[0].token_type, TokenType::Fn);
+    assert_eq!(tokens[0].pos.line, 1);
+    assert_eq!(tokens[0].pos.column, 1);
+    let program = crate::parser::Parser::new(tokens).parse().unwrap();
+    assert_eq!(program.statements.len(), 1);
+}
+
+#[test]
+fn test_from_as_are_soft_keywords() {
+    // `from`/`as` можно использовать как имена — как и прочие мягкие слова.
+    assert!(TokenType::From.soft_keyword_lexeme().is_some());
+    assert!(TokenType::As.soft_keyword_lexeme().is_some());
+    // `import`/`export` — жёсткие.
+    assert!(TokenType::Import.soft_keyword_lexeme().is_none());
+    assert!(TokenType::Export.soft_keyword_lexeme().is_none());
+    assert_token(
+        "let from = 1; let as = 2;",
+        vec![
+            TokenType::Let,
+            TokenType::From,
+            TokenType::Assign,
+            TokenType::Number(1.0),
+            TokenType::Semicolon,
+            TokenType::Let,
+            TokenType::As,
+            TokenType::Assign,
+            TokenType::Number(2.0),
+            TokenType::Semicolon,
+            TokenType::Eof,
+        ],
+    );
+}
+
 mod positions_errors;

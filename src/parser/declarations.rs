@@ -8,6 +8,11 @@ use crate::lexer::TokenType;
 impl Parser {
     /// Парсинг объявления верхнего уровня
     pub(super) fn parse_declaration(&mut self) -> Result<Stmt, ParserError> {
+        // Импорт/экспорт — только верхний уровень (внутри блоков и в цели
+        // декоратора это ошибка).
+        if self.check(&TokenType::Import) || self.check(&TokenType::Export) {
+            return Err(self.reject_nested_module_decl());
+        }
         if self.check(&TokenType::At) {
             self.parse_decorator()
         } else if self.is_test_declaration() {

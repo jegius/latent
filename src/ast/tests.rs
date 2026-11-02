@@ -5,22 +5,20 @@ use crate::lexer::Position;
 
 #[test]
 fn test_program_creation() {
-    let program = Program {
-        statements: vec![
-            Stmt {
-                kind: StmtKind::Let {
-                    name: "x".to_string(),
-                    ty: None,
-                    value: Expr {
-                        kind: ExprKind::Number(42.0),
-                        pos: Position::new(1, 1, 0),
-                    },
-                },
+    let program = Program::new(vec![Stmt {
+        kind: StmtKind::Let {
+            name: "x".to_string(),
+            ty: None,
+            value: Expr {
+                kind: ExprKind::Number(42.0),
                 pos: Position::new(1, 1, 0),
             },
-        ],
-    };
+        },
+        pos: Position::new(1, 1, 0),
+    }]);
     assert_eq!(program.statements.len(), 1);
+    assert!(program.imports.is_empty());
+    assert!(program.exports.is_empty());
 }
 
 #[test]

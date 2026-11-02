@@ -20,6 +20,10 @@ pub enum TokenType {
     Spawn, Channel, Select, Case, Default, Yield, Match,
     Enum,
 
+    // Модули. `import`/`export` — жёсткие ключевые слова; `from`/`as`
+    // контекстные: лексер помечает их, но как имена они допустимы.
+    Import, Export, From, As,
+
     // AI-ключевые слова
     Ai, Model, Agent, Embedding, Tensor, Semantic,
 
@@ -86,6 +90,8 @@ impl TokenType {
             TokenType::Tensor => Some("tensor"),
             TokenType::Semantic => Some("semantic"),
             TokenType::Case => Some("case"),
+            TokenType::From => Some("from"),
+            TokenType::As => Some("as"),
             _ => None,
         }
     }
