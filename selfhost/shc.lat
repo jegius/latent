@@ -32,17 +32,13 @@ fn STRA() -> int { return 2850816; }     // 128K
 fn LOTP() -> int { return 2981888; }     // 32K  тип локальной (0=int 1=float 2=str)
 fn TSTK() -> int { return 3014656; }     // 32K  стек типов выражений
 fn FNRET() -> int { return 3047424; }    // 32K  тип результата функции
-fn FPT() -> int { return 3080192; }      // 32K  типы параметров функций (stride 8)
-fn FLOATB() -> int { return 3112960; }   // 32K  f64-константы (8 байт/слот)
 // --- таблицы классов (для new / полей / методов) ---
 // Размещены выше области INPUT (3145728..3276800); память наращивается
 // driver-ом через alloc(4100000) до использования.
 fn CLNO() -> int { return 3407872; }     // 16K  имя класса: оффсет в исходник
 fn CLNL() -> int { return 3424256; }     // 16K  имя класса: длина
 fn CLNF() -> int { return 3440640; }     // 4K   число полей класса
-fn CLNM() -> int { return 3444736; }     // 4K   число методов класса
 fn CLSZ() -> int { return 3448832; }     // 4K   размер класса в байтах
-fn NCLA() -> int { return 3452928; }     // 4K   число классов (слот-указатель)
 fn FLDO() -> int { return 3457024; }     // 32K  поле: оффсет имени
 fn FLDL() -> int { return 3489792; }     // 32K  поле: длина имени
 fn FLDOC() -> int { return 3522560; }    // 32K  поле: смещение в объекте
@@ -52,18 +48,14 @@ fn FNCLS() -> int { return 3620864; }    // 32K  класс-владелец ф�
 // Таблица методов: каждый метод = функция с неявным первым параметром `this`.
 fn METHTOK() -> int { return 3653632; }  // 32K  токен `fn` метода
 fn METHCLS() -> int { return 3686400; }  // 32K  класс метода
-fn METHFI() -> int { return 3719168; }   // 32K  индекс функции метода
-fn NMETH() -> int { return 3751936; }    // 4K   число методов (слот-указатель)
 fn CLFFI() -> int { return 3756032; }    // 4K   первый индекс полей класса
 fn NCLS() -> int { return 3760128; }     // 4K   число классов (счётчик)
 fn NFCLS() -> int { return 3764224; }    // 4K   число полей (счётчик)
 fn NFNCL() -> int { return 3768320; }    // 4K   число методов (счётчик)
 fn CURFI() -> int { return 3772416; }    // 16   индекс текущей компилируемой функции
-fn LASTCLS() -> int { return 3776512; }   // 16   класс последнего первичного выражения
 // --- таблицы enum-вариантов ---
 fn VNO() -> int { return 3780608; }      // 16K  вариант: оффсет имени
 fn VNL() -> int { return 3796992; }      // 16K  вариант: длина имени
-fn VTAG() -> int { return 3813376; }     // 4K   вариант: тег
 fn VARY() -> int { return 3817472; }     // 4K   вариант: арность
 fn NVAR() -> int { return 3821568; }     // 4K   число вариантов
 // --- таблицы лямбд (замыканий) ---
@@ -84,7 +76,6 @@ fn NLAM() -> int { return 4292608; }     // 4K   число лямбд
 fn NCAP() -> int { return 4296704; }     // 4K   всего записей захватов
 fn LAMBLK() -> int { return 4300800; }   // 4K   тело лямбды — блок (1) или выражение (0)
 fn NPNL() -> int { return 4304896; }     // 4K   всего параметров лямбд
-fn NBASE() -> int { return 4308992; }    // 4K   индекс первой функции лямбды
 // --- таблицы тайп-чекера ---
 fn TV_OFF() -> int { return 4313088; }   // 32K  переменная: оффсет имени
 fn TV_LEN() -> int { return 4345856; }   // 32K  переменная: длина имени
@@ -100,13 +91,10 @@ fn F64_ADD_OP() -> int { return 160; }
 fn F64_SUB_OP() -> int { return 161; }
 fn F64_MUL_OP() -> int { return 162; }
 fn F64_DIV_OP() -> int { return 163; }
-fn F64_EQ_OP() -> int { return 97; }
-fn F64_NE_OP() -> int { return 98; }
 fn F64_LT_OP() -> int { return 99; }
 fn F64_GT_OP() -> int { return 100; }
 fn F64_LE_OP() -> int { return 101; }
 fn F64_GE_OP() -> int { return 102; }
-fn F64_CONST_OP() -> int { return 68; }
 fn F64_CONV_I32_OP() -> int { return 183; }   // f64.convert_i32_s
 fn I32_TRUNC_F64_OP() -> int { return 170; }  // i32.trunc_f64_s
 
@@ -124,7 +112,6 @@ fn T_STR() -> int { return 2; }
 fn tp(t) -> int { let p = get(0, 7); store32(TSTK() + p * 4, t); set(0, 7, p + 1); return t; }
 // Толерантный pop: пустой стек типов считаем int (не критично для опкодов).
 fn tpop() -> int { let p = get(0, 7); if (p <= 0) { return T_INT(); } set(0, 7, p - 1); return load32(TSTK() + (p - 1) * 4); }
-fn ttop() -> int { let p = get(0, 7); if (p <= 0) { return T_INT(); } return load32(TSTK() + (p - 1) * 4); }
 
 // ===== часть: 10_buffer.lat =====
 // --- байтовые буферы [len u32][bytes] ---
@@ -699,12 +686,6 @@ fn set_ncap(v) -> int { store32(NCAP(), v); return v; }
 // Область параметров/захватов физически одна: LPST..(LPST+4*np-1) для
 // параметров, CAPO/CAPL — для захватов (отдельные массивы).
 
-fn skip_lambda_body(j, total) -> int {
-    // j указывает на `{` или на начало выражения `=>`.
-    while (j < total && load32(KIND() + j * 4) != 27 && load32(KIND() + j * 4) != 22) { j = j + 1; }
-    return j;
-}
-
 // Собирает захваты лямбды `li`: свободные идентификаторы тела, не являющиеся
 // параметрами, локальными объявлениями тела или функциями верхнего уровня.
 // Параметры лямбды лежат в сквозном массиве LPOFF/LPLEN, начиная с индекса
@@ -867,7 +848,6 @@ fn scan_lambdas() -> int {
     return nl;
 }
 
-fn lam_tok(li) -> int { return load32(LAMTOK() + li * 4); }
 fn lam_np(li) -> int { return load32(LAMNP() + li * 4); }
 fn lam_body_start(li) -> int { return load32(LAMBODY() + li * 4); }
 fn lam_body_end(li) -> int { return load32(LAMBEND() + li * 4); }
@@ -999,7 +979,6 @@ fn SCHR_FI() -> int { return get(0, 2) + 5; }   // str_char_at(ptr,idx)->i32
 fn I32S_FI() -> int { return get(0, 2) + 6; }   // i32_to_str(n)->ptr
 fn S2I_FI() -> int { return get(0, 2) + 7; }    // str_to_i32(ptr)->i32
 fn F64S_FI() -> int { return get(0, 2) + 8; }   // f64_to_str(n)->ptr
-fn NHELP() -> int { return 8; }                 // alloc+memcopy+3 str+3 conv
 
 fn emit_bi1(fi, opcode, align) -> int {
     let base = get(0, 7);
@@ -2490,18 +2469,6 @@ fn tc_lambda() -> int {
     tc_exit();
     set(0, 12, get(0, 12) - 1);
     return TY_FN();
-}
-fn skip_braces() -> int {
-    if (tc_kind() != 22) { return 0; }
-    let d = 0;
-    while (tc_kind() != 0) {
-        let k = tc_kind();
-        if (k == 22) { d = d + 1; }
-        else { if (k == 23) { d = d - 1; } }
-        tc_next();
-        if (d == 0) { return 0; }
-    }
-    return 0;
 }
 
 // ===== часть: 45c_tc_flow.lat =====

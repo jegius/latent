@@ -40,7 +40,7 @@ node tooling/language-data/validate.mjs
 
 ```
 OK: .../tooling/language-data/language.json
-  keywords=37 operators=37 types=21 builtins=53 diagnostics=31 snippets=14
+  keywords=37 operators=37 types=21 builtins=53 diagnostics=32 snippets=14
 ```
 
 Код возврата `1` — есть ошибки. Валидатор проверяет в том числе:
@@ -80,6 +80,13 @@ OK: .../tooling/language-data/language.json
 | `js` | только движок №1 — tree-walking интерпретатор (`web-ide/compiler/`) |
 | `both` | поддержано обоими движками |
 | `host` | требует host-рантайма (AI-гейтвей, каналы, тензоры); в движке №2 — ошибка компиляции |
+
+Значения сверяются с матрицей паритета
+([`docs/docs/specs/parity-matrix.md`](../../docs/docs/specs/parity-matrix.md)).
+Только движком №2 поддерживаются: `str`/`int`/`float`/`sqrt`, `.to_str()`/
+`.to_int()` (и их camelCase-псевдонимы), примитивы линейной памяти
+(`alloc`/`load8`/`store8`/`load32`/`store32`/`memcopy`) и побитовые операторы
+`& | ^ << >>` — у них `engine: "rust"`, а не `"both"`.
 
 ### «Мягкие» ключевые слова (`soft: true`)
 

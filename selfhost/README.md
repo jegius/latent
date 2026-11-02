@@ -16,8 +16,8 @@
   `assert`/`assert_eq`, короткое замыкание `&&`/`||`, работа с линейной
   памятью, классы/enum/замыкания, `match` (числа, строки, конструкторы),
   float.
-* **Регресс-набор: 166 тестов** (`selfhost/test/`, `node --test`):
-  85 исходных + 56 дифференциальных в `parity.test.mjs` + 25 Rust-free
+* **Регресс-набор: 169 тестов** (`selfhost/test/`, `node --test`):
+  88 исходных + 56 дифференциальных в `parity.test.mjs` + 25 Rust-free
   в `bootstrap-wasm.test.mjs`.
 * **Rust не обязателен.** В репозитории лежит `selfhost/seed.wasm` — уже
   собранный компилятор (паритет 64/65); `node selfhost/bootstrap-wasm.mjs`
@@ -102,7 +102,7 @@ oracle и обязано сохранять фиксированную точк�
 > WASM и верный результат** в selfhost, тогда как `latentc` на них падает с
 > невалидным WASM или ошибкой типов.
 
-## Host-конструкции: что именно делает selfhost
+### Host-конструкции: что именно делает selfhost
 
 Rust-эталон («движок №2») не имеет host-рантайма, но часть конструкций он
 компилирует в суррогат, а часть — отвергает. Selfhost повторяет **наблюдаемое
@@ -129,11 +129,11 @@ Rust-эталон («движок №2») не имеет host-рантайма,
   `error: AI primitives require host runtime (engine #1)`.
 * `ai_generate!("prompt")` — ошибка «AI требует host-рантайма движка №1».
 
-## Обработка ошибок
+### Обработка ошибок
 
 Ошибки делятся на два прохода:
 
-1. **Тайп-чек** (`45_typecheck.lat`) — пишет `[len u32][utf8]` в `ERRB` и
+1. **Тайп-чек** (`45a_tc_core.lat`–`45d_tc_program.lat`) — пишет `[len u32][utf8]` в `ERRB` и
    выставляет `status`; кодоген не запускается.
 2. **Кодоген** — ошибки с именем (`err_named`: `undefined variable: g`,
    `undefined function: nosuch`, `builtin 'tensor' …`, `method 'len' …`)
@@ -191,7 +191,7 @@ UTF-8 текста ошибки (`[len u32 LE][utf8]`), который хост 
 | `src/70c_module_sections.lat` | Сборка секций WASM-модуля (type/import/func/table/memory/global/export/element/code/data). |
 | `src/90_driver.lat` | Точка входа: полный проход компиляции, ошибки → отрицательная длина. |
 
-`shc.lat` (~166 KB) генерируется — редактировать нужно части, затем пересобрать:
+`shc.lat` (~164 KB, 167 798 байт) генерируется — редактировать нужно части, затем пересобрать:
 
 ```sh
 node selfhost/build.mjs        # src/*.lat -> shc.lat
@@ -202,50 +202,36 @@ node selfhost/build.mjs        # src/*.lat -> shc.lat
 > (3 407 872) — запас ~100 KB; при дальнейшем росте нужно сдвигать области
 > (`00_abi.lat`) и `alloc(...)` в драйвере.
 
+## Побочный результат: примитивы памяти
+
+Для селф-хостинга в Rust-реализацию (`latentc`) добавлены встроенные
+небезопасные примитивы линейной памяти: `alloc(size)`, `load8(addr)`,
+`store8(addr,v)`, `load32(addr)`, `store32(addr,v)`, `memcopy(dst,src,len)`.
+См. `src/codegen/emit_call/direct.rs` (`compile_memory_builtin`).
+
+> Примечание. Строковые литералы хранятся как `[len u32][utf8]`; оператор `+`
+> над строками — конкатенация (не арифметика), поэтому байты литерала читаются
+> по смещению `+4` после `memcopy`, а не через `s + 4`.
+
 ## Покрытие тестами
 
 Функциональное покрытие self-hosted компилятора измеряется инструментально:
 `tooling/selfhost-coverage` вставляет счётчики в начало каждой функции,
 собирает инструментированный `shc.lat` и прогоняет корпус (тесты, примеры,
-probe- и fuzz-программы).
+probe- и fuzz-программы; сейчас 219 программ).
 
 ```sh
+# функциональное покрытие (порог 90%, exit 1 при недоборе)
 node tooling/selfhost-coverage/run.mjs --min 90
+# + приблизительное покрытие строк
+node tooling/selfhost-coverage/run.mjs --lines --min 90
 ```
 
-Актуальный отчёт (`tooling/selfhost-coverage/coverage.md`):
-**функции 93.52% (361 из 386), строки ~95.35%, порог PASS**. Непокрытые
-функции — в основном геттеры адресов из `00_abi.lat` и редкие ветви эмиттера;
-они перечислены в отчёте.
-
-## ABI компилятора
-
-| Адрес | Назначение |
-|---|---|
-| 3145728 | входной исходник: `[len u32 LE][utf8 bytes]` (область 128K+, растёт вверх до таблиц классов) |
-| 65536 | выходной WASM: `[len u32 LE][bytes]` после вызова `main()` |
-
-> Входной исходник вынесен в отдельную высокую область, а не прижат к 32768:
-> по мере роста `shc.lat` его хвост перекрывал `OUTB`, который `binit()`
-> зануляет на старте, — это молча портило последние токены (например, `FNLEN`
-> превращался в `F`). Хост обязан нарастить память до адреса `INPUT_ADDR`
-> перед записью исходника (`memory.grow`), так как компилятор растит её лишь
-> в `main()`.
-
-## Запуск
-
-```sh
-cargo build --bin latentc
-node selfhost/build.mjs        # пересобрать shc.lat из частей
-node selfhost/bootstrap.mjs    # stage1 -> stage2 -> stage3, фиксированная точка
-```
-
-`bootstrap.mjs` выполняет цепочку:
-
-1. `latentc` (Rust) собирает `selfhost/shc.lat` → `stage1.wasm`;
-2. `stage1.wasm` компилирует `selfhost/shc.lat` → `stage2.wasm` (self-compiled);
-3. `stage2.wasm` компилирует `selfhost/shc.lat` → `stage3.wasm`;
-4. проверяется `stage2 == stage3` (фиксированная точка).
+Актуальный отчёт (`tooling/selfhost-coverage/coverage.md`, генерируется):
+**функции 100% (369 из 369), строки 97.94% (2421 из 2472), fidelity
+инструментации — 0 расхождений, порог PASS**. Непокрытых функций нет: все
+ветви эмиттера (включая float-вычитание/деление и `<=`/`>=`) вызываются
+корпусом, за это отвечает в т.ч. `float-arithmetic.test.mjs`.
 
 ## Компиляция без Rust
 
@@ -379,13 +365,28 @@ node selfhost/bootstrap-wasm.mjs --verify-seed
 * Скомпилированной программе нужен хост, реализующий `env.print`; `run` в CLI
   делает это для консоли, для браузера/IDE — web-ide/движок №2.
 
+## Запуск
+
+```sh
+cargo build --bin latentc
+node selfhost/build.mjs        # пересобрать shc.lat из частей
+node selfhost/bootstrap.mjs    # stage1 -> stage2 -> stage3, фиксированная точка
+```
+
+`bootstrap.mjs` выполняет цепочку:
+
+1. `latentc` (Rust) собирает `selfhost/shc.lat` → `stage1.wasm`;
+2. `stage1.wasm` компилирует `selfhost/shc.lat` → `stage2.wasm` (self-compiled);
+3. `stage2.wasm` компилирует `selfhost/shc.lat` → `stage3.wasm`;
+4. проверяется `stage2 == stage3` (фиксированная точка).
+
 ## Тесты
 
 ```sh
 node --test "selfhost/test/*.test.mjs"
 ```
 
-166 тестов в 17 сьютах:
+169 тестов в 18 сьютах:
 
 * `bootstrap.test.mjs` — валидность stage1/2/3 и фиксированная точка (Rust-путь).
 * `bootstrap-wasm.test.mjs` — **Rust-free**: seed → stage1' → stage2' →
@@ -397,6 +398,9 @@ node --test "selfhost/test/*.test.mjs"
 * `scoping.test.mjs` — область видимости локальных (`find_local`).
 * `features.test.mjs` — дифференциальные тесты oracle(Rust) vs stage1 vs stage2.
 * `coverage.test.mjs` — дифференциальное покрытие конструкций, встречающихся в `shc.lat`.
+* `float-arithmetic.test.mjs` — f64-вычитание, деление и `<=`/`>=`: oracle на этих
+  выражениях даёт невалидный WASM, поэтому проверяется только selfhost
+  (заодно покрывает ветви `F64_SUB_OP`/`F64_DIV_OP`/`F64_LE_OP`/`F64_GE_OP`).
 * **`parity.test.mjs`** — 56 кейсов паритета: spawn/yield/
   async-await/select/test, match по строкам, to_str/to_int, top-level let,
   host-ошибки (channel/tensor/ai_*/каналы/методы), print, null, строковые
@@ -405,22 +409,25 @@ node --test "selfhost/test/*.test.mjs"
   stage1/stage2.
 * `build.test.mjs` — детерминизм и идемпотентность сборщика частей.
 
-Матрица паритета (вне `selfhost/`, в рабочей папке агента):
+Матрица паритета (скрипт лежит в рабочей папке координации агентов, в git не входит):
 
 ```sh
 node latent-work/gap-matrix.mjs [--verbose]
 ```
 
-## Побочный результат: примитивы памяти
+## ABI компилятора
 
-Для селф-хостинга в Rust-реализацию (`latentc`) добавлены встроенные
-небезопасные примитивы линейной памяти: `alloc(size)`, `load8(addr)`,
-`store8(addr,v)`, `load32(addr)`, `store32(addr,v)`, `memcopy(dst,src,len)`.
-См. `src/codegen/emit_call/direct.rs` (`compile_memory_builtin`).
+| Адрес | Назначение |
+|---|---|
+| 3145728 | входной исходник: `[len u32 LE][utf8 bytes]` (область 128K+, растёт вверх до таблиц классов) |
+| 65536 | выходной WASM: `[len u32 LE][bytes]` после вызова `main()` |
 
-> Примечание. Строковые литералы хранятся как `[len u32][utf8]`; оператор `+`
-> над строками — конкатенация (не арифметика), поэтому байты литерала читаются
-> по смещению `+4` после `memcopy`, а не через `s + 4`.
+> Входной исходник вынесен в отдельную высокую область, а не прижат к 32768:
+> по мере роста `shc.lat` его хвост перекрывал `OUTB`, который `binit()`
+> зануляет на старте, — это молча портило последние токены (например, `FNLEN`
+> превращался в `F`). Хост обязан нарастить память до адреса `INPUT_ADDR`
+> перед записью исходника (`memory.grow`), так как компилятор растит её лишь
+> в `main()`.
 
 ## Остаточные расхождения с эталоном (сознательные)
 

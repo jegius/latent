@@ -177,22 +177,38 @@ src/logger.mjs          лог в файл/stderr
 ```pwsh
 # из корня репозитория
 node --test "tooling/latent-lsp/test/*.test.mjs"
+
+# то же + порог покрытия ≥90% строк (скрипт package.json)
+cd tooling/latent-lsp
+npm run coverage
 ```
 
-Покрытие:
+`npm test` работает на Node ≥18; `npm run coverage` использует
+`--test-coverage-lines` и требует Node ≥22 (в CI — Node 22).
+
+Сейчас: **146 тестов, 0 падений**. Покрытие (`npm run coverage`,
+`--experimental-test-coverage`): **94.59% строк, 94.00% функций** (branch — 80.13%)
+по всем файлам, которые загружают тесты (сервер + данные о языке + эталонный
+форматтер web-ide). Ниже порога 90% остаются только CLI-ветви
+`tooling/language-data/validator*.mjs`; сам LSP-сервер (`src/`, `bin/`) — выше.
+
+Набор тестов:
 
 | Файл | Что проверяет |
 |---|---|
-| `language-data.test.mjs` | валидность `language.json` и инварианты (37 ключевых слов, 13 мягких, приоритеты операторов, типы, builtins, каталог диагностик) |
+| `language-data.test.mjs` | валидность `language.json` и инварианты (37 ключевых слов, 13 мягких, приоритеты операторов, типы, builtins, движки `engine`, каталог диагностик) |
 | `jsonrpc.test.mjs` | кадрирование Content-Length (в т.ч. кириллица в UTF-8), частичные кадры, битый JSON |
 | `positions.test.mjs` | UTF-16 позиции, code points → UTF-16, инкрементальные правки |
 | `formatter.test.mjs` | паритет с web-ide на всех примерах + идемпотентность на 8+ примерах |
+| `formatter-scan.test.mjs` | многострочные блочные комментарии, `//`-комментарии, экранированные кавычки, подсчёт скобок |
 | `wasm-compiler.test.mjs` | загрузка `compiler.wasm`, компиляция валидного/битого кода, graceful при отсутствии файла |
 | `diagnostics.test.mjs` | валидный код → пусто; битый → ошибка с диапазоном строки; несколько ошибок; host-only без позиции |
 | `completion.test.mjs` | keyword/builtin/методы после `.`/поля класса/символы файла/типы/сниппеты/host-only |
 | `hover.test.mjs` | ключевое слово, builtin, тип, оператор, символ файла, null для неизвестного |
 | `signature-help.test.mjs` | builtin и пользовательские функции, методы, вложенные вызовы, строки с запятыми |
-| `analyzer.test.mjs` | symbols/definition, вложенность классов, скобки в строках |
+| `analyzer.test.mjs` | symbols/definition, вложенность классов, скобки в строках, `flattenSymbols`/`fieldsOfClass`/`methodsOfClass`, `classOfVariable` |
+| `logger.test.mjs` | запись уровней в файл, fallback на stderr при недоступном пути, идемпотентный `close` |
+| `main.test.mjs` | ошибки запуска (нет language data), битые кадры JSON-RPC, ошибка stdin |
 | `lifecycle.test.mjs` | initialize/capabilities, ошибки до initialize, shutdown/exit, отмена, диагностика didOpen/didChange/didSave/didClose, graceful без wasm |
 | `features.test.mjs` | все возможности через сервер (in-process) |
 | `server-stdio.test.mjs` | e2e: дочерний процесс, initialize → didOpen/didChange → formatting → shutdown/exit; CLI (`--help`, `--version`, без `--stdio`, неизвестная опция) |
@@ -209,9 +225,10 @@ node --test "tooling/latent-lsp/test/*.test.mjs"
 4. **«Мягкие» ключевые слова** (`test`, `assert`, `model`, `tensor`, …)
    показываются и как ключевые слова, и как builtins — сервер отдаёт
    приоритет builtin-форме, если имя совпадает.
-5. Компилятор `web-ide/compiler.wasm` может быть старше HEAD-версии `src/`
-   (например, memory-builtins `alloc/load8/...` в старом бинарнике отсутствуют).
-   Это влияет только на диагностику, не на остальные возможности.
+5. Компилятор `web-ide/compiler.wasm` — снимок `src/`; если он пересобран не с
+   HEAD, тексты диагностик могут отличаться от текущего компилятора. В
+   репозитории артефакт актуален (memory-builtins `alloc/load8/...` есть).
+   Актуальность влияет только на диагностику, не на остальные возможности.
 6. Сервер не реализует `workspace/*`, `codeAction`, `rename`, `semanticTokens`
    — их нет в контракте `PLAN.md`.
 7. Обработка сообщений синхронная (по одному): `$/cancelRequest` учитывается

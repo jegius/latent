@@ -39,7 +39,7 @@ export JAVA_HOME=/path/to/jdk-17      # Windows: $env:JAVA_HOME="C:\...\jdk-17"
 Проверки:
 
 ```bash
-./gradlew test                          # 45+ тестов: лексер, структура, отступы,
+./gradlew test                          # 39 тестов: лексер, структура, отступы,
                                         # JSON-данные, парсер/аннотатор/completion на платформе
 ./gradlew verifyPluginProjectConfiguration
 ```
@@ -71,6 +71,39 @@ export JAVA_HOME=/path/to/jdk-17      # Windows: $env:JAVA_HOME="C:\...\jdk-17"
 `latent_alloc` / `latent_compile`) тем же Node-runner'ом. Встроенная копия
 `runner/compiler.wasm` — снимок `web-ide/compiler.wasm` на момент сборки плагина;
 её можно переопределить в настройках.
+
+## Обновление встроенного compiler.wasm
+
+Плагин носит с собой два снимка репозиторных артефактов, чтобы работать без
+`latentc` и без доступа к исходникам:
+
+| Файл в плагине | Канонический источник |
+|---|---|
+| `src/main/resources/runner/compiler.wasm` | `web-ide/compiler.wasm` |
+| `src/main/resources/language/latent-language.json` | `tooling/language-data/language.json` |
+
+Копии обязаны совпадать с источниками побайтово: иначе плагин компилирует
+старым движком (например, без memory-builtins) и подсказывает устаревшие
+builtins. Это проверяет скрипт (и job `idea` в `.github/workflows/ci.yml`):
+
+```bash
+# из корня репозитория
+node scripts/check-embedded-wasm.mjs
+```
+
+Скрипт сверяет sha256 и размер, при расхождении печатает оба хэша и
+завершается с кодом 1. Обновить копии после пересборки `web-ide/compiler.wasm`
+или правки `language.json`:
+
+```bash
+node scripts/check-embedded-wasm.mjs --update
+./gradlew buildPlugin                 # Windows: .\gradlew.bat buildPlugin
+```
+
+Вручную — то же самое: скопировать `web-ide/compiler.wasm` в
+`src/main/resources/runner/compiler.wasm`, а `tooling/language-data/language.json`
+— в `src/main/resources/language/latent-language.json`. Коммитить копии нужно
+вместе с исходным изменением, иначе job `idea` в CI упадёт.
 
 ## Запуск
 

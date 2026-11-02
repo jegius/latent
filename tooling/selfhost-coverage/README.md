@@ -223,21 +223,21 @@ Fidelity сравнивает не с Rust-эталоном, а с **тем же
   "tool": "selfhost-coverage",
   "version": 1,
   "generatedAt": "2026-11-02T…",
-  "source": { "path": ".../shc.lat", "mode": "shc", "parts": [], "bytes": 155191, "sha256": "…" },
-  "builder": { "kind": "latentc", "path": ".../latentc.exe", "bytes": 46379 },
+  "source": { "path": ".../shc.lat", "mode": "shc", "parts": [], "bytes": 167798, "sha256": "…" },
+  "builder": { "kind": "latentc", "path": ".../latentc.exe", "bytes": 59784 },
   "instrumentation": {
-    "lines": false, "functions": 386, "lineCounters": 0,
-    "counterBase": 32768, "lineCounterBase": 49152, "bytes": 155000
+    "lines": false, "functions": 369, "lineCounters": 0,
+    "counterBase": 32768, "lineCounterBase": 49152, "bytes": 213147
   },
-  "corpus": { "total": 216, "ok": 167, "failed": 49, "trapped": 0, "timedOut": 7,
-              "byKind": { "test": 137, "self": 1, "example": 24, "probe": 30, "fuzz": 24 } },
+  "corpus": { "total": 219, "ok": 170, "failed": 49, "trapped": 0, "timedOut": 7,
+              "byKind": { "test": 140, "self": 1, "example": 24, "probe": 30, "fuzz": 24 } },
   "functions": {
-    "total": 386, "covered": 365, "percent": 94.56,
-    "uncovered": [ { "id": 31, "name": "FPT", "part": "00_abi.lat", "file": "selfhost/src/00_abi.lat", "line": 31 } ],
-    "byPart": [ { "part": "00_abi.lat", "total": 101, "covered": 84, "percent": 83.17 } ]
+    "total": 369, "covered": 369, "percent": 100,
+    "uncovered": [],
+    "byPart": [ { "part": "00_abi.lat", "total": 88, "covered": 88, "percent": 100 } ]
   },
   "lines": null,                 // или { total, covered, percent, uncovered, byPart }
-  "fidelity": { "checked": 209, "mismatches": [] },
+  "fidelity": { "checked": 212, "mismatches": [] },
   "gate": { "min": 90, "metric": "functions", "passed": true },
   "corpusCases": [ { "name": "parity.test.mjs:59", "kind": "test", "ok": true, "ret": 1113, "functionsHit": 118 } ]
 }

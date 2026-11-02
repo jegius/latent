@@ -7,7 +7,10 @@ import assert from 'node:assert/strict';
 import {
     classOfVariable,
     enclosingClass,
+    fieldsOfClass,
     findSymbol,
+    flattenSymbols,
+    methodsOfClass,
     scanSymbols,
 } from '../src/analyzer.mjs';
 import { provideDefinition, provideDocumentSymbols } from '../src/symbols.mjs';
@@ -168,4 +171,34 @@ test('enclosingClass: находит класс по смещению', () => {
     const outside = DOC.indexOf('fn helper');
     assert.equal(enclosingClass(symbols, inside)?.name, 'Point');
     assert.equal(enclosingClass(symbols, outside), undefined);
+});
+
+test('flattenSymbols: символы с детьми в плоском списке', () => {
+    const symbols = scanSymbols(DOC);
+    const flat = flattenSymbols(symbols);
+    assert.ok(flat.length > symbols.length, 'дети тоже попали в список');
+    for (const name of ['Point', 'x', 'y', 'init', 'norm', 'main', 'p']) {
+        assert.ok(flat.some((s) => s.name === name), `в плоском списке нет ${name}`);
+    }
+});
+
+test('fieldsOfClass/methodsOfClass: выборки и пустой результат', () => {
+    const symbols = scanSymbols(DOC);
+    assert.deepEqual(fieldsOfClass(symbols, 'Point').map((f) => f.name), ['x', 'y']);
+    assert.deepEqual(methodsOfClass(symbols, 'Point').map((m) => m.name), ['init', 'norm']);
+    // Неизвестный класс — пустые списки, без исключения.
+    assert.deepEqual(fieldsOfClass(symbols, 'Missing'), []);
+    assert.deepEqual(methodsOfClass(symbols, 'Missing'), []);
+});
+
+test('classOfVariable: примитивная аннотация и встроенные владельцы', () => {
+    const src = 'fn main() {\n'
+        + '    let n: int = 0;\n'
+        + '    let t = tensor([1]);\n'
+        + '    let e = ai_embed("x");\n'
+        + '}\n';
+    const symbols = scanSymbols(src);
+    assert.equal(classOfVariable(src, 'n', symbols), 'int');
+    assert.equal(classOfVariable(src, 't', symbols), 'tensor');
+    assert.equal(classOfVariable(src, 'e', symbols), 'array');
 });

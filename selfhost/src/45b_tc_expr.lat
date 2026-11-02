@@ -237,15 +237,3 @@ fn tc_lambda() -> int {
     set(0, 12, get(0, 12) - 1);
     return TY_FN();
 }
-fn skip_braces() -> int {
-    if (tc_kind() != 22) { return 0; }
-    let d = 0;
-    while (tc_kind() != 0) {
-        let k = tc_kind();
-        if (k == 22) { d = d + 1; }
-        else { if (k == 23) { d = d - 1; } }
-        tc_next();
-        if (d == 0) { return 0; }
-    }
-    return 0;
-}

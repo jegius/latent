@@ -73,6 +73,11 @@ test('операторы: приоритеты и ассоциативность
     assert.ok(find('->', 'arrow'));
     assert.ok(find('=>', 'arrow'));
     assert.ok(find('.', 'postfix'));
+    // Побитовые операторы не лексируются JS-интерпретатором (движок №1),
+    // поэтому их движок — только Rust (см. parity-matrix.md).
+    for (const op of ['|', '^', '&', '<<', '>>']) {
+        assert.equal(find(op, 'binary').engine, 'rust', `${op}: только движок №2`);
+    }
 });
 
 test('типы: примитивы, коллекции, AI и конкурентность', () => {
@@ -88,15 +93,25 @@ test('типы: примитивы, коллекции, AI и конкурент
 
 test('builtins: функциональная форма, методы и host-only', () => {
     const data = languageData();
-    for (const name of ['print', 'len', 'push', 'str', 'int', 'float', 'sqrt',
-        'assert', 'assert_eq', 'alloc', 'load8', 'store8', 'load32', 'store32', 'memcopy']) {
+    // Движок №2 умеет всё перечисленное; JS-движок (№1) — только print/len/push/
+    // assert/assert_eq. Расхождение зафиксировано в docs/docs/specs/parity-matrix.md.
+    const engines = {
+        print: 'both', len: 'both', push: 'both', assert: 'both', assert_eq: 'both',
+        str: 'rust', int: 'rust', float: 'rust', sqrt: 'rust',
+        alloc: 'rust', load8: 'rust', store8: 'rust', load32: 'rust', store32: 'rust', memcopy: 'rust',
+    };
+    for (const [name, engine] of Object.entries(engines)) {
         const entry = data.findBuiltin(name);
         assert.ok(entry, `нет builtin ${name}`);
         assert.ok(entry.signatures.length > 0, `нет сигнатур у ${name}`);
-        assert.equal(entry.engine, 'both', `${name} должен работать в обоих движках`);
+        assert.equal(entry.engine, engine, `${name}: движок ${entry.engine}, ожидался ${engine}`);
     }
     for (const method of ['push', 'pop', 'length', 'to_str', 'to_int']) {
         assert.ok(data.findMethod(method), `нет метода ${method}`);
+    }
+    // Конверсии и .to_str()/to_int() есть только в движке №2 (в JS их нет).
+    for (const method of ['to_str', 'toString', 'to_int', 'toInt']) {
+        assert.equal(data.findMethod(method).engine, 'rust', `${method}: только движок №2`);
     }
     assert.equal(data.findMethod('pop').owner, 'array');
     assert.equal(data.findMethod('length', 'array').kind, 'property');

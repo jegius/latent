@@ -18,6 +18,7 @@
   ],
   "scripts": {
     "start": "node bin/server.mjs --stdio",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "coverage": "node --experimental-test-coverage --test --test-coverage-lines=90 test/*.test.mjs"
   }
 }

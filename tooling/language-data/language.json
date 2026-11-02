@@ -480,9 +480,9 @@
       "kind": "binary",
       "precedence": 50,
       "assoc": "left",
-      "summary": "Побитовое ИЛИ над целыми; результат типа `int`.",
+      "summary": "Побитовое ИЛИ над целыми; результат типа `int`. Только движок №2: JS-интерпретатор не лексирует `|`.",
       "example": "a | b",
-      "engine": "both",
+      "engine": "rust",
       "docs": "reference/operators"
     },
     {
@@ -490,9 +490,9 @@
       "kind": "binary",
       "precedence": 50,
       "assoc": "left",
-      "summary": "Побитовое исключающее ИЛИ над целыми; результат типа `int`.",
+      "summary": "Побитовое исключающее ИЛИ над целыми; результат типа `int`. Только движок №2: JS-интерпретатор не лексирует `^`.",
       "example": "a ^ b",
-      "engine": "both",
+      "engine": "rust",
       "docs": "reference/operators"
     },
     {
@@ -500,9 +500,9 @@
       "kind": "binary",
       "precedence": 60,
       "assoc": "left",
-      "summary": "Побитовое И над целыми; результат типа `int`.",
+      "summary": "Побитовое И над целыми; результат типа `int`. Только движок №2: JS-интерпретатор не лексирует `&`.",
       "example": "a & b",
-      "engine": "both",
+      "engine": "rust",
       "docs": "reference/operators"
     },
     {
@@ -510,9 +510,9 @@
       "kind": "binary",
       "precedence": 70,
       "assoc": "left",
-      "summary": "Побитовый сдвиг влево; результат типа `int`.",
+      "summary": "Побитовый сдвиг влево; результат типа `int`. Только движок №2: JS-интерпретатор не лексирует `<<`.",
       "example": "a << 2",
-      "engine": "both",
+      "engine": "rust",
       "docs": "reference/operators"
     },
     {
@@ -520,9 +520,9 @@
       "kind": "binary",
       "precedence": 70,
       "assoc": "left",
-      "summary": "Побитовый сдвиг вправо; результат типа `int`.",
+      "summary": "Побитовый сдвиг вправо; результат типа `int`. Только движок №2: JS-интерпретатор не лексирует `>>`.",
       "example": "a >> 2",
-      "engine": "both",
+      "engine": "rust",
       "docs": "reference/operators"
     },
     {
@@ -975,8 +975,8 @@
       "signatures": [
         "str(x) -> string"
       ],
-      "engine": "both",
-      "summary": "Приводит значение к строке: строку оставляет как есть, число конвертирует через рантайм-хелпер.",
+      "engine": "rust",
+      "summary": "Приводит значение к строке: строку оставляет как есть, число конвертирует через рантайм-хелпер. Только движок №2: в JS-интерпретаторе такого builtin'а нет.",
       "example": "str(42)",
       "docs": "reference/builtins"
     },
@@ -986,8 +986,8 @@
       "signatures": [
         "int(x) -> int"
       ],
-      "engine": "both",
-      "summary": "Приводит значение к целому: строку парсит, `float` усекает, `int` оставляет как есть.",
+      "engine": "rust",
+      "summary": "Приводит значение к целому: строку парсит, `float` усекает, `int` оставляет как есть. Только движок №2: в JS-интерпретаторе такого builtin'а нет.",
       "example": "int(\"42\")",
       "docs": "reference/builtins"
     },
@@ -997,8 +997,8 @@
       "signatures": [
         "float(x) -> float"
       ],
-      "engine": "both",
-      "summary": "Приводит значение к числу с плавающей точкой: `int`/`string` конвертируются.",
+      "engine": "rust",
+      "summary": "Приводит значение к числу с плавающей точкой: `int`/`string` конвертируются. Только движок №2: в JS-интерпретаторе такого builtin'а нет.",
       "example": "float(3)",
       "docs": "reference/builtins"
     },
@@ -1008,8 +1008,8 @@
       "signatures": [
         "sqrt(x) -> float"
       ],
-      "engine": "both",
-      "summary": "Квадратный корень; операнд приводится к `float`, используется инструкция `f64.sqrt`.",
+      "engine": "rust",
+      "summary": "Квадратный корень; операнд приводится к `float`, используется инструкция `f64.sqrt`. Только движок №2: в JS-интерпретаторе такого builtin'а нет.",
       "example": "sqrt(16.0)",
       "docs": "reference/builtins"
     },
@@ -1041,8 +1041,8 @@
       "signatures": [
         "alloc(size) -> int"
       ],
-      "engine": "both",
-      "summary": "Bump-аллокатор рантайма: выделяет `size` байт в линейной памяти и возвращает указатель.",
+      "engine": "rust",
+      "summary": "Bump-аллокатор рантайма: выделяет `size` байт в линейной памяти и возвращает указатель. Только движок №2: в JS-интерпретаторе примитивов памяти нет.",
       "example": "let ptr = alloc(16);",
       "docs": "reference/wasm-abi"
     },
@@ -1052,8 +1052,8 @@
       "signatures": [
         "load8(addr) -> int"
       ],
-      "engine": "both",
-      "summary": "Читает беззнаковый байт из линейной памяти по адресу; небезопасная операция без проверки границ.",
+      "engine": "rust",
+      "summary": "Читает беззнаковый байт из линейной памяти по адресу; небезопасная операция без проверки границ. Только движок №2: в JS-интерпретаторе примитивов памяти нет.",
       "example": "let byte = load8(ptr);",
       "docs": "reference/wasm-abi"
     },
@@ -1063,8 +1063,8 @@
       "signatures": [
         "store8(addr, value)"
       ],
-      "engine": "both",
-      "summary": "Записывает младший байт значения по адресу в линейной памяти.",
+      "engine": "rust",
+      "summary": "Записывает младший байт значения по адресу в линейной памяти. Только движок №2: в JS-интерпретаторе примитивов памяти нет.",
       "example": "store8(ptr, 0x00);",
       "docs": "reference/wasm-abi"
     },
@@ -1074,8 +1074,8 @@
       "signatures": [
         "load32(addr) -> int"
       ],
-      "engine": "both",
-      "summary": "Читает 32-битное слово (little-endian) из линейной памяти.",
+      "engine": "rust",
+      "summary": "Читает 32-битное слово (little-endian) из линейной памяти. Только движок №2: в JS-интерпретаторе примитивов памяти нет.",
       "example": "let word = load32(ptr);",
       "docs": "reference/wasm-abi"
     },
@@ -1085,8 +1085,8 @@
       "signatures": [
         "store32(addr, value)"
       ],
-      "engine": "both",
-      "summary": "Записывает 32-битное слово (little-endian) по адресу в линейной памяти.",
+      "engine": "rust",
+      "summary": "Записывает 32-битное слово (little-endian) по адресу в линейной памяти. Только движок №2: в JS-интерпретаторе примитивов памяти нет.",
       "example": "store32(ptr, 42);",
       "docs": "reference/wasm-abi"
     },
@@ -1096,8 +1096,8 @@
       "signatures": [
         "memcopy(dst, src, len)"
       ],
-      "engine": "both",
-      "summary": "Побайтово копирует `len` байт из `src` в `dst` (рантайм-хелпер `__latent_mem_copy`).",
+      "engine": "rust",
+      "summary": "Побайтово копирует `len` байт из `src` в `dst` (рантайм-хелпер `__latent_mem_copy`). Только движок №2: в JS-интерпретаторе примитивов памяти нет.",
       "example": "memcopy(dst, src, 8);",
       "docs": "reference/wasm-abi"
     },
@@ -1158,8 +1158,8 @@
       "signatures": [
         "x.to_str() -> string"
       ],
-      "engine": "both",
-      "summary": "Строковое представление значения; у `float` использует `f64_to_str`, у остальных — `i32_to_str`.",
+      "engine": "rust",
+      "summary": "Строковое представление значения; у `float` использует `f64_to_str`, у остальных — `i32_to_str`. Только движок №2: в JS-интерпретаторе метода нет.",
       "example": "x.to_str()",
       "docs": "reference/builtins"
     },
@@ -1170,8 +1170,8 @@
       "signatures": [
         "x.toString() -> string"
       ],
-      "engine": "both",
-      "summary": "Псевдоним `to_str()`.",
+      "engine": "rust",
+      "summary": "Псевдоним `to_str()`. Только движок №2: в JS-интерпретаторе метода нет.",
       "example": "x.toString()",
       "docs": "reference/builtins"
     },
@@ -1183,8 +1183,8 @@
         "s.to_int() -> int",
         "f.to_int() -> int"
       ],
-      "engine": "both",
-      "summary": "Приведение к целому: строку парсит, `float` усекает.",
+      "engine": "rust",
+      "summary": "Приведение к целому: строку парсит, `float` усекает. Только движок №2: в JS-интерпретаторе метода нет.",
       "example": "\"42\".to_int()",
       "docs": "reference/builtins"
     },
@@ -1195,8 +1195,8 @@
       "signatures": [
         "s.toInt() -> int"
       ],
-      "engine": "both",
-      "summary": "Псевдоним `to_int()`.",
+      "engine": "rust",
+      "summary": "Псевдоним `to_int()`. Только движок №2: в JS-интерпретаторе метода нет.",
       "example": "\"42\".toInt()",
       "docs": "reference/builtins"
     },

@@ -13,12 +13,6 @@ fn set_ncap(v) -> int { store32(NCAP(), v); return v; }
 // Область параметров/захватов физически одна: LPST..(LPST+4*np-1) для
 // параметров, CAPO/CAPL — для захватов (отдельные массивы).
 
-fn skip_lambda_body(j, total) -> int {
-    // j указывает на `{` или на начало выражения `=>`.
-    while (j < total && load32(KIND() + j * 4) != 27 && load32(KIND() + j * 4) != 22) { j = j + 1; }
-    return j;
-}
-
 // Собирает захваты лямбды `li`: свободные идентификаторы тела, не являющиеся
 // параметрами, локальными объявлениями тела или функциями верхнего уровня.
 // Параметры лямбды лежат в сквозном массиве LPOFF/LPLEN, начиная с индекса
@@ -181,7 +175,6 @@ fn scan_lambdas() -> int {
     return nl;
 }
 
-fn lam_tok(li) -> int { return load32(LAMTOK() + li * 4); }
 fn lam_np(li) -> int { return load32(LAMNP() + li * 4); }
 fn lam_body_start(li) -> int { return load32(LAMBODY() + li * 4); }
 fn lam_body_end(li) -> int { return load32(LAMBEND() + li * 4); }

@@ -51,3 +51,12 @@ lcov.info
 tooling/selfhost-coverage/coverage.json
 tooling/selfhost-coverage/coverage.md
 tooling/selfhost-coverage/coverage.wasm
+
+# Локальные файлы IntelliJ IDEA
+*.iml
+
+# --- Демо: генерируется docs/static/demos/build-demos.mjs ---
+docs/static/demos/vendor/
+docs/static/demos/selfhost/seed.wasm
+docs/static/demos/selfhost/seed.json
+docs/static/demos/selfhost/shc.lat

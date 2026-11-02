@@ -35,7 +35,6 @@ fn SCHR_FI() -> int { return get(0, 2) + 5; }   // str_char_at(ptr,idx)->i32
 fn I32S_FI() -> int { return get(0, 2) + 6; }   // i32_to_str(n)->ptr
 fn S2I_FI() -> int { return get(0, 2) + 7; }    // str_to_i32(ptr)->i32
 fn F64S_FI() -> int { return get(0, 2) + 8; }   // f64_to_str(n)->ptr
-fn NHELP() -> int { return 8; }                 // alloc+memcopy+3 str+3 conv
 
 fn emit_bi1(fi, opcode, align) -> int {
     let base = get(0, 7);
