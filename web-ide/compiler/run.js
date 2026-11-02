@@ -1,12 +1,14 @@
 // compiler/run.js — выполнение программы на движке №1.
 // Единственная ответственность: runLatent (pre-fetch AI + persistent-кэш).
+// Сетевой AI-слой подключается dynamic import()'ом только в AI-режиме с
+// реальным провайдером — обычный Run не тянет ai-gateway.
 
 import { tokenize } from './lexer.js';
 import { Parser } from './parser.js';
 import { Interpreter } from './interpreter.js';
 import { AIConfig, persistentAICache, aiCacheKey } from './ai-config.js';
-import { aiInferRemote } from './ai-gateway.js';
-import { collectAIPrompts } from './repair.js';
+import { collectAIPrompts } from './repair-core.js';
+import { loadAIGateway } from './lazy-ai.js';
 
 /**
  * Выполняет исходный код Latent и возвращает { result, output }.
@@ -14,9 +16,12 @@ import { collectAIPrompts } from './repair.js';
  * предзагружает ответы ai_infer из гейтвея (pre-fetch), иначе — мок.
  * @param {string} source — исходный код
  * @param {boolean} withAI — включить AI-функции
+ * @param {Object} [opts]
+ * @param {boolean} [opts.forceMockAI] — не ходить в сеть: обычный Run
+ *   AI-примеров использует детерминированный mock, даже если настроен гейтвей
  * @returns {{ result: any, output: string[] }}
  */
-export async function runLatent(source, withAI = false) {
+export async function runLatent(source, withAI = false, opts = {}) {
     const tokens = tokenize(source);
     const parser = new Parser(tokens);
     const program = parser.parseProgram();
@@ -27,7 +32,9 @@ export async function runLatent(source, withAI = false) {
 
     // Pre-fetch: если настроен реальный гейтвей, загружаем ответы ai_infer заранее.
     // Кэш персистентный — живёт между перезапусками программы (§6.4 статьи).
-    if (withAI && AIConfig.provider !== 'mock') {
+    // ai-gateway.js подключается dynamic import()'ом только здесь.
+    if (withAI && AIConfig.provider !== 'mock' && !opts.forceMockAI) {
+        const { aiInferRemote } = await loadAIGateway();
         const prompts = new Set();
         for (const fn of Object.values(program.functions)) {
             collectAIPrompts(fn.body, prompts);
@@ -67,5 +74,10 @@ export async function runLatent(source, withAI = false) {
     }
 
     const result = interpreter.run();
+    // test-блоки исполняются после main; показываем их результаты в консоли,
+    // чтобы Testing & Contracts-пример давал осмысленный вывод в playground.
+    for (const t of interpreter.testResults) {
+        output.push(`test "${t.name}": ${t.passed ? 'ok' : `FAILED — ${t.error}`}`);
+    }
     return { result, output };
 }

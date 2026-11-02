@@ -28,7 +28,8 @@ const MAX_BARREL_LINES = 40;
 /** Рекурсивно собирает .js-файлы, исключая служебные каталоги. */
 function collectJs(dir, acc = []) {
     for (const entry of readdirSync(dir)) {
-        if (entry === 'node_modules' || entry === '.git') continue;
+        // dist/ — артефакт vite build (минифицированные чанки), не исходники.
+        if (entry === 'node_modules' || entry === '.git' || entry === 'dist') continue;
         const full = join(dir, entry);
         const st = statSync(full);
         if (st.isDirectory()) collectJs(full, acc);

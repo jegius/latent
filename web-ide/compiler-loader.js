@@ -18,6 +18,9 @@ export {
     configureAI, getAIConfig, clearAICache, getAICacheSize, checkAIGateway,
     // Анализ и ремонт
     analyzeCode, repairCode, extractCode, deterministicRepair,
+    // Определение host-фич и метки движков
+    detectHostFeatures, detectAIFeatures, isHostRuntimeError,
+    describeFeatures, explainEngine2HostLimit, ENGINE1_LABEL, ENGINE2_LABEL,
     // Загрузчики движков
     loadCompiler, compile, checkSyntax, getVersion, loadWasmCompiler,
     // Запуск программы

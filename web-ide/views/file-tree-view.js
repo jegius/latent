@@ -3,14 +3,19 @@
 // Бизнес-логику хранит WorkspaceService. Диалоги — через портальные модалки.
 
 import { Modal } from './modal-view.js';
-import { EXAMPLE_GROUPS } from '../examples.js';
 
 export class FileTreeView {
-    constructor(rootId) {
+    /**
+     * @param {string} rootId — id контейнера дерева файлов
+     * @param {{groupOrder?: string[]}} [options] — порядок групп примеров
+     *   (приходит из манифеста; сам view не тянет загрузчик примеров)
+     */
+    constructor(rootId, options = {}) {
         this.root = document.getElementById(rootId);
         this.exampleRoot = document.getElementById('example-tree');
         this.folderEl = document.getElementById('examples-folder');
         this.countEl = document.getElementById('examples-count');
+        this.groupOrder = options.groupOrder || [];
         this.examplesCollapsed = false;
         this.handlers = {
             select: () => {},
@@ -55,10 +60,10 @@ export class FileTreeView {
             byGroup.get(group).push(ex);
         }
 
-        // Порядок групп — как в EXAMPLE_GROUPS, незнакомые уходят в конец.
+        // Порядок групп — как в манифесте, незнакомые уходят в конец.
         const ordered = [
-            ...EXAMPLE_GROUPS.filter(g => byGroup.has(g)),
-            ...[...byGroup.keys()].filter(g => !EXAMPLE_GROUPS.includes(g)),
+            ...this.groupOrder.filter(g => byGroup.has(g)),
+            ...[...byGroup.keys()].filter(g => !this.groupOrder.includes(g)),
         ];
 
         for (const group of ordered) {

@@ -1,0 +1,5 @@
+# pnpm 11 читает настройки сборки из этого файла, а не из package.json.
+# esbuild — нативный бинарник Vite; его postinstall должен выполняться, иначе
+# `pnpm install` завершается с ERR_PNPM_IGNORED_BUILDS.
+allowBuilds:
+  esbuild: true

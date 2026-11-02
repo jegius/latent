@@ -5,8 +5,15 @@
   "type": "module",
   "description": "Latent online IDE — tree-walking interpreter (engine #1) and AI gateway",
   "scripts": {
-    "test": "node --test \"test/*.test.js\"",
-    "coverage": "node --experimental-test-coverage --test \"test/*.test.js\"",
+    "dev": "vite",
+    "build:chunks": "vite build",
+    "preview": "vite preview",
+    "test": "node --test \"test/*.test.js\" \"test/*.test.mjs\"",
+    "test:js": "node --test \"test/*.test.js\"",
+    "coverage": "node --experimental-test-coverage --test \"test/*.test.js\" \"test/*.test.mjs\"",
     "check:structure": "node scripts/check-structure.mjs"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
   }
 }

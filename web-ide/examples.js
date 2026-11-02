@@ -11,6 +11,8 @@ export {
     EXAMPLE_GROUPS,
     getExampleMeta,
     loadExamples,
+    loadExampleMeta,
+    loadExampleCatalog,
     loadExampleById,
     resetExamplesCache,
 } from './examples/index.js';

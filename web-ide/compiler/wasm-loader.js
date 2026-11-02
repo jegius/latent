@@ -1,6 +1,12 @@
 // compiler/wasm-loader.js — ленивая загрузка движка №2 (Rust→WASM).
 // Единственная ответственность: получение объекта {compile, source, version}.
 
+// URL по умолчанию резолвится относительно этого модуля. Vite видит
+// `new URL(..., import.meta.url)` и на сборке эмитит `.wasm` отдельным
+// ассетом с хешем (base './' → путь остаётся относительным); нативную
+// версию без сборки это выражение резолвит в web-ide/compiler.wasm.
+const DEFAULT_WASM_URL = new URL('../compiler.wasm', import.meta.url);
+
 /**
  * Ленивая загрузка движка №2 — настоящего Rust-компилятора, собранного в WASM
  * (§6.6 статьи). Компилятор кэшируется через Cache API; инстанцирование идёт
@@ -11,13 +17,13 @@
  * компилятор недоступен (тогда IDE остаётся на движке №1).
  *
  * @param {Object} [opts]
- * @param {string} [opts.url] — путь к compiler.wasm
+ * @param {string|URL} [opts.url] — путь к compiler.wasm
  * @param {string} [opts.cacheName] — имя кэша Cache API
  * @param {Function} [opts.imports] — объект импортов для инстанцирования
  * @returns {Promise<{compile: (source: string) => Uint8Array, source: string}|null>}
  */
 export async function loadWasmCompiler(opts = {}) {
-    const url = opts.url || 'compiler.wasm';
+    const url = opts.url || DEFAULT_WASM_URL;
     const cacheName = opts.cacheName || 'latent-compiler-v1';
 
     let bytes = null;

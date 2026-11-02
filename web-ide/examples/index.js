@@ -5,7 +5,10 @@
 // Example — здесь; сам код примеров — в одноимённых .lat-файлах рядом.
 
 export { EXAMPLE_META, EXAMPLE_GROUPS, getExampleMeta } from './manifest.js';
-export { loadExamples, loadExampleById, resetExamplesCache } from './loader.js';
+export {
+    loadExamples, loadExampleMeta, loadExampleCatalog,
+    loadExampleById, resetExamplesCache,
+} from './loader.js';
 
 /**
  * @typedef {Object} Example

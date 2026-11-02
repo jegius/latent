@@ -14,7 +14,8 @@ import { AISettingsService } from './services/ai-settings-service.js';
 import { ShareService } from './services/share-service.js';
 import { WorkspaceService } from './services/workspace-service.js';
 import { HotReload } from './hot-reload.js';
-import { EXAMPLE_GROUPS, loadExamples } from './examples.js';
+import { installHotkeys } from './hotkeys.js';
+import { loadExampleCatalog, loadExampleById } from './examples.js';
 import { fileControllerMethods } from './controllers/file-controller.js';
 import { commandControllerMethods } from './controllers/command-controller.js';
 import { aiSettingsControllerMethods } from './controllers/ai-settings-controller.js';
@@ -25,16 +26,24 @@ import { aiSettingsControllerMethods } from './controllers/ai-settings-controlle
  */
 class LatentIDEController {
     /**
-     * @param {Array<import('./examples.js').Example>} examples — примеры из .lat-файлов
+     * @param {Array<import('./examples.js').Example>} examples — метаданные примеров
+     *   (код стартового примера приходит в options.starter; остальные .lat
+     *   подгружаются по клику через loadExampleById).
+     * @param {{starter?: import('./examples.js').Example, groups?: string[]}} [options]
      */
-    constructor(examples = []) {
+    constructor(examples = [], options = {}) {
         this.examples = examples;
+        // Порядок групп для дерева examples/ и меню File → Examples. Приходит из
+        // манифеста, который загружается лениво (dynamic import) на старте.
+        this.exampleGroups = options.groups || [];
 
         // Сервисный слой (бизнес-логика)
         this.compilerService = new CompilerService();
         this.aiSettingsService = new AISettingsService();
         this.shareService = new ShareService();
-        const starter = examples.find(e => e.id === 'sorting') || examples[0];
+        const starter = options.starter
+            || examples.find(e => e.id === 'sorting' && e.code)
+            || examples.find(e => e.code);
         this.workspace = new WorkspaceService({
             initialFiles: [{ name: 'main.lat', code: starter ? starter.code : '' }],
         });
@@ -44,7 +53,9 @@ class LatentIDEController {
         this.outputView = new OutputView();
         this.toolbarView = new ToolbarView();
         this.aiSettingsView = new AISettingsView();
-        this.fileTreeView = new FileTreeView('file-tree');
+        this.fileTreeView = new FileTreeView('file-tree', {
+            groupOrder: this.exampleGroups,
+        });
         this.menubarView = new MenubarView('.menubar');
 
         // Дебаунсированный автоперезапуск
@@ -215,8 +226,8 @@ class LatentIDEController {
             byGroup.get(group).push(ex);
         }
         const ordered = [
-            ...EXAMPLE_GROUPS.filter(g => byGroup.has(g)),
-            ...[...byGroup.keys()].filter(g => !EXAMPLE_GROUPS.includes(g)),
+            ...this.exampleGroups.filter(g => byGroup.has(g)),
+            ...[...byGroup.keys()].filter(g => !this.exampleGroups.includes(g)),
         ];
         return ordered.map(group => ({
             label: group,
@@ -245,42 +256,25 @@ class LatentIDEController {
 Object.assign(LatentIDEController.prototype,
     fileControllerMethods, commandControllerMethods, aiSettingsControllerMethods);
 
-// Запуск IDE: сначала грузим исходники примеров из .lat-файлов,
-// затем создаём контроллер с готовым списком (он нужен для стартового файла,
-// меню File → Examples и папки examples/ в дереве проекта).
+// Запуск IDE: лениво грузим каталог примеров (манифест) и только один
+// стартовый исходник. Остальные .lat подтягиваются по клику через
+// loadExampleById — в сборке Vite это отдельный чанк `examples`.
 let ide = null;
-loadExamples()
-    .then((examples) => {
-        ide = new LatentIDEController(examples);
-        installHotkeys();
-    })
-    .catch((e) => {
+
+async function bootstrap() {
+    try {
+        const [{ examples, groups }, starter] = await Promise.all([
+            loadExampleCatalog(),
+            loadExampleById('sorting').catch(() => undefined),
+        ]);
+        const catalog = examples.map((meta) =>
+            (starter && meta.id === starter.id ? { ...meta, code: starter.code } : meta));
+        ide = new LatentIDEController(catalog, { starter, groups });
+    } catch (e) {
         console.error('Не удалось загрузить примеры:', e);
         ide = new LatentIDEController([]);
-        installHotkeys();
-    });
-
-// Горячие клавиши IntelliJ-style
-function installHotkeys() {
-    document.addEventListener('keydown', (e) => {
-        // Пока открыта модалка — не перехватываем глобальные комбинации.
-        if (document.getElementById('portal-root')) return;
-        const mod = e.metaKey || e.ctrlKey;
-        if (mod && e.key === 'Enter') {
-            e.preventDefault();
-            if (e.shiftKey) ide.handleCompile(true);
-            else ide.handleCompile(false);
-        }
-        if (mod && (e.key === 's' || e.key === 'S')) {
-            e.preventDefault();
-            ide.handleSave();
-        }
-        // Format Code: Ctrl/⌘+Alt+L (как в IntelliJ IDEA)
-        if (mod && e.altKey && (e.key === 'l' || e.key === 'L')) {
-            e.preventDefault();
-            ide.handleFormat();
-        }
-        // Обновление позиции курсора в статус-баре
-        setTimeout(() => ide.updateCursorStatus(), 0);
-    });
+    }
+    installHotkeys(() => ide);
 }
+
+bootstrap();
