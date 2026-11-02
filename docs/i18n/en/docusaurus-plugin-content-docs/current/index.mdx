@@ -10,26 +10,24 @@ import {PlaygroundFrame, PlaygroundLink} from '@site/src/components/Playground';
 
 # Latent
 
-**Latent** is a compact statically typed programming language with type
-inference that compiles to **WebAssembly**. The language is designed as
-AI-native: primitives for inference, embeddings, and tensors are part of the
-grammar rather than a library, and tests and contracts are ordinary language
-constructs.
+**Latent** is a small statically typed language that compiles to
+**WebAssembly**. AI primitives for inference, embeddings, and tensors are part of
+the grammar, and tests and contracts are written as ordinary language constructs —
+no SDK and no macros.
 
-The project is built around two engines, and this is important to understand
-from the very start:
+Latent has two engines, and anyone writing more than a few lines will meet both:
 
 | Engine | What it is | Where it lives |
 |---|---|---|
 | **#1** | A tree-walking interpreter in JavaScript. A broad subset of the language plus host features: channels, goroutines, AI primitives, self-repair. Does not support `enum`, bitwise operators, or block comments. | `web-ide/compiler/` |
-| **#2** | A real compiler in Rust, built to WASM (`web-ide/compiler.wasm`). Compiles a subset of the language into a valid WASM module. | `src/`, `web-ide/compiler.wasm` |
+| **#2** | A compiler in Rust, built to WASM (`web-ide/compiler.wasm`). Turns a subset of the language into a WASM module. | `src/`, `web-ide/compiler.wasm` |
 
-The documentation honestly notes what works in which engine: at the end of most
-guide pages there is an **"Engine #2 limitations"** section, and the differences
-between the engines are collected in
-[wasm-and-execution](./guide/wasm-and-execution.md#engine-differences).
+Most guide pages end with an "Engine #2 limitations" section; the summary table
+lives in [wasm-and-execution](./guide/wasm-and-execution.md#engine-differences).
+The full list of known limitations and the plan to remove them is in the
+[register](./specs/limitations.md) and the [roadmap](./specs/roadmap.md).
 
-## Key features
+## What already works
 
 - **Static typing with type inference.** Type annotations are optional:
   `let x = 42;` infers the type from the value. `int`, `float`, `bool`,
@@ -45,7 +43,11 @@ between the engines are collected in
 - **Classes and enum.** Fields, methods, `this`, the `init` constructor; sum
   types `enum` and `match`/`case`/`default` pattern matching.
 - **Arrays and strings.** Literals, indexing, `length`, `push`/`pop`, `len`,
-  string concatenation, comparison by content.
+  concatenation; string comparison by content works in engine #1, and in engine
+  #2 it is a known defect.
+- **File modules.** `import { a, b as c } from "./x.lat"`, `export fn/class/enum`,
+  two-phase linking and `latentc compile/check/bundle`. There are no packages or
+  dependency manager.
 - **CSP-style concurrency.** `spawn`, `channel`, `select`, `yield`, the
   `ch <- v` and `<-ch` operators (engine #1).
 - **AI primitives as syntax.** `ai_infer`, `ai_embed`, `ai_stream`,
@@ -100,8 +102,8 @@ cargo build --bin latentc
 
 The repository also has other sections of the site: the **reference**
 (`reference/` — grammar, built-in functions, types, errors, ABI), the
-**specifications** (`specs/` — self-host and its final parity, engine parity,
-bytecode, the architecture of the Rust compiler and of the web IDE), the
+**specifications** (`specs/` — self-host and parity, bytecode, architecture,
+[limitations](./specs/limitations.md) and the [roadmap](./specs/roadmap.md)), the
 **tooling** (`tooling/` — web IDE, VS Code, IntelliJ, the MCP documentation
 server), and the **example walkthroughs** (`examples/`). Use the sidebar on the
 left to navigate them.
@@ -118,9 +120,9 @@ left to navigate them.
   goroutines and channels, AI primitives, the self-hosted compiler, a sandbox,
   modules, a benchmark, image filters and physics. Live metrics right in the
   browser, with no build step or dependencies: <a href="/latent/demos/">latent/demos</a>.
-- **Killer features and demos** — [an overview of the seven
-  capabilities](./guide/killer-features.md) and <a href="/latent/demos/">live
-  demos</a>: CSP, AI, self-host, sandbox, GC-free memory.
+- **Features and limits** — [what Latent gives the frontend](./guide/killer-features.md)
+  and <a href="/latent/demos/">live demos</a>: CSP, AI, self-host, sandbox, GC-free
+  memory, with an honest note on where JS/TS is still more convenient.
 - **The `latentc` CLI** — `compile`, `check`, `version`; it works with files and
   emits WASM. In detail — [getting-started/cli](./getting-started/cli.md).
 - **MCP documentation server** — serves the docs and code checking to AI agents
@@ -134,19 +136,18 @@ left to navigate them.
 
 ## Project status
 
-Latent is a young language: compiler version `0.1.0`, and the ecosystem is
-only taking shape. The language has no modules/packages, no class inheritance,
-no user-defined generics, no `break`/`continue`, and no garbage collection.
-This is not an oversight but a fixed language scope — see the
-[philosophy](./intro/philosophy.md) and the
-[comparison with other languages](./intro/comparison.md).
+Latent is a young language: compiler version `0.1.0`, and the ecosystem is only
+taking shape. File modules v1 exist; packages, class inheritance, user-defined
+generics, `break`/`continue` and garbage collection do not. Some of that is a
+deliberate choice, some is work not done yet. The
+[limitations register](./specs/limitations.md) separates the two and gives each
+item a priority and a workaround.
 
-The self-hosted compiler written in Latent itself has reached parity with the
-Rust reference: the fixed point `stage2 === stage3`, 166 tests, 64/65 cases of
-the parity matrix — details in [specs/selfhost](./specs/selfhost.md). Rust is
-not required: the bootstrap runs autonomously from `selfhost/seed.wasm`
-(`node selfhost/bootstrap-wasm.mjs`), and Rust is needed only to refresh the
-seed.
+The self-hosted compiler written in Latent itself has reached the fixed point
+`stage2 === stage3`; the parity matrix is nearly green, but individual engine
+differences are still documented and not all are covered by tests. Rust is not
+required for day-to-day work: bootstrap runs from `selfhost/seed.wasm`
+(`node selfhost/bootstrap-wasm.mjs`), and Rust is only needed to refresh the seed.
 
 If you are an AI agent: start with <a href="/latent/llms.txt">llms.txt</a>, and
 look up exact built-in function signatures in `guide/` and `reference/`.

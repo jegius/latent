@@ -7,11 +7,11 @@ description: "Navigation through the walkthroughs of the Latent language example
 
 # Example walkthroughs
 
-The examples in this section are real files from `web-ide/examples/` (the single
-source of truth for the web IDE, the tests, and the documentation). Each
-walkthrough gives you the code, an explanation, what you will see in the web IDE
-console on **Run** (engine #1), and the differences when compiling/running with
-engine #2.
+The walkthroughs here cover the files in `web-ide/examples/` — the same files you
+open in the web IDE. Each one gives the code, an explanation, the console output
+on **Run** (engine #1) and the differences when compiling with engine #2. When an
+example behaves differently from what you would expect, the reason is usually in
+the [limitations register](../specs/limitations.md).
 
 | Walkthrough | Examples from `web-ide/examples/` |
 |---|---|
@@ -39,7 +39,7 @@ see on the page):
 | [Compiler in the browser](./frontend-compiler-playground.md) | `latent_alloc`/`latent_compile`/`latent_free`, your own playground |
 | [Interactive demos](./frontend-showcase.md) | eight browser demos: goroutines and channels, AI primitives, self-host, sandbox, modules, benchmark, image filters and physics |
 
-## Demos and killer features
+## Demos
 
 Five new self-contained demos execute real Latent code right on the page; the older
 ones put it under real load:

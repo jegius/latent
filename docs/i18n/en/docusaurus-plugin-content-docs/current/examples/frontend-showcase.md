@@ -1,26 +1,26 @@
 ---
 title: "Eight interactive Latent demos"
-sidebar_label: "Demos and killer features"
+sidebar_label: "Demos and what they show"
 sidebar_position: 15
-description: "Eight browser demos: goroutines and channels, AI primitives, the self-hosted compiler, a sandbox for untrusted code, modules — plus a benchmark, canvas filters and physics. Real execution, live metrics, honest limits."
+description: "Eight browser demos: goroutines and channels, AI primitives, the self-hosted compiler, a sandbox for untrusted code, modules — plus a benchmark, canvas filters and physics. Real execution, live metrics, known limits."
 ---
 
 # Eight interactive Latent demos
 
-This section is not about "hello world". Latent **runs right on the page**:
-goroutines and channels, AI primitives, the self-hosted compiler, a wasm sandbox,
-and a multi-file project. Five new demos execute real code — either with engine #1
-(the JS interpreter) or engine #2 (`compiler.wasm`) — and show real metrics: time,
-wasm size, scheduler events, stage sha256, the capability list. The `.lat` sources
-sit next to them, and the numbers are measured by **your** browser.
+The eight pages below run Latent right in the browser. Five are about the
+language: goroutines and channels, AI primitives, the self-hosted compiler, a
+sandbox and modules. Three are about dense computation: a benchmark, image
+filters and physics.
 
-The demos are static pages with no bundler and no external dependencies. They live
-in `docs/static/demos/` and are published at `/latent/demos/...`; everything works
-offline, including a copy of the interpreter in `demos/vendor/compiler/`.
+There are no recorded videos and no "average numbers from our machine": the code
+runs on yours, the metrics are measured on the spot, and the `.lat` sources sit
+next to them. These are static pages with no bundler and no external
+dependencies, in `docs/static/demos/`, published at `/latent/demos/...`. A copy
+of the interpreter for offline use lives in `demos/vendor/compiler/`.
 
-## Map: demo → killer feature → what you will see
+## Map: demo, strong side, what you see
 
-| Demo | Killer feature | What you will see |
+| Demo | Strong side | What you see |
 |---|---|---|
 | <a href="/latent/demos/concurrency/">Goroutines & channels</a> | CSP in the grammar: `spawn`, `channel`, `<-`, `select`, `yield` | a live visualization of goroutines, channel pipes and message tokens; the scheduler trace; fan-in, map-reduce, worker pool, select, **1000 goroutines**, deadlock |
 | <a href="/latent/demos/ai/">AI-native</a> | `ai_embed`, `ai_infer`, `ai_stream`, `tensor`, `matmul` are language syntax | embeddings as vectors, a cosine heatmap, token streaming, real A/B/C matrices, optional gateway |
@@ -83,9 +83,9 @@ workers with partial sums (map-reduce), a worker pool over two channels, a selec
 race, 1000 goroutines, a deadlock, and `yield` semantics. Every scenario ships a JS
 equivalent built on promises, so you can compare size and readability.
 
-Honest part: the scheduler is **cooperative**, single-threaded, channels have no
-bounded queue, and `select` polls arms in order. The counters show it, and the
-limitations section on the page spells it out.
+The scheduler is cooperative: one thread, channels have no bounded queue, and
+`select` polls arms in order. The counters show it, and so does the limitations
+section on the page.
 
 ## 2. AI-native primitives
 
@@ -123,9 +123,10 @@ stream, and A(2×3)·B(3×2)=C(2×2). By default it uses the deterministic offli
 from `interpreter-ai.js`; optionally you can connect an Ollama/OpenAI-compatible
 gateway (for `ai_infer` only; the key is never stored).
 
-Honest part: mock embeddings are a hash projection, not semantics; streaming
-replays tokens that were already returned; `ai_generate!` is parsed by the Rust
-parser (engine #2) but is not executed by the JS interpreter — the page says so.
+Mock embeddings are a hash projection, not semantics. Streaming prints tokens that
+the interpreter has already received, and `ai_generate!` is parsed by the Rust
+parser (engine #2) but not executed by the JS interpreter. The page says this next
+to the result rather than hiding it.
 
 ## 3. The compiler compiles itself
 
@@ -152,9 +153,9 @@ checked with `crypto.subtle` plus a byte-wise comparison. In the current build
 same seed compiles and runs the selected sample through the ABI
 `[len][utf8]` → `main()` → `[len][wasm]`.
 
-Honest part: seed is the trusted starting point; the self-hosted compiler may
-reject some host-only corpus programs; a 30 s timeout terminates the Worker. This is
-about reproducibility, not magic.
+Seed is the trusted starting point: the self-hosted compiler may reject some
+host-only corpus programs, and a 30-second timeout terminates the Worker. That is
+a reproducibility limit, not magic.
 
 ## 4. Sandbox for untrusted code
 
@@ -175,9 +176,10 @@ Buttons: infinite loop (the host calls `worker.terminate()` on timeout), OOB acc
 `alert`/`fetch` (a compile error: those names do not exist in the language). The
 capability list, memory gauge and event log update live.
 
-Honest part: this is not an OS sandbox and not a boundary against browser bugs;
-`compiler.wasm` is trusted; the timeout is host-side. The page has a full
-limitations section.
+This is not an OS sandbox and not a boundary against browser bugs:
+`compiler.wasm` is trusted, and the timeout lives on the host. What is and is not
+isolated is covered in the page's limitations section and in the
+[register](../specs/limitations.md).
 
 ## 5. A multi-file project
 
@@ -212,9 +214,8 @@ Build: the page checks `compiler.wasm` via `WebAssembly.Module.exports`. If
 project to WASM (as in the current build); otherwise it runs on engine #1. Both
 paths are real.
 
-Honest part: modules v1 is named imports and relative `.lat` paths only; the editor
-lives in tab memory; cycles are resolved by the linker, but recursion is still
-recursion.
+Modules v1 are named imports and relative `.lat` paths only; the editor lives in
+tab memory; cycles are resolved by the linker, but recursion is still recursion.
 
 ## Performance: benchmark, images, physics
 
@@ -258,8 +259,8 @@ fn main(n: int, rounds: int) -> int {
 - <a href="/latent/demos/physics/">Physics</a>: up to 30,000 particles, three
   attractors, an FPS graph and bit-for-bit parity with the JS twin.
 
-Honest part: for short calls, JS↔WASM overhead can eat the win; the demos show
-that too. The numbers are live and machine-dependent.
+For short calls, JS↔WASM overhead can eat the win; the demos show that too. The
+numbers are live and machine-dependent.
 
 ## How it works
 

@@ -13,7 +13,8 @@ Rust-компилятор, self-hosted компилятор на самом Late
 [![Coverage](https://img.shields.io/badge/coverage-rust%2092%25%20%C2%B7%20web--ide%2097.5%25%20%C2%B7%20selfhost%20100%25-success)](#качество-кода)
 
 - 📖 **Документация:** https://jegius.github.io/latent/ (RU) · https://jegius.github.io/latent/en/ (EN)
-- 🎯 **Killer-фичи:** [guide/killer-features](docs/docs/guide/killer-features.md) — почему Latent, а не JS/TS
+- 🎯 **Возможности и границы:** [guide/killer-features](docs/docs/guide/killer-features.md) — что Latent даёт фронтенду и где JS/TS удобнее
+- 🗺 **Дорожная карта:** [ROADMAP.md](ROADMAP.md) · [реестр ограничений](docs/docs/specs/limitations.md)
 - 🧪 **Web IDE (playground):** https://jegius.github.io/latent/playground/ (модули, оба движка)
 - 💥 **Killer-демо:** https://jegius.github.io/latent/demos/ — горутины/каналы, AI-native,
   self-hosted компилятор в браузере, WASM-песочница, модули, бенчмарки, canvas, физика
@@ -40,13 +41,15 @@ Latent — статически типизированный язык в дух�
 Latent** (`selfhost/`, bootstrap с фиксированной точкой `stage2 === stage3`; компиляция
 без Rust из `seed.wasm`; паритет 64/65, поведенческий паритет модулей).
 
-### Killer-фичи и модули
+### Возможности и модули
 
-- [Killer-фичи Latent](docs/docs/guide/killer-features.md) — честный разбор: CSP-горутины,
+- [Что Latent даёт фронтенду](docs/docs/guide/killer-features.md) — CSP-горутины,
   AI в синтаксисе, self-hosted компилятор в браузере, WASM-песочница,
-  детерминированная память, модули, dual-engine; где JS/TS выигрывают.
+  детерминированная память, модули, dual-engine; и где JS/TS выигрывают.
 - [Модули](docs/docs/guide/modules.md) — синтаксис, линковка, CLI `bundle`, web IDE,
   selfhost и ограничения v1.
+- [Ограничения](docs/docs/specs/limitations.md) и [дорожная карта](docs/docs/specs/roadmap.md) —
+  что сломано, что отложено и в каком порядке будет чиниться.
 
 ```latent
 // math.lat

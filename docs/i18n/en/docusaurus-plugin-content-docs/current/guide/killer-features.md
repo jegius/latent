@@ -1,31 +1,31 @@
 ---
-title: "Killer Features of Latent"
-sidebar_label: "Killer Features"
+title: "What Latent gives the frontend"
+sidebar_label: "Features and limits"
 sidebar_position: 16
-description: "Seven capabilities that let Latent beat JS/TS on the frontend: CSP in the language, AI primitives, a self-hosted compiler in the browser, a WASM sandbox, GC-free memory, modules with chunks, and two engines — with live demos, code, and honest limits."
+description: "Seven things Latent brings to the frontend — CSP in the language, AI primitives, a self-hosted compiler, a WASM sandbox, GC-free memory, modules, and two engines — with code, live demos, and a sober look at the limits."
 ---
 
-# Killer Features of Latent
+# What Latent gives the frontend
 
-Latent does not replace React, Vue, or TypeScript. Its niche on the frontend is a **computational
-WASM core** (data, canvas/audio/physics, parsing, AI) that lives next to the UI and needs no server.
-Within that niche the language has what the "TypeScript + WASM library" stack lacks: concurrency and
-AI are part of the grammar, the compiler compiles itself right in the browser, and memory is
-deterministic by construction.
+Latent does not replace React, Vue or TypeScript. Its niche is a computational
+WASM core next to the UI: data, canvas/audio/physics, parsing, AI. No server is
+needed: concurrency and AI are written in the grammar, the compiler can compile
+itself, and memory is deterministic.
 
-Below: what each feature is, how it looks in code, where it beats JS and where it loses, and where
-to try it live. Blocks marked `// host-only` run in engine #1 (the browser runtime); the rest are
-checked by the engine #2 compiler when the documentation is built.
+Below are seven things worth trying — and where they stop. Blocks marked
+`// host-only` run in engine #1; the rest are checked by the engine #2 compiler
+when the documentation is built.
 
-:::note The honest thesis
+:::note What this page is about
 
-Latent is not "JS but better" and not a framework replacement. It is a **language for the core**: a
-small WASM module with a single import, `env.print`, where CSP, AI, and self-hosting are baked into
-the syntax; the UI, DOM, network, and state stay in JS/TS.
+Latent is not "JS but better" and not a framework replacement. It is a language
+for the core: a small WASM module with a single import, `env.print`, where CSP,
+AI and self-hosting are part of the syntax; the UI, DOM, network and state stay in
+JS/TS.
 
 :::
 
-## Killer feature table
+## Seven things
 
 | # | Feature | What it gives the frontend | Where it runs | Demo |
 |---|---|---|---|---|
@@ -39,7 +39,7 @@ the syntax; the UI, DOM, network, and state stay in JS/TS.
 
 ## 1. CSP concurrency in the language
 
-**What it is.** `spawn`, `channel()`, `select`, `yield`, `ch <- v`, and `<-ch` are keywords and
+**How it works.** `spawn`, `channel()`, `select`, `yield`, `ch <- v`, and `<-ch` are keywords and
 syntax, not an import from a package. Engine #1 runs them on a cooperative scheduler: `send` puts a
 value into the channel queue, `recv` yields to the scheduler while the queue is empty, `select`
 waits for the first ready channel, and `yield` voluntarily gives up control.
@@ -64,11 +64,11 @@ fn main() -> int {
 }
 ```
 
-**Where it beats JS.** A worker pool, fan-out/fan-in, and `select` take a dozen lines with no
+**What it gives.** A worker pool, fan-out/fan-in, and `select` take a dozen lines with no
 dependencies. JS has no channels: you need a library or a hand-rolled Promise queue with
 `AbortController`, and `Promise.race` cannot "wait for the first ready channel" as naturally.
 
-**Where it loses.** This is concurrency, not parallelism: one thread, no preemption, and a long loop
+**Where the limit is.** This is concurrency, not parallelism: one thread, no preemption, and a long loop
 without `yield`/`recv` blocks the other goroutines. There is no cancellation, timeouts, or
 priorities; for real parallelism JS has Web Workers, and channels are executed only by engine #1 — a
 host feature, not WASM code.
@@ -79,7 +79,7 @@ walkthrough](../examples/concurrency.md).
 
 ## 2. AI primitives as syntax
 
-**What it is.** `ai_infer`, `ai_embed`, `ai_stream`/`stream_next`, `tensor`, `semantic`, `matmul`,
+**How it works.** `ai_infer`, `ai_embed`, `ai_stream`/`stream_next`, `tensor`, `semantic`, `matmul`,
 `cosine_similarity`, `ai_generate!` are built-in functions and keywords. The parser sees them, and
 so do the IDE, the MCP server, and the linter: this is not an SDK you have to install. In the
 browser engine #1 runs them: with a provider — the real gateway, without one — a deterministic mock
@@ -98,13 +98,13 @@ fn main() -> int {
 }
 ```
 
-**Where it beats JS.** In JS an AI call is `fetch` + JSON + manual parsing: types are lost,
+**What it gives.** In JS an AI call is `fetch` + JSON + manual parsing: types are lost,
 streaming is hand-written, and tooling sees nothing but a string. In Latent
 `ai_stream`/`stream_next` are part of the language, and `ai_embed` returns a vector for
 `cosine_similarity`/`matmul`. The mock is deterministic, so demos and tests work offline, without
 keys or CORS.
 
-**Where it loses.** The call still goes to the host: engine #2 rejects these primitives with a
+**Where the limit is.** The call still goes to the host: engine #2 rejects these primitives with a
 "requires a host runtime" error. There are no typed responses, schemas, retries, or token
 accounting; streaming is an iterator without backpressure; keys and CORS are the host's concern. In
 production the call is almost always made by JS or the backend.
@@ -115,7 +115,7 @@ walkthroughs](../examples/ai.md).
 
 ## 3. Self-hosted compiler in the browser
 
-**What it is.** The Latent compiler is written in Latent itself (`selfhost/shc.lat`) and built to
+**How it works.** The Latent compiler is written in Latent itself (`selfhost/shc.lat`) and built to
 WASM. `selfhost/seed.wasm` (≈41 KB) is a working self-hosted compiler that needs neither Rust,
 nor `cargo`, nor a server. The bootstrap chain reaches a **fixed point**: the third stage is
 byte-for-byte identical to the second.
@@ -135,11 +135,11 @@ fn main() -> int {
 }
 ```
 
-**Where it beats JS.** The compiler is an asset, not a service: no backend, no queue, no source-code
+**What it gives.** The compiler is an asset, not a service: no backend, no queue, no source-code
 leak, and it works offline. For a playground this is a full toolchain in a `.wasm` of a few dozen
 kilobytes.
 
-**Where it loses.** The seed is a snapshot of the compiler: to add a new language construct you
+**Where the limit is.** The seed is a snapshot of the compiler: to add a new language construct you
 still need Rust once (`--update-seed`). It compiles a subset (without host features), has no source
 maps or optimizations, and caches by source only.
 
@@ -149,7 +149,7 @@ execution](./wasm-and-execution.md).
 
 ## 4. A WASM sandbox by construction
 
-**What it is.** A compiled module exports `memory` and `main`, and imports **exactly one** function
+**How it works.** A compiled module exports `memory` and `main`, and imports **exactly one** function
 — `env.print(i32)`. It has no access to the DOM, `fetch`, `localStorage`, timers, or random numbers:
 those imports do not exist rather than being "forbidden by policy". All the module can do to the
 world is ask the host to print a string from memory.
@@ -170,12 +170,12 @@ fn main() -> int {
 }
 ```
 
-**Where it beats JS.** `eval` and `new Function` run code with full page privileges: DOM, cookies,
+**What it gives.** `eval` and `new Function` run code with full page privileges: DOM, cookies,
 network, prototypes. A Latent module has no ambient authority by construction: to allow something,
 the host must pass an import explicitly. For generated AI code and plugins that is a qualitatively
 different security model.
 
-**Where it loses.** The sandbox does not limit CPU or memory by itself: an infinite loop must be
+**Where the limit is.** The sandbox does not limit CPU or memory by itself: an infinite loop must be
 killed via a Worker + `terminate`, and `memory.grow` must be capped on the host (modules have no
 fuel or timeouts). There is no capability API beyond `print`, and array bounds are not checked.
 
@@ -185,7 +185,7 @@ frontend](./web-and-frontend.md), [WASM ABI](../reference/wasm-abi.md).
 
 ## 5. Deterministic memory without GC
 
-**What it is.** A module has its own linear memory: 16 pages of 64 KiB at the start, growing through
+**How it works.** A module has its own linear memory: 16 pages of 64 KiB at the start, growing through
 `memory.grow`. The allocator is a **bump** allocator: its only operation is moving the heap pointer
 forward. There is no garbage collection and no `free`, hence no unpredictable pauses.
 
@@ -207,11 +207,11 @@ For animation this is convenient: the frame buffer is allocated once and overwri
 being recreated on every `requestAnimationFrame`. The physics demo shows this on a frame-time graph:
 JS has GC spikes, the Latent core has a flat line.
 
-**Where it beats JS.** No GC pauses and no p99 growth; memory is predictable and laid out by hand;
+**What it gives.** No GC pauses and no p99 growth; memory is predictable and laid out by hand;
 the runtime is tiny. For audio (a dropped buffer is not an option), canvas, and physics, a stable
 frame matters more than average speed.
 
-**Where it loses.** Memory only grows: a long-lived page must recreate the instance or reuse
+**Where the limit is.** Memory only grows: a long-lived page must recreate the instance or reuse
 buffers. `push` does not reserve capacity and may write past the allocated block; there is no `free`
 or arenas — for a long-running CRUD app, JS GC is more convenient.
 
@@ -220,7 +220,7 @@ or arenas — for a long-running CRUD app, JS GC is more convenient.
 
 ## 6. Modules and lazy chunks
 
-**What it is.** Two related things. **Lazy chunks** already work in the playground: WASM is an
+**How it works.** Two related things. **Lazy chunks** already work in the playground: WASM is an
 asset, not an entry point, so the loader hides behind `dynamic import()`, and `manualChunks` splits
 the bundle into `engine2`, `ai`, `editor`, `examples`, and `core`. **Modules** — file-level
 `import`/`export` with link-time resolution — are implemented in v1: `export` before a top-level
@@ -253,11 +253,11 @@ production — see the [frontend guide](./web-and-frontend.md).
 
 :::
 
-**Where it beats JS.** An import is part of the language, not a runtime loader: names are resolved
+**What it gives.** An import is part of the language, not a runtime loader: names are resolved
 at link time, WASM needs no module resolver, and a project builds without a bundler. Lazy chunks
 shrink the starting bundle: the core `.wasm` is not downloaded until the user runs a computation.
 
-**Where it loses.** v1 is deliberately narrow: named imports only, no `export *`, `import * as ns`,
+**Where the limit is.** v1 is deliberately narrow: named imports only, no `export *`, `import * as ns`,
 dynamic imports, or a package manager. There is no ecosystem or npm; the self-hosted compiler
 consumes a flat `bundle`, not a file tree.
 
@@ -267,7 +267,7 @@ IDE](../tooling/web-ide.md).
 
 ## 7. Two engines, one source
 
-**What it is.** The same `.lat` can be executed and compiled. **Engine #1** is a tree-walking
+**How it works.** The same `.lat` can be executed and compiled. **Engine #1** is a tree-walking
 interpreter in JS: a full browser runtime, including channels, `select`/`yield`, AI, tensors, and
 contracts. **Engine #2** is a Rust compiler built to WASM: it turns a subset of the language into a
 valid WASM module. The playground picks the engine itself: Run always executes #1, host features and
@@ -288,11 +288,11 @@ fn main() -> int {
 }
 ```
 
-**Where it beats JS.** One source lives two lives: a teaching example in the browser and a WASM core
+**What it gives.** One source lives two lives: a teaching example in the browser and a WASM core
 on the page. There is no separate toolchain for "play" and "deploy": the playground is the IDE, the
 compiler, and the runtime, plus self-repair on errors.
 
-**Where it loses.** Two engines mean double semantics and double maintenance. The divergences are
+**Where the limit is.** Two engines mean double semantics and double maintenance. The divergences are
 real: `7 / 2` is `3.5` in #1 and `3` in #2, `"привет".length` is `6` versus `12`, `[1] == [1]` is
 `true` versus `false`. #2 does not execute code, and `float` is fragile in it. Move code between
 engines with the [difference table](./wasm-and-execution.md#engine-differences) at hand.
@@ -300,7 +300,7 @@ engines with the [difference table](./wasm-and-execution.md#engine-differences) 
 **Try it.** The hub is <a href="/latent/demos/">/latent/demos/</a>. Theory: [the two web IDE
 engines](../specs/engines.md), [WASM and execution](./wasm-and-execution.md).
 
-## Honestly about the limits
+## Limits
 
 **Where JS/TS is better.** UI, DOM, forms, routing, and state are the territory of React/Vue/Svelte
 with DevTools, source maps, and a huge ecosystem. npm, types, ready-made components, and hiring:
@@ -347,3 +347,7 @@ benchmark.
 | Running someone else's code safely | WASM sandbox | <a href="/latent/demos/sandbox/">sandbox</a> · [frontend](./web-and-frontend.md) |
 | Stable 60 fps without GC spikes | GC-free memory | <a href="/latent/demos/physics/">physics</a> · [memory](./memory-and-low-level.md) |
 | A multi-file project in the browser | modules + chunks | <a href="/latent/demos/modules/">modules</a> · [frontend](./web-and-frontend.md) |
+
+The full list of limitations, with priorities and workarounds, is in the
+[register](../specs/limitations.md); the order in which they will be removed is in
+the [roadmap](../specs/roadmap.md).

@@ -397,4 +397,4 @@ Selfhost остаётся однофайловым (его собственны�
   [диагностики](../reference/errors.md#модули-и-линковка).
 - [Self-hosted компилятор](../specs/selfhost.md#модули-и-bundle) — почему bundle.
 - [Web IDE](../tooling/web-ide.md) · [Latent во фронтенде](./web-and-frontend.md) ·
-  [Killer-фичи](./killer-features.md#6-модули-и-ленивые-чанки)
+  [Возможности и границы](./killer-features.md#6-модули-и-ленивые-чанки)
