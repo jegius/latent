@@ -69,6 +69,8 @@ intellijPlatform {
 
 tasks.test {
     useJUnit()
+    // Тесты на BasePlatformTestCase не должны пытаться открыть GUI на CI.
+    systemProperty("java.awt.headless", "true")
     testLogging {
         events("passed", "failed", "skipped")
     }

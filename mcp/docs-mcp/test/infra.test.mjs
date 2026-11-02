@@ -7,10 +7,12 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import {
     ErrorCodes,
@@ -38,7 +40,7 @@ import {
     sendJson,
     sendMethodNotAllowed,
 } from '../src/http-util.mjs';
-import { REPO_ROOT } from '../src/paths.mjs';
+import { REPO_ROOT, PACKAGE_DIR } from '../src/paths.mjs';
 
 /** Минимальный fake ServerResponse для проверки утилит без сети. */
 function fakeResponse() {
@@ -159,6 +161,23 @@ test('version: битый или пустой package.json не роняет с�
             fs.readFileSync = original;
         }
     }
+});
+
+test('version: в отдельном процессе с недоступным package.json SERVER_VERSION = 0.0.0', () => {
+    const moduleUrl = pathToFileURL(path.join(PACKAGE_DIR, 'src', 'version.mjs')).href;
+    const script = [
+        "import fs from 'node:fs';",
+        'const original = fs.readFileSync;',
+        'fs.readFileSync = function (file, ...rest) {',
+        "  if (String(file).endsWith('package.json')) throw new Error('EACCES');",
+        '  return original.call(this, file, ...rest);',
+        '};',
+        `const module = await import(${JSON.stringify(moduleUrl)});`,
+        'process.stdout.write(module.SERVER_VERSION);',
+    ].join('\n');
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), '0.0.0');
 });
 
 test('paths: resolveRepoRoot разрешает относительный путь от cwd', () => {

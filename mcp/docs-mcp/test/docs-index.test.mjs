@@ -204,6 +204,26 @@ test('walkMarkdown на файле (не каталоге) возвращает 
     }
 });
 
+test('walkMarkdown пропускает нерегулярные файлы (симлинки/устройства)', () => {
+    const root = makeDocs({ 'real.md': '# Настоящий' });
+    const original = fs.readdirSync;
+    fs.readdirSync = function patched(dir, options) {
+        if (dir === root) {
+            return [
+                { name: 'link.md', isDirectory: () => false, isFile: () => false, isSymbolicLink: () => true },
+                { name: 'real.md', isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false },
+            ];
+        }
+        return original.call(this, dir, options);
+    };
+    try {
+        assert.deepEqual(walkMarkdown(root), ['real.md']);
+    } finally {
+        fs.readdirSync = original;
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
 test('buildDocsIndex: каталог-файл и путь с недопустимым символом дают exists=false', () => {
     const root = makeDocs({ 'guide/one.md': '# Один' });
     try {
@@ -340,6 +360,20 @@ test('renderIndex не добавляет описание, если его не
         const markdown = buildDocsIndex({ docsRoot: root }).renderIndex();
         assert.match(markdown, /- \[Пустая страница\]\(latent-docs:\/\/guide\/empty\.md\)$/m);
         assert.match(markdown, /## Custom \(custom\)/);
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test('заголовок index.md без front matter: корень — «Документация», вложенный — имя папки', () => {
+    const root = makeDocs({
+        'index.md': 'Просто текст без заголовка.',
+        'guide/index.md': 'Тоже без заголовка.',
+    });
+    try {
+        const index = buildDocsIndex({ docsRoot: root });
+        assert.equal(index.find('index.md').title, 'Документация');
+        assert.equal(index.find('guide/index.md').title, 'Guide');
     } finally {
         fs.rmSync(root, { recursive: true, force: true });
     }

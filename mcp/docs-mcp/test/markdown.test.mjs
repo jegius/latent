@@ -152,6 +152,11 @@ test('parseScalar: пустой и непустой flow-список', () => {
     assert.deepEqual(data.mixed, ['a', 2, true]);
 });
 
+test('parseScalar: пустой элемент flow-списка становится пустой строкой', () => {
+    const { data } = parseFrontMatter('---\nlist: [a, , b]\n---\nтело');
+    assert.deepEqual(data.list, ['a', '', 'b']);
+});
+
 test('parseScalar: незакрытые кавычки остаются строкой как есть', () => {
     const { data } = parseFrontMatter('---\ntitle: "незакрытая\n---\nтело');
     assert.equal(data.title, '"незакрытая');

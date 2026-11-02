@@ -169,12 +169,14 @@ const wasmName = (text) => {
 const I32 = 0x7f;
 const TYPE_II = [0x60, 0x02, I32, I32, 0x01, I32];
 const TYPE_I = [0x60, 0x01, I32, 0x01, I32];
+const TYPE_VOID = [0x60, 0x00, 0x00];
 
 /**
  * Собирает минимальный WASM-модуль с C-ABI компилятора.
  * @param {{alloc?: number|null, compile?: number|null, includeAlloc?: boolean, includeCompile?: boolean,
  *          includeFree?: boolean, freeThrows?: boolean, includeVersion?: boolean, versionThrows?: boolean,
- *          includeMemory?: boolean, pages?: number, data?: {offset: number, bytes: number[]}[]}} [options]
+ *          includeMemory?: boolean, pages?: number, data?: {offset: number, bytes: number[]}[],
+ *          imports?: string[]}} [options]
  * @returns {Buffer}
  */
 function buildFakeWasm(options = {}) {
@@ -190,6 +192,7 @@ function buildFakeWasm(options = {}) {
         includeMemory = true,
         pages = 1,
         data = [],
+        imports = [],
     } = options;
 
     const funcTypes = [];
@@ -197,19 +200,25 @@ function buildFakeWasm(options = {}) {
     const bodies = [];
     const addFunction = (name, type, body) => {
         funcTypes.push(type === 'II' ? 0 : 1);
-        exports.push([...wasmName(name), 0x00, funcTypes.length - 1]);
+        exports.push([...wasmName(name), 0x00, imports.length + funcTypes.length - 1]);
         bodies.push([0x00, ...body]);
     };
 
     if (includeAlloc) addFunction('latent_alloc', 'I', [0x41, ...sleb(alloc), 0x0b]);
-    if (includeCompile) addFunction('latent_compile', 'II', [0x41, ...sleb(compile), 0x0b]);
+    if (includeCompile) {
+        const calls = imports.flatMap((_, index) => [0x10, ...uleb(index)]);
+        addFunction('latent_compile', 'II', [...calls, 0x41, ...sleb(compile), 0x0b]);
+    }
     if (includeFree) addFunction('latent_free', 'I', freeThrows ? [0x00, 0x0b] : [0x41, ...sleb(0), 0x0b]);
     if (includeVersion) addFunction('latent_version', 'I', versionThrows ? [0x00, 0x0b] : [0x41, ...sleb(3000), 0x0b]);
 
-    const sections = [
-        wasmSection(1, wasmVec([TYPE_II, TYPE_I])),
-        wasmSection(3, wasmVec(funcTypes.map((index) => [index]))),
-    ];
+    const sections = [wasmSection(1, wasmVec([TYPE_II, TYPE_I, TYPE_VOID]))];
+    if (imports.length > 0) {
+        sections.push(wasmSection(2, wasmVec(imports.map((field) => [
+            ...wasmName('env'), ...wasmName(field), 0x00, 0x02,
+        ]))));
+    }
+    sections.push(wasmSection(3, wasmVec(funcTypes.map((index) => [index]))));
     if (includeMemory) sections.push(wasmSection(5, wasmVec([[0x00, ...uleb(pages)]])));
     const exportEntries = exports.slice();
     if (includeMemory) exportEntries.unshift([...wasmName('memory'), 0x02, 0x00]);
@@ -273,6 +282,19 @@ test('compiler: синтетический ABI — успех и ошибка с
         }]);
     } finally {
         fs.rmSync(fail.dir, { recursive: true, force: true });
+    }
+});
+
+test('compiler: host-импорты env.print* инстанцируются и вызываются без ошибок', async () => {
+    const fake = writeFakeWasm(buildFakeWasm({
+        imports: ['print', 'print_str', 'print_i32', 'print_f64', 'print_bool'],
+        data: [{ offset: 2048, bytes: resultStruct(1, '') }],
+    }));
+    try {
+        const result = await createCompiler({ wasmPath: fake.wasmPath }).check('fn main() {}');
+        assert.deepEqual(result, { ok: true, errors: [] }, 'заглушки env.* должны принимать вызовы компилятора');
+    } finally {
+        fs.rmSync(fake.dir, { recursive: true, force: true });
     }
 });
 
@@ -415,6 +437,35 @@ test('compiler: лимит MAX_CODE_BYTES проверяется по грани
             (error) => error instanceof CompilerUnavailableError && /слишком большой/.test(error.message),
         );
     } finally {
+        fs.rmSync(fake.dir, { recursive: true, force: true });
+    }
+});
+
+test('compiler: не-Error исключения при чтении и инстанцировании не теряются', async () => {
+    const originalRead = fs.readFileSync;
+    fs.readFileSync = function patched(file, ...rest) {
+        if (String(file).endsWith('compiler.wasm')) throw 'нет доступа к файлу';
+        return originalRead.call(this, file, ...rest);
+    };
+    try {
+        await assert.rejects(
+            () => createCompiler({ wasmPath: 'C:/fake/compiler.wasm' }).check('x'),
+            (error) => error instanceof CompilerUnavailableError && /нет доступа к файлу/.test(error.message),
+        );
+    } finally {
+        fs.readFileSync = originalRead;
+    }
+
+    const fake = writeFakeWasm(buildFakeWasm({}));
+    const originalInstantiate = WebAssembly.instantiate;
+    WebAssembly.instantiate = async () => { throw 'битые байты'; };
+    try {
+        await assert.rejects(
+            () => createCompiler({ wasmPath: fake.wasmPath }).check('x'),
+            (error) => error instanceof CompilerUnavailableError && /битые байты/.test(error.message),
+        );
+    } finally {
+        WebAssembly.instantiate = originalInstantiate;
         fs.rmSync(fake.dir, { recursive: true, force: true });
     }
 });

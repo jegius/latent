@@ -130,8 +130,11 @@ public final class LatentCompletionContributor extends CompletionContributor {
             if (type.name == null || type.name.isEmpty() || !seen.add(type.name)) {
                 continue;
             }
-            if (type.name.startsWith("[") || type.name.contains(" ")) {
-                continue; // обобщённые формы вроде "fn(T, ...) -> R" не предлагаем
+            if (type.name.startsWith("[") || type.name.contains(" ") || type.name.contains("<")
+                    || type.name.contains(">") || type.name.contains("(")
+                    || "null".equals(type.name) || "Named".equals(type.name)
+                    || "Variant".equals(type.name)) {
+                continue; // обобщённые и внутренние формы в аннотациях не предлагаем
             }
             set.addElement(LookupElementBuilder.create(type.name)
                     .withTypeText(type.wasm == null || type.wasm.isEmpty() ? "тип" : "тип → " + type.wasm)

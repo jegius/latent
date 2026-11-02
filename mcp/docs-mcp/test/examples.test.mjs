@@ -259,3 +259,20 @@ test('кэш провайдера: повторный load не перечиты
         fs.rmSync(repoRoot, { recursive: true, force: true });
     }
 });
+
+test('сбой проверки manifest.js не роняет провайдер: каталог становится пустым', async () => {
+    const { provider, repoRoot } = makeProvider({
+        'web-ide/examples/one.lat': 'fn main() {}',
+    });
+    const original = fs.existsSync;
+    fs.existsSync = function patched(target) {
+        if (String(target).endsWith('manifest.js')) throw new Error('EACCES');
+        return original.call(this, target);
+    };
+    try {
+        assert.deepEqual(await provider.list(), []);
+    } finally {
+        fs.existsSync = original;
+        fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+});

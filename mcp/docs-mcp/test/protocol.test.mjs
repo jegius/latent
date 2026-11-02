@@ -762,3 +762,36 @@ test('handlers.handle: ошибка метода без RpcError станови�
     assert.equal(response.error.code, -32603);
     assert.match(response.error.message, /параметры сломаны/);
 });
+
+test('getPrompt: пустые аргументы подставляют пустые строки по умолчанию', async () => {
+    const core = createFixtureCore();
+
+    const syntax = await getPrompt({ index: core.index }, 'explain_syntax', null);
+    assert.match(syntax.messages[0].content.text, /тему «»/);
+
+    const write = await getPrompt({ index: core.index }, 'write_program', {});
+    assert.match(write.messages[0].content.text, /Задача пользователя: \n/);
+
+    const debug = await getPrompt({ index: core.index }, 'debug_program', {});
+    assert.match(debug.messages[0].content.text, /Не указано — предложи, как его получить/);
+    assert.match(debug.messages[0].content.text, /```latent\n```/);
+});
+
+test('getPrompt: длинные выдержки обрезаются и ограничены суммарным объёмом', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'latent-prompt-long-'));
+    try {
+        for (const name of ['a', 'b', 'c']) {
+            const body = `# Лонг ${name}\n\n${'лонг '.repeat(400)}`;
+            fs.writeFileSync(path.join(root, `${name}.md`), body, 'utf8');
+        }
+        const index = buildDocsIndex({ docsRoot: root });
+        const prompt = await getPrompt({ index }, 'explain_syntax', { topic: 'лонг' });
+        const text = prompt.messages[0].content.text;
+        const excerptBlocks = text.split('### ').slice(1);
+        assert.equal(excerptBlocks.length, 2, 'третий блок не должен поместиться в лимит');
+        assert.match(text, /…/, 'длинная страница должна быть обрезана многоточием');
+        assert.ok(text.length < 6000);
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});

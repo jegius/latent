@@ -7,6 +7,7 @@ Rust-компилятор, self-hosted компилятор на самом Late
 [![Docs](https://img.shields.io/badge/docs-jegius.github.io%2Flatent-blue)](https://jegius.github.io/latent/)
 [![Playground](https://img.shields.io/badge/playground-open-3574f0)](https://jegius.github.io/latent/playground/)
 [![Self-hosted](https://img.shields.io/badge/self--hosted-fixed%20point-success)](selfhost/README.md)
+[![Coverage](https://img.shields.io/badge/coverage-rust%2091%25%20%C2%B7%20web--ide%2099.8%25-success)](#качество-кода)
 
 - 📖 **Документация:** https://jegius.github.io/latent/
 - 🧪 **Web IDE (playground):** https://jegius.github.io/latent/playground/
@@ -24,7 +25,7 @@ Latent — статически типизированный язык в дух�
 - массивы и строки с методами, встроенные примитивы линейной памяти;
 - `async`/`await`, горутины `spawn`, каналы, `select`/`yield` (host-рантайм);
 - AI-примитивы: `ai_infer`, `ai_embed`, `tensor`/`semantic`, `ai_generate!`, контракты;
-- тесты и проверки: `@test`, `assert`, `assert_eq`, `@forall`, `snapshot`.
+- тесты и проверки: `test "name" { ... }`, `assert`, `assert_eq`, `@forall`, `snapshot`.
 
 Компилятор Latent→WASM написан на Rust (`src/`) и **самостоятельно реализован на самом
 Latent** (`selfhost/`, bootstrap с фиксированной точкой `stage2 === stage3`).
@@ -63,43 +64,59 @@ web-ide/             Браузерная IDE: движок №1 (JS-интер�
 docs/                Docusaurus-сайт с полной документацией языка
 tooling/language-data/  Machine-readable описание языка (keywords/builtins/types)
 tooling/latent-lsp/  LSP-сервер: диагностика, completion, hover, форматирование
+tooling/selfhost-coverage/  Инструментальное покрытие self-hosted компилятора
 mcp/docs-mcp/        MCP-сервер документации (stdio + HTTP) для нейросетей
 editors/vscode/      Расширение VS Code (подсветка, сниппеты, LSP, запуск)
-editors/idea/        Плагин IntelliJ IDEA (подсветка, completion, LSP, запуск)
-scripts/             build-wasm.sh, sync-playground.mjs, verify-wasm.mjs, ...
+editors/idea/        Плагин IntelliJ IDEA (подсветка, completion, запуск)
+scripts/             build-wasm.sh, sync-playground.mjs, check-golden.mjs, coverage-rust.ps1
 ```
+
+## Качество кода
+
+| Компонент | Тесты | Покрытие строк |
+|---|---|---|
+| Rust-компилятор (`src/`) | 265 | **91.00%** (`scripts/coverage-rust.ps1`, llvm-cov) |
+| web IDE (`web-ide/`) | 337 | **99.79%** (branch 97.51%) |
+| MCP-сервер (`mcp/docs-mcp/`) | 235 | **96.01%** |
+| LSP-сервер (`tooling/latent-lsp/`) | 133 | — |
+| VS Code extension (`editors/vscode/`) | 70 | 98.77% |
+| Self-hosted компилятор (`selfhost/`) | 141 | function coverage — `tooling/selfhost-coverage` |
+
+Код декомпозирован по SOLID: в Rust и JS ни один файл не превышает ~300–350 строк,
+`selfhost/src/*.lat` — ≤300 строк на часть (см. [ARCHITECTURE.md](ARCHITECTURE.md)).
+Кодировка, стиль и правила — [docs/tooling/contributing](docs/docs/tooling/contributing.md).
 
 ## Разработка
 
 ```pwsh
 cargo test                                  # тесты Rust-компилятора
-node --test "web-ide/test/*.test.js"        # тесты web IDE
-node --test "selfhost/test/*.test.mjs"      # регресс self-hosted компилятора
-node selfhost/bootstrap.mjs                 # bootstrap: stage2 === stage3
+cargo build --release --target wasm32-unknown-unknown   # свежий compiler.wasm
+node --test "web-ide/test/*.test.js"        # тесты web IDE (337)
+node --test "selfhost/test/*.test.mjs"      # регресс self-hosted компилятора (141)
+node selfhost/build.mjs && node selfhost/bootstrap.mjs  # bootstrap: stage2 === stage3
+node scripts/check-golden.mjs               # байт-в-байт совместимость WASM
+node --test "mcp/docs-mcp/test/*.test.mjs"  # MCP (235)
+node --test "tooling/latent-lsp/test/*.test.mjs"  # LSP (133)
 
 cd docs && pnpm install && pnpm run build   # сборка документации
 node docs/scripts/validate-examples.mjs     # проверка примеров из доки
 ```
 
-Публикация сайта и playground на GitHub Pages выполняется автоматически workflow
+Публикация сайта и playground — автоматически workflow
 [`.github/workflows/pages.yml`](.github/workflows/pages.yml) при push в `main` /
 `part10-toolchain`: документация попадает в `/latent/`, IDE — в `/latent/playground/`.
+Сборка плагинов — [`.github/workflows/plugins.yml`](.github/workflows/plugins.yml)
+(артефакты `.vsix` и IDEA zip), проверки — [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
-## Документация
+## Документация для AI
 
-Полное описание языка — в [`docs/`](docs/README.md):
-
-- **Начало работы:** установка, hello world, CLI, web IDE;
-- **Туториал:** от первой программы до capstone-проекта;
-- **Гайд:** синтаксис, типы, операторы, функции, массивы/строки, классы, enum/match,
-  лямбды, ошибки, конкурентность, AI-фичи, тесты и контракты, память и WASM;
-- **Справочник:** грамматика, лексика, типы, операторы, builtins, ошибки, CLI, WASM ABI;
-- **Спецификации:** self-hosted компилятор, паритет с Rust, два движка, кодоген;
-- **Tooling:** IDE, LSP, MCP, плагины, bootstrap.
-
-Для нейросетей: `docs/static/llms.txt` (индекс) и `llms-full.txt` (полный текст), а также
-MCP-сервер `mcp/docs-mcp` (stdio/HTTP) с tools `search_docs`, `read_doc`,
-`get_language_reference`, `get_example`, `check_code`.
+- `https://jegius.github.io/latent/llms.txt` — индекс документации (llmstxt.org);
+- `https://jegius.github.io/latent/llms-full.txt` — полный текст документации;
+- MCP-сервер `mcp/docs-mcp` (stdio/HTTP): `search_docs`, `read_doc`,
+  `get_language_reference`, `get_example`, `check_code` — подключение к
+  Claude Desktop / Claude Code / Cursor / VS Code описано в
+  [`mcp/docs-mcp/README.md`](mcp/docs-mcp/README.md);
+- полный справочник языка — [`docs/docs/reference/complete-language.md`](docs/docs/reference/complete-language.md).
 
 ## Лицензия
 

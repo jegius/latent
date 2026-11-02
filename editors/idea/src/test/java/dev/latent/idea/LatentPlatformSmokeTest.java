@@ -159,4 +159,53 @@ public class LatentPlatformSmokeTest extends BasePlatformTestCase {
         assertEquals("latentc", settings.getState().latentcPath);
         assertEquals("node", settings.getState().nodePath);
     }
+
+    public void testSettingsConfigurableCreatesUi() {
+        dev.latent.idea.settings.LatentConfigurable configurable =
+                new dev.latent.idea.settings.LatentConfigurable();
+        javax.swing.JComponent component = configurable.createComponent();
+        assertNotNull(component);
+        assertFalse(configurable.isModified());
+        configurable.disposeUIResources();
+    }
+
+    public void testColorSettingsPageAndIcons() {
+        dev.latent.idea.highlight.LatentColorSettingsPage page =
+                new dev.latent.idea.highlight.LatentColorSettingsPage();
+        assertTrue(page.getAttributeDescriptors().length >= 10);
+        assertNotNull(page.getHighlighter().getHighlightingLexer());
+        assertTrue(page.getDemoText().contains("fn"));
+        assertNotNull(dev.latent.idea.LatentIcons.FILE);
+    }
+
+    public void testStructureViewShowsDeclarations() {
+        PsiFile file = myFixture.configureByText("structure.lat",
+                "fn a() -> int { return 1; }\n"
+                        + "class C { fn m() { } }\n"
+                        + "enum E { A }\n");
+        com.intellij.openapi.fileEditor.FileEditor fileEditor =
+                com.intellij.openapi.fileEditor.FileEditorManager.getInstance(getProject())
+                        .getSelectedEditor(file.getVirtualFile());
+        assertNotNull(fileEditor);
+        com.intellij.ide.structureView.StructureView view =
+                new dev.latent.idea.structureview.LatentStructureViewBuilder()
+                        .createStructureView(fileEditor, getProject());
+        assertNotNull(view);
+        com.intellij.ide.structureView.StructureViewTreeElement root =
+                (com.intellij.ide.structureView.StructureViewTreeElement)
+                        view.getTreeModel().getRoot();
+        assertNotNull(root);
+        assertTrue(root.getChildren().length >= 3);
+    }
+
+    public void testRunLineMarkerOnMain() {
+        PsiFile file = myFixture.configureByText("marker.lat",
+                "fn main() -> int { return 0; }\n");
+        com.intellij.psi.PsiElement leaf = file.findElementAt(0);
+        assertNotNull(leaf);
+        com.intellij.execution.lineMarker.RunLineMarkerContributor.Info info =
+                new dev.latent.idea.run.LatentRunLineMarkerContributor().getInfo(leaf);
+        assertNotNull(info);
+        assertNotNull(info.icon);
+    }
 }

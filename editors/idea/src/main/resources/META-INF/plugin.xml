@@ -77,6 +77,8 @@
 
         <configurationType implementation="dev.latent.idea.run.LatentRunConfigurationType"/>
         <runConfigurationProducer implementation="dev.latent.idea.run.LatentRunConfigurationProducer"/>
+        <runLineMarkerContributor language="Latent"
+                                 implementationClass="dev.latent.idea.run.LatentRunLineMarkerContributor"/>
 
         <applicationService serviceImplementation="dev.latent.idea.settings.LatentSettings"/>
         <applicationConfigurable instance="dev.latent.idea.settings.LatentConfigurable"

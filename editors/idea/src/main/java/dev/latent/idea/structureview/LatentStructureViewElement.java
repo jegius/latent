@@ -9,6 +9,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
 import dev.latent.idea.LatentIcons;
+import dev.latent.idea.structure.LatentStructureParser;
 import dev.latent.idea.structure.LatentStructureSymbol;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -22,11 +23,13 @@ public final class LatentStructureViewElement implements StructureViewTreeElemen
 
     private final PsiFile file;
     private final LatentStructureSymbol symbol;
+    private final boolean root;
     private final List<LatentStructureViewElement> children = new ArrayList<>();
 
     public LatentStructureViewElement(@NotNull PsiFile file, @Nullable LatentStructureSymbol symbol) {
         this.file = file;
         this.symbol = symbol;
+        this.root = false;
         if (symbol != null) {
             for (LatentStructureSymbol child : symbol.getChildren()) {
                 children.add(new LatentStructureViewElement(file, child));
@@ -34,14 +37,12 @@ public final class LatentStructureViewElement implements StructureViewTreeElemen
         }
     }
 
-    /** Корневой элемент файла со списком объявлений верхнего уровня. */
+    /** Корневой элемент файла: объявления перечитываются при каждом обновлении дерева. */
     public LatentStructureViewElement(@NotNull PsiFile file,
                                       @NotNull List<LatentStructureSymbol> topLevel) {
         this.file = file;
         this.symbol = null;
-        for (LatentStructureSymbol child : topLevel) {
-            children.add(new LatentStructureViewElement(file, child));
-        }
+        this.root = true;
     }
 
     @Override
@@ -51,6 +52,14 @@ public final class LatentStructureViewElement implements StructureViewTreeElemen
 
     @Override
     public @NotNull TreeElement @NotNull [] getChildren() {
+        if (root) {
+            List<LatentStructureSymbol> symbols = LatentStructureParser.parse(file.getText());
+            List<TreeElement> result = new ArrayList<>(symbols.size());
+            for (LatentStructureSymbol child : symbols) {
+                result.add(new LatentStructureViewElement(file, child));
+            }
+            return result.toArray(TreeElement.EMPTY_ARRAY);
+        }
         return children.toArray(TreeElement.EMPTY_ARRAY);
     }
 

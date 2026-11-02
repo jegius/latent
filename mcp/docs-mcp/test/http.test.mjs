@@ -3,6 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { EventEmitter } from 'node:events';
 
 import {
     JSON_HEADERS,
@@ -621,30 +622,119 @@ test('SSE: heartbeat пишет keep-alive и снимает клиента пр
     assert.equal(res.chunks.filter((chunk) => chunk.includes('keep-alive')).length, 1, 'таймер должен быть очищен');
 });
 
-test('SSE: ошибка записи heartbeat не роняет сервер', async (t) => {
-    t.mock.timers.enable({ apis: ['setInterval'] });
+test('SSE: ошибка записи heartbeat не роняет сервер', () => {
+    // Детерминированно перехватываем setInterval, чтобы не зависеть от
+    // реализации mock timers в разных версиях Node (в Node 22 тик может
+    // вести себя иначе, чем в 24).
     const sseClients = new Set();
+    let writes = 0;
+    const timers = [];
+    const origSetInterval = globalThis.setInterval;
+    const origClearInterval = globalThis.clearInterval;
+    globalThis.setInterval = (fn) => {
+        timers.push(fn);
+        return { unref() {}, ref() {} };
+    };
+    globalThis.clearInterval = () => {};
+    try {
+        const res = {
+            headersSent: false,
+            writableEnded: false,
+            writeHead() {},
+            write() {
+                writes += 1;
+                if (writes > 1) throw new Error('сокет закрыт');
+                return true;
+            },
+            on() {},
+            end() {},
+        };
+        const routes = createMcpRoutes({
+            core: createFixtureCore(),
+            sessions: null,
+            stateless: true,
+            sseClients,
+            logger: { error() {} },
+        });
+
+        routes.handleSse({ headers: { accept: '*/*' }, on() {} }, res);
+        assert.equal(timers.length, 1, 'heartbeat должен быть запланирован');
+        assert.doesNotThrow(() => timers[0](), 'ошибка write должна быть поймана');
+        assert.equal(sseClients.size, 1);
+    } finally {
+        globalThis.setInterval = origSetInterval;
+        globalThis.clearInterval = origClearInterval;
+    }
+});
+
+test('handlePost: ошибка чтения тела без statusCode превращается в 400', async () => {
+    const req = new EventEmitter();
+    req.headers = { 'content-type': 'application/json' };
+    req.method = 'POST';
     const res = {
         headersSent: false,
         writableEnded: false,
-        writeHead() {},
-        write() {
-            throw new Error('сокет закрыт');
-        },
-        on() {},
-        end() {},
+        status: null,
+        body: null,
+        writeHead(status) { this.status = status; },
+        end(body) { this.body = body; },
     };
     const routes = createMcpRoutes({
         core: createFixtureCore(),
         sessions: null,
         stateless: true,
-        sseClients,
+        sseClients: new Set(),
         logger: { error() {} },
     });
 
-    routes.handleSse({ headers: { accept: '*/*' }, on() {} }, res);
-    assert.doesNotThrow(() => t.mock.timers.tick(15000));
-    assert.equal(sseClients.size, 1);
+    const pending = routes.handlePost(req, res);
+    req.emit('error', new Error('ECONNRESET при чтении тела'));
+    await pending;
+    assert.equal(res.status, 400);
+    const payload = JSON.parse(res.body.toString('utf8'));
+    assert.equal(payload.error, 'Bad Request');
+    assert.match(payload.message, /ECONNRESET/);
+});
+
+test('GET /mcp без заголовка Accept открывает SSE-поток', async (t) => {
+    const handle = await startFixtureHttp();
+    t.after(() => handle.close());
+    const url = new URL(handle.url);
+
+    const response = await new Promise((resolve, reject) => {
+        const req = http.request({
+            hostname: url.hostname,
+            port: url.port,
+            path: url.pathname,
+            method: 'GET',
+        }, (res) => {
+            res.resume();
+            resolve(res);
+            req.destroy();
+        });
+        req.on('error', (error) => {
+            if (error.code !== 'ECONNRESET') reject(error);
+        });
+        req.end();
+    });
+    assert.equal(response.statusCode, 200);
+    assert.match(response.headers['content-type'], /text\/event-stream/);
+});
+
+test('startHttpServer: занятый порт отклоняет промис запуска', async (t) => {
+    const first = await startFixtureHttp();
+    t.after(() => first.close());
+
+    await assert.rejects(
+        () => startHttpServer({
+            core: createFixtureCore(),
+            host: '127.0.0.1',
+            port: first.port,
+            stateless: true,
+            logger: { error() {} },
+        }),
+        (error) => error && ['EADDRINUSE', 'EACCES'].includes(error.code),
+    );
 });
 
 test('лендинг: stateless-режим и host 0.0.0.0 отражаются в HTML', async (t) => {

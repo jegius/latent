@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # coverage-rust.ps1 — покрытие строк Rust-компилятора Latent (llvm-cov).
 #
 # Зачем отдельный скрипт: на Windows-gnu в этом окружении rust-std не содержит
