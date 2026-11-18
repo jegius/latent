@@ -1,0 +1,30 @@
+// FNV-1a over a 1 MiB byte buffer, `rounds` passes.
+// The buffer is generated once by the same LCG as the JS reference and cached
+// at address 8, so repeated calls benchmark hashing only.
+
+fn main(n: int, rounds: int) -> int {
+    let ptr = load32(8);
+    if (ptr == 0) {
+        ptr = alloc(n + 8);
+        store32(8, ptr);
+        let s = 123456789;
+        let g = 0;
+        while (g < n) {
+            s = (s * 1103515245 + 12345) & 2147483647;
+            store8(ptr + g, (s >> 8) & 255);
+            g = g + 1;
+        }
+    }
+
+    let h = 0 - 2128831035;
+    let r = 0;
+    while (r < rounds) {
+        let i = 0;
+        while (i < n) {
+            h = (h ^ load8(ptr + i)) * 16777619;
+            i = i + 1;
+        }
+        r = r + 1;
+    }
+    return h;
+}

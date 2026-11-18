@@ -1,0 +1,39 @@
+// Strings: literals, concatenation, length, comparison
+
+fn greet(name: string) -> string {
+    return "Hello, " + name + "!";
+}
+
+fn main() -> int {
+    let greeting = greet("Latent");
+    print(greeting);
+
+    // String concatenation with numbers
+    let version = "v" + 1 + "." + 0;
+    print("version:", version);
+
+    // String length
+    let text = "functional vibes";
+    print("length of", "\"" + text + "\" =", text.length);
+
+    // String comparison
+    let a = "apple";
+    let b = "banana";
+    if (a == b) {
+        print("strings are equal");
+    } else {
+        print(a, "!=", b);
+    }
+
+    // Building strings in a loop
+    let stars = "";
+    for (let i = 0; i < 5; i = i + 1) {
+        stars = stars + "*";
+    }
+    print("stars:", stars);
+
+    // Escape sequences
+    print("line1\nline2\t(tabbed)");
+
+    return 0;
+}

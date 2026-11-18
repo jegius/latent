@@ -1,0 +1,138 @@
+// ============================ МОДУЛЬ: ХЕЛПЕРЫ ПАМЯТИ И СТРОК ============================
+// Байткод alloc/memcopy/str_concat/str_eq/str_char_at. Каждый эмиттер пишет
+// тело в BODYC и добавляет его в CODEB по индексу nf()+k; порядок вызовов в
+// helper_bodies = порядок индексов, поэтому диспетчер фиксирован.
+
+fn helper_bodies() -> int {
+    helper_alloc(0);
+    helper_memcopy(1);
+    helper_str_concat(2);
+    helper_str_eq(3);
+    helper_str_char_at(4);
+    helper_i32_to_str(5);
+    helper_str_to_i32(6);
+    helper_f64_to_str(7);
+    return 0;
+}
+
+fn emit_helper_body(k) -> int {
+    store32(CODEOF() + (nf() + k) * 4, load32(CODEB()));
+    store32(CODELN() + (nf() + k) * 4, blen(BODYC()));
+    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+    return 0;
+}
+
+fn helper_alloc(k) -> int {
+    // alloc(size)->ptr
+    binit(BODYC());
+    bleb(BODYC(), 1); bleb(BODYC(), 3); bput(BODYC(), 127);   // locals: 3×i32
+    // ptr = heap (global 0)
+    bput(BODYC(), 35); bleb(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 1);
+    // heap = heap + size
+    bput(BODYC(), 35); bleb(BODYC(), 0); bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 106); bput(BODYC(), 36); bleb(BODYC(), 0);
+    // need = (heap + 65535) / 65536
+    bput(BODYC(), 35); bleb(BODYC(), 0); bput(BODYC(), 65); bleb(BODYC(), 65535);
+    bput(BODYC(), 106);
+    bput(BODYC(), 65); bleb(BODYC(), 65536);
+    bput(BODYC(), 110); bput(BODYC(), 33); bleb(BODYC(), 2);
+    // cur = memory.size 0
+    bput(BODYC(), 63); bput(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 3);
+    // if cur < need { grow(need-cur); drop }
+    bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 73);
+    bput(BODYC(), 4); bput(BODYC(), 64);
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 107);
+    bput(BODYC(), 64); bput(BODYC(), 0); bput(BODYC(), 26);
+    bput(BODYC(), 11);
+    bput(BODYC(), 32); bleb(BODYC(), 1);
+    bput(BODYC(), 11);
+    return emit_helper_body(k);
+}
+
+fn helper_memcopy(k) -> int {
+    // memcopy(dst,src,len)->i32 (возвращает 0)
+    binit(BODYC());
+    bleb(BODYC(), 1); bleb(BODYC(), 1); bput(BODYC(), 127);   // local i (idx3)
+    bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 3);
+    bput(BODYC(), 2); bput(BODYC(), 64); bput(BODYC(), 3); bput(BODYC(), 64);
+    bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 79);
+    bput(BODYC(), 13); bleb(BODYC(), 1);
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 106);
+    bput(BODYC(), 45); bput(BODYC(), 0); bput(BODYC(), 0);
+    bput(BODYC(), 58); bput(BODYC(), 0); bput(BODYC(), 0);
+    bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 106); bput(BODYC(), 33); bleb(BODYC(), 3);
+    bput(BODYC(), 12); bleb(BODYC(), 0);
+    bput(BODYC(), 11); bput(BODYC(), 11);
+    bput(BODYC(), 65); bleb(BODYC(), 0);
+    bput(BODYC(), 11);
+    return emit_helper_body(k);
+}
+
+fn helper_str_concat(k) -> int {
+    // str_concat(a,b)->ptr: [len u32][utf8] с общим заголовком длины.
+    // locals: params 0 a,1 b; declared 2 alen,3 blen,4 p.
+    binit(BODYC());
+    bleb(BODYC(), 1); bleb(BODYC(), 3); bput(BODYC(), 127);
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 2);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 3);
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 106);
+    bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106);
+    bput(BODYC(), 16); bleb(BODYC(), ALLOC_FI()); bput(BODYC(), 33); bleb(BODYC(), 4);
+    // store len at p
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 106); bput(BODYC(), 54); bput(BODYC(), 2); bput(BODYC(), 0);
+    // mem_copy(p+4, a+4, alen)  — memcopy возвращает i32, гасим drop(26)
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 2);
+    bput(BODYC(), 16); bleb(BODYC(), MEM_FI()); bput(BODYC(), 26);
+    // mem_copy(p+4+alen, b+4, blen)
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106); bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 3);
+    bput(BODYC(), 16); bleb(BODYC(), MEM_FI()); bput(BODYC(), 26);
+    bput(BODYC(), 32); bleb(BODYC(), 4);
+    bput(BODYC(), 11);
+    return emit_helper_body(k);
+}
+
+fn helper_str_eq(k) -> int {
+    // str_eq(a,b)->i32 (1/0): ранние return в void-ветках (без смешанных if).
+    // locals: params 0 a,1 b; declared 2 i,3 len.
+    binit(BODYC());
+    bleb(BODYC(), 1); bleb(BODYC(), 2); bput(BODYC(), 127);
+    // if load(a) != load(b) return 0
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0);
+    bput(BODYC(), 71); bput(BODYC(), 4); bput(BODYC(), 64);
+    bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 15); bput(BODYC(), 11);
+    // len = load(a)
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 3);
+    // i = 0
+    bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 2);
+    bput(BODYC(), 2); bput(BODYC(), 64); bput(BODYC(), 3); bput(BODYC(), 64);
+    // if i >= len break
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 79); bput(BODYC(), 13); bleb(BODYC(), 1);
+    // if a[4+i] != b[4+i] return 0
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106); bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 106); bput(BODYC(), 45); bput(BODYC(), 0); bput(BODYC(), 0);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106); bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 106); bput(BODYC(), 45); bput(BODYC(), 0); bput(BODYC(), 0);
+    bput(BODYC(), 71); bput(BODYC(), 4); bput(BODYC(), 64); bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 15); bput(BODYC(), 11);
+    // i++
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 106); bput(BODYC(), 33); bleb(BODYC(), 2);
+    bput(BODYC(), 12); bleb(BODYC(), 0); bput(BODYC(), 11); bput(BODYC(), 11);
+    bput(BODYC(), 65); bleb(BODYC(), 1);
+    bput(BODYC(), 11);
+    return emit_helper_body(k);
+}
+
+fn helper_str_char_at(k) -> int {
+    // str_char_at(ptr,i)->i32: байт по i в [0,len), иначе -1. Void-ветки с return.
+    binit(BODYC());
+    bleb(BODYC(), 0);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 72); bput(BODYC(), 4); bput(BODYC(), 64);
+    bput(BODYC(), 65); bsleb(BODYC(), -1); bput(BODYC(), 15); bput(BODYC(), 11);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0); bput(BODYC(), 79); bput(BODYC(), 4); bput(BODYC(), 64);
+    bput(BODYC(), 65); bsleb(BODYC(), -1); bput(BODYC(), 15); bput(BODYC(), 11);
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106); bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 106); bput(BODYC(), 45); bput(BODYC(), 0); bput(BODYC(), 0);
+    bput(BODYC(), 11);
+    return emit_helper_body(k);
+}

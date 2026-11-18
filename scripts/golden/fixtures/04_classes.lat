@@ -1,0 +1,53 @@
+// Golden-набор: классы — поля int/float, new, методы, this, присваивание полей.
+// expect-main: 125
+
+class Point {
+    x: int;
+    y: int;
+
+    fn init(x, y) {
+        this.x = x;
+        this.y = y;
+    }
+
+    fn norm2() {
+        return this.x * this.x + this.y * this.y;
+    }
+
+    fn move_by(dx, dy) {
+        this.x = this.x + dx;
+        this.y = this.y + dy;
+        return this.x;
+    }
+}
+
+class Body {
+    weight: float;
+    mass: float;
+
+    fn init(w: float, m: float) {
+        this.weight = w;
+        this.mass = m;
+    }
+
+    fn ratio() -> float {
+        return this.weight;
+    }
+}
+
+fn main() -> int {
+    let p = new Point(3, 4);
+    let n = p.norm2();
+    print("norm2 =", n);
+    print("move_by =", p.move_by(1, 1));
+    print("x =", p.x, "y =", p.y);
+    p.x = 10;
+    print("x after assign =", p.x);
+    let p_norm = p.norm2();
+
+    let b = new Body(3.25, 1.75);
+    let r = b.ratio() + 0.25;
+    print("ratio =", r);
+
+    return p_norm + int(r * 8.25) / 100;
+}

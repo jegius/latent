@@ -1,0 +1,201 @@
+// Canvas image pipeline: RGBA bytes live in a raw linear-memory buffer.
+// cmd 0 -> allocate and return the source pointer (host writes ImageData there)
+// cmd 1 -> grayscale, cmd 2 -> box blur (radius), cmd 3 -> Sobel edges,
+// cmd 4 -> threshold. Every filter writes into `dst` and returns its pointer.
+
+fn luma(r: int, g: int, b: int) -> int {
+    return (77 * r + 150 * g + 29 * b) >> 8;
+}
+
+fn clamp(v: int, lo: int, hi: int) -> int {
+    if (v < lo) {
+        return lo;
+    }
+    if (v > hi) {
+        return hi;
+    }
+    return v;
+}
+
+fn gray(src: int, dst: int, size: int) {
+    let i = 0;
+    while (i < size) {
+        let v = luma(load8(src + i), load8(src + i + 1), load8(src + i + 2));
+        store8(dst + i, v);
+        store8(dst + i + 1, v);
+        store8(dst + i + 2, v);
+        store8(dst + i + 3, 255);
+        i = i + 4;
+    }
+}
+
+fn threshold(src: int, dst: int, size: int, cut: int) {
+    let i = 0;
+    while (i < size) {
+        let v = luma(load8(src + i), load8(src + i + 1), load8(src + i + 2));
+        let o = 0;
+        if (v >= cut) {
+            o = 255;
+        }
+        store8(dst + i, o);
+        store8(dst + i + 1, o);
+        store8(dst + i + 2, o);
+        store8(dst + i + 3, 255);
+        i = i + 4;
+    }
+}
+
+fn sobel(src: int, dst: int, w: int, h: int) {
+    let y = 0;
+    while (y < h) {
+        let x = 0;
+        while (x < w) {
+            let xm = clamp(x - 1, 0, w - 1);
+            let xp = clamp(x + 1, 0, w - 1);
+            let ym = clamp(y - 1, 0, h - 1);
+            let yp = clamp(y + 1, 0, h - 1);
+
+            let tl = luma(load8(src + (ym * w + xm) * 4), load8(src + (ym * w + xm) * 4 + 1), load8(src + (ym * w + xm) * 4 + 2));
+            let tc = luma(load8(src + (ym * w + x) * 4), load8(src + (ym * w + x) * 4 + 1), load8(src + (ym * w + x) * 4 + 2));
+            let tr = luma(load8(src + (ym * w + xp) * 4), load8(src + (ym * w + xp) * 4 + 1), load8(src + (ym * w + xp) * 4 + 2));
+            let ml = luma(load8(src + (y * w + xm) * 4), load8(src + (y * w + xm) * 4 + 1), load8(src + (y * w + xm) * 4 + 2));
+            let mr = luma(load8(src + (y * w + xp) * 4), load8(src + (y * w + xp) * 4 + 1), load8(src + (y * w + xp) * 4 + 2));
+            let bl = luma(load8(src + (yp * w + xm) * 4), load8(src + (yp * w + xm) * 4 + 1), load8(src + (yp * w + xm) * 4 + 2));
+            let bc = luma(load8(src + (yp * w + x) * 4), load8(src + (yp * w + x) * 4 + 1), load8(src + (yp * w + x) * 4 + 2));
+            let br = luma(load8(src + (yp * w + xp) * 4), load8(src + (yp * w + xp) * 4 + 1), load8(src + (yp * w + xp) * 4 + 2));
+
+            let gx = (tr + 2 * mr + br) - (tl + 2 * ml + bl);
+            let gy = (bl + 2 * bc + br) - (tl + 2 * tc + tr);
+            let mag = gx * gx + gy * gy;
+            let v = 255;
+            if (mag < 90000) {
+                v = 0;
+            }
+            if (mag > 90000 && mag < 160000) {
+                v = 128;
+            }
+            let o = (y * w + x) * 4;
+            store8(dst + o, v);
+            store8(dst + o + 1, v);
+            store8(dst + o + 2, v);
+            store8(dst + o + 3, 255);
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+}
+
+fn blur_h(src: int, dst: int, w: int, h: int, r: int) {
+    let d = 2 * r + 1;
+    let y = 0;
+    while (y < h) {
+        let row = y * w * 4;
+        let sr = 0;
+        let sg = 0;
+        let sb = 0;
+        let k = 0 - r;
+        while (k <= r) {
+            let xx = clamp(k, 0, w - 1);
+            let o = row + xx * 4;
+            sr = sr + load8(src + o);
+            sg = sg + load8(src + o + 1);
+            sb = sb + load8(src + o + 2);
+            k = k + 1;
+        }
+        let x = 0;
+        while (x < w) {
+            let o = row + x * 4;
+            store8(dst + o, sr / d);
+            store8(dst + o + 1, sg / d);
+            store8(dst + o + 2, sb / d);
+            store8(dst + o + 3, 255);
+            let xo = clamp(x - r, 0, w - 1);
+            let xn = clamp(x + r + 1, 0, w - 1);
+            sr = sr - load8(src + row + xo * 4) + load8(src + row + xn * 4);
+            sg = sg - load8(src + row + xo * 4 + 1) + load8(src + row + xn * 4 + 1);
+            sb = sb - load8(src + row + xo * 4 + 2) + load8(src + row + xn * 4 + 2);
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+}
+
+fn blur_v(src: int, dst: int, w: int, h: int, r: int) {
+    let d = 2 * r + 1;
+    let x = 0;
+    while (x < w) {
+        let sr = 0;
+        let sg = 0;
+        let sb = 0;
+        let k = 0 - r;
+        while (k <= r) {
+            let yy = clamp(k, 0, h - 1);
+            let o = (yy * w + x) * 4;
+            sr = sr + load8(src + o);
+            sg = sg + load8(src + o + 1);
+            sb = sb + load8(src + o + 2);
+            k = k + 1;
+        }
+        let y = 0;
+        while (y < h) {
+            let o = (y * w + x) * 4;
+            store8(dst + o, sr / d);
+            store8(dst + o + 1, sg / d);
+            store8(dst + o + 2, sb / d);
+            store8(dst + o + 3, 255);
+            let yo = clamp(y - r, 0, h - 1);
+            let yn = clamp(y + r + 1, 0, h - 1);
+            sr = sr - load8(src + (yo * w + x) * 4) + load8(src + (yn * w + x) * 4);
+            sg = sg - load8(src + (yo * w + x) * 4 + 1) + load8(src + (yn * w + x) * 4 + 1);
+            sb = sb - load8(src + (yo * w + x) * 4 + 2) + load8(src + (yn * w + x) * 4 + 2);
+            y = y + 1;
+        }
+        x = x + 1;
+    }
+}
+
+fn main(cmd: int, w: int, h: int, radius: int, cut: int) -> int {
+    let base = load32(8);
+    let tmp = load32(12);
+    let dst = load32(16);
+
+    if (cmd == 0) {
+        let size = w * h * 4;
+        if (base == 0 || load32(20) != w || load32(24) != h) {
+            base = alloc(size + 16);
+            tmp = alloc(size + 16);
+            dst = alloc(size + 16);
+            store32(8, base);
+            store32(12, tmp);
+            store32(16, dst);
+            store32(20, w);
+            store32(24, h);
+        }
+        return base;
+    }
+
+    let size = w * h * 4;
+    if (cmd == 1) {
+        gray(base, dst, size);
+        return dst;
+    }
+    if (cmd == 2) {
+        let r = clamp(radius, 0, 24);
+        if (r == 0) {
+            gray(base, dst, size);
+            return dst;
+        }
+        blur_h(base, tmp, w, h, r);
+        blur_v(tmp, dst, w, h, r);
+        return dst;
+    }
+    if (cmd == 3) {
+        sobel(base, dst, w, h);
+        return dst;
+    }
+    if (cmd == 4) {
+        threshold(base, dst, size, clamp(cut, 0, 255));
+        return dst;
+    }
+    return base;
+}

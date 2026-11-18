@@ -1,0 +1,11 @@
+# Унификация переводов строк: рабочие копии — всегда LF (Unix), как в git-базе.
+# Иначе Windows-чекаут с core.autocrlf=true ломает детерминизм сборки
+# selfhost/shc.lat и сравнительные тесты (байты WASM зависят от байтов исходника).
+* text=auto eol=lf
+
+# Бинарные артефакты — не трогать.
+*.wasm binary
+*.png binary
+*.gif binary
+*.jpg binary
+*.zip binary

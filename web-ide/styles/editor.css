@@ -1,0 +1,90 @@
+/* styles/editor.css — панель редактора, табы и canvas-хост. */
+
+.editor-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+    min-width: 0;
+}
+
+.editor-tabs {
+    display: flex;
+    height: 34px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    /* overflow-x: auto делает и overflow-y: auto, из-за чего появлялась
+       вертикальная полоса (табы на 1px выше контентной области). Держим
+       вертикаль скрытой, а горизонтальный скролл оставляем без видимой полосы. */
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-shrink: 0;
+    /* Скрываем горизонтальную полосу прокрутки, сохраняя сам скролл. */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    /* Отключаем автоскролл по средней кнопке мыши внутри полосы табов. */
+    overscroll-behavior: contain;
+}
+
+.editor-tabs::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
+.editor-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 14px;
+    height: 34px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    border-right: 1px solid var(--border);
+    cursor: pointer;
+    white-space: nowrap;
+    background: var(--bg);
+    border-top: 2px solid transparent;
+    user-select: none;
+}
+
+.editor-tab:hover { background: var(--bg-hover); }
+
+.editor-tab.active {
+    color: var(--text);
+    background: var(--bg-elevated);
+    border-top-color: var(--accent);
+}
+
+.editor-host {
+    position: relative;
+    flex: 1;
+    overflow: hidden;
+}
+
+#editor-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: text;
+}
+
+#editor {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    resize: none;
+    border: none;
+    outline: none;
+    overflow: hidden;
+    z-index: 2;
+    padding: 0;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 20px;
+    white-space: pre;
+    caret-color: transparent;
+}

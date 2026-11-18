@@ -1,0 +1,55 @@
+// Quicksort over a flat int array. Data is generated deterministically once
+// (LCG), then sorted in place. The recursive partition is branch-heavy and
+// pointer-chasing free: all elements live in one contiguous buffer.
+
+fn qsort(base: int, lo: int, hi: int) {
+    if (lo >= hi) {
+        return;
+    }
+    let pivot = load32(base + hi * 4);
+    let i = lo;
+    let j = lo;
+    while (j < hi) {
+        let v = load32(base + j * 4);
+        if (v < pivot) {
+            let t = load32(base + i * 4);
+            store32(base + i * 4, v);
+            store32(base + j * 4, t);
+            i = i + 1;
+        }
+        j = j + 1;
+    }
+    let last = load32(base + hi * 4);
+    store32(base + hi * 4, load32(base + i * 4));
+    store32(base + i * 4, last);
+    qsort(base, lo, i - 1);
+    qsort(base, i + 1, hi);
+}
+
+fn main(n: int) -> int {
+    let base = load32(8);
+    if (base == 0) {
+        base = alloc(n * 4 + 8);
+        store32(8, base);
+    }
+
+    // Regenerate the input on every call: sorting an already sorted array
+    // would measure a different (and much less interesting) workload.
+    let s = 42424242;
+    let i = 0;
+    while (i < n) {
+        s = (s * 1103515245 + 12345) & 2147483647;
+        store32(base + i * 4, s);
+        i = i + 1;
+    }
+
+    qsort(base, 0, n - 1);
+
+    let sum = 0;
+    let k = 0;
+    while (k < n) {
+        sum = (sum * 33 + load32(base + k * 4)) & 2147483647;
+        k = k + 1;
+    }
+    return sum;
+}

@@ -1,0 +1,156 @@
+// --- эмиссия: бинарные уровни Pratt-парсера ---
+// &&/|| с коротким замыканием, ==/!=, сравнения, битовые, сдвиги,
+// + - * / % с выбором i32/f64-опкодов и конкатенацией строк.
+
+// Чистые отображения «токен оператора → WASM-опкод»: результат зависит только
+// от аргумента, поэтому таблицы проверяются отдельно от эмиссии.
+fn eq_opcode(k) -> int { if (k == 40) { return 70; } return 71; }
+fn cmp_opcode(k) -> int { if (k == 42) { return 72; } if (k == 43) { return 74; } if (k == 44) { return 76; } return 78; }
+fn f64_cmp_opcode(k) -> int {
+    if (k == 42) { return F64_LT_OP(); }
+    if (k == 43) { return F64_GT_OP(); }
+    if (k == 44) { return F64_LE_OP(); }
+    return F64_GE_OP();
+}
+fn bit_opcode(k) -> int { if (k == 48) { return 113; } if (k == 49) { return 114; } return 115; }
+fn shift_opcode(k) -> int { if (k == 51) { return 116; } return 117; }
+fn int_arith_opcode(k) -> int {
+    if (k == 30) { return 106; }
+    if (k == 31) { return 107; }
+    if (k == 32) { return 108; }
+    if (k == 33) { return 109; }
+    return 111;
+}
+fn f64_arith_opcode(k) -> int {
+    if (k == 30) { return F64_ADD_OP(); }
+    if (k == 31) { return F64_SUB_OP(); }
+    if (k == 32) { return F64_MUL_OP(); }
+    return F64_DIV_OP();
+}
+
+fn level_and() -> int {
+    let base = get(0, 7);
+    level_eq();
+    while (tok_kind() == 46) {
+        next_token();
+        emit_op(4); emit_op(127);
+        level_eq();
+        emit_op(69); emit_op(69);
+        emit_op(5); ev_i32(0);
+        emit_op(11);
+        set(0, 7, base); tp(T_INT());
+    }
+    return 0;
+}
+// Каждый уровень фиксирует base стека типов до левого операнда; типы операндов
+// лежат по base и base+1, результат — по base. Устойчиво к несбалансировке.
+fn level_eq() -> int {
+    let base = get(0, 7);
+    level_cmp();
+    while (tok_kind() == 40 || tok_kind() == 41) {
+        let k = tok_kind(); next_token();
+        let lt = load32(TSTK() + base * 4);
+        level_cmp();
+        let rt = load32(TSTK() + (base + 1) * 4);
+        if (lt == T_STR() || rt == T_STR()) {
+            // Сравнение строк по содержимому (str_eq), как в oracle.
+            ev_call(SEQ_FI());
+            if (k == 41) { emit_op(69); }
+        } else {
+            emit_op(eq_opcode(k));
+        }
+        set(0, 7, base); tp(T_INT());
+    }
+    return 0;
+}
+fn level_cmp() -> int {
+    let base = get(0, 7);
+    level_bit();
+    while (tok_kind() == 42 || tok_kind() == 43 || tok_kind() == 44 || tok_kind() == 45) {
+        let k = tok_kind(); next_token();
+        let lt = load32(TSTK() + base * 4);
+        level_bit();
+        let rt = load32(TSTK() + (base + 1) * 4);
+        if (lt == T_FLT() || rt == T_FLT()) {
+            if (lt != rt) { promote_pair(base, lt, rt); }
+            emit_op(f64_cmp_opcode(k));
+        } else {
+            emit_op(cmp_opcode(k));
+        }
+        set(0, 7, base); tp(T_INT());
+    }
+    return 0;
+}
+fn level_bit() -> int {
+    let base = get(0, 7);
+    level_shift();
+    while (tok_kind() == 48 || tok_kind() == 49 || tok_kind() == 50) {
+        let k = tok_kind(); next_token();
+        level_shift();
+        emit_op(bit_opcode(k));
+        set(0, 7, base); tp(T_INT());
+    }
+    return 0;
+}
+fn level_shift() -> int {
+    let base = get(0, 7);
+    level_add();
+    while (tok_kind() == 51 || tok_kind() == 52) {
+        let k = tok_kind(); next_token();
+        level_add();
+        emit_op(shift_opcode(k));
+        set(0, 7, base); tp(T_INT());
+    }
+    return 0;
+}
+fn level_add() -> int {
+    let base = get(0, 7);
+    level_mul();
+    while (tok_kind() == 30 || tok_kind() == 31) {
+        let k = tok_kind(); next_token();
+        let lt = load32(TSTK() + base * 4);
+        level_mul();
+        let rt = load32(TSTK() + (base + 1) * 4);
+        if (k == 30 && (lt == T_STR() || rt == T_STR())) {
+            // Конкатенация строк: "+" над строками — не арифметика.
+            // Не-строковый операнд коэрцится в строку (i32_to_str), как oracle.
+            let rl = reserve(); ev_set(rl);
+            let ll = reserve(); ev_set(ll);
+            ev_get(ll); if (lt != T_STR()) { ev_call(I32S_FI()); }
+            ev_get(rl); if (rt != T_STR()) { ev_call(I32S_FI()); }
+            ev_call(SCAT_FI());
+            set(0, 7, base); tp(T_STR());
+        } else {
+            if (lt == T_FLT() || rt == T_FLT()) {
+                // '-' у float в oracle не проходит, но эмитим корректный f64.
+                if (lt != rt) { promote_pair(base, lt, rt); }
+                emit_op(f64_arith_opcode(k));
+                set(0, 7, base); tp(T_FLT());
+            } else {
+                emit_op(int_arith_opcode(k));
+                set(0, 7, base); tp(T_INT());
+            }
+        }
+    }
+    return 0;
+}
+fn level_mul() -> int {
+    let base = get(0, 7);
+    level_unary();
+    while (tok_kind() == 32 || tok_kind() == 33 || tok_kind() == 34) {
+        let k = tok_kind(); next_token();
+        let lt = load32(TSTK() + base * 4);
+        level_unary();
+        let rt = load32(TSTK() + (base + 1) * 4);
+        if (lt == T_FLT() || rt == T_FLT()) {
+            // Смешанные операнды: перекладываем в локали и повышаем int→f64.
+            if (lt != rt) { promote_pair(base, lt, rt); }
+            if (k == 34) { err(); } else { emit_op(f64_arith_opcode(k)); }
+            set(0, 7, base); tp(T_FLT());
+        } else {
+            emit_op(int_arith_opcode(k));
+            set(0, 7, base); tp(T_INT());
+        }
+    }
+    return 0;
+}

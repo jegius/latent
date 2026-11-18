@@ -1,0 +1,24 @@
+{
+  "name": "latent-docs-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP-сервер документации языка Latent: docs tools/resources/prompts по stdio и Streamable HTTP",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "latent-docs-mcp": "./bin/server.mjs"
+  },
+  "scripts": {
+    "start": "node bin/server.mjs --stdio",
+    "start:http": "node bin/server.mjs --http --port 8765",
+    "test": "node --test test/*.test.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md"
+  ]
+}

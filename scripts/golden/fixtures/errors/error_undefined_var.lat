@@ -1,0 +1,6 @@
+// Golden-набор: ошибка — неопределённая переменная.
+// expect-error: Неопределённая переменная
+
+fn main() -> int {
+    return missing_name;
+}

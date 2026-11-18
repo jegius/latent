@@ -1,0 +1,164 @@
+name: CI
+
+# Проверки качества Latent: Rust-компилятор, self-hosted bootstrap, web IDE,
+# документация (примеры + сборка), MCP-сервер документации, LSP.
+#
+# Запускается на push/PR в main и part10-toolchain.
+
+on:
+  push:
+    branches: [main, part10-toolchain]
+  pull_request:
+    branches: [main, part10-toolchain]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust-компилятор
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: llvm-tools-preview
+      - name: cargo test
+        run: cargo test --all-targets
+      - name: Сборка WASM-движка
+        run: cargo build --release --target wasm32-unknown-unknown
+      - name: Установка cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+      - name: Покрытие Rust (порог 90%)
+        run: cargo llvm-cov --all-targets --summary-only --fail-under-lines 90
+
+  selfhost:
+    name: Self-hosted компилятор
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: cargo build --bin latentc
+        run: cargo build --bin latentc
+      - name: Golden-набор (строго, без SKIP)
+        run: node scripts/check-golden.mjs --strict
+      - name: Сборка shc.lat
+        run: node selfhost/build.mjs
+      - name: Bootstrap и фиксированная точка
+        run: node selfhost/bootstrap.mjs
+      - name: Регресс-тесты selfhost
+        run: node --test selfhost/test/*.test.mjs
+
+  selfhost-norust:
+    name: Self-hosted без Rust (seed + WASM)
+    runs-on: ubuntu-latest
+    env:
+      # Rust/latentc в этом job не используются: тесты и CLI не должны его найти.
+      LATENTC: /nonexistent/latentc
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: "Окружение: Rust не используется"
+        run: |
+          if command -v cargo >/dev/null; then
+            echo "cargo есть в образе runner'а, но этот job его не вызывает"
+          else
+            echo "cargo недоступен"
+          fi
+          test ! -x "$LATENTC"
+      - name: Сборка shc.lat (только Node)
+        run: node selfhost/build.mjs
+      - name: "Rust-free bootstrap: seed -> stage1' -> stage2' -> stage3'"
+        run: node selfhost/bootstrap-wasm.mjs
+      - name: "CLI: hello.lat -> hello.wasm, main()=42"
+        run: |
+          printf 'fn main() -> int { print("hello"); return 42; }\n' > /tmp/hello.lat
+          node selfhost/wasm-compiler.mjs compile /tmp/hello.lat /tmp/hello.wasm
+          node -e "const b=require('fs').readFileSync('/tmp/hello.wasm');if(!WebAssembly.validate(b))throw new Error('invalid wasm');const i=new WebAssembly.Instance(new WebAssembly.Module(b),{env:{print:()=>{}}});if(i.exports.main()!==42)throw new Error('main != 42');console.log('hello.wasm: валиден, main()=42, '+b.length+' байт');"
+      - name: "CLI: check и version"
+        run: |
+          node selfhost/wasm-compiler.mjs check /tmp/hello.lat
+          node selfhost/wasm-compiler.mjs version
+      - name: seed.json соответствует seed.wasm (sha256)
+        run: node selfhost/bootstrap-wasm.mjs --verify-seed
+      - name: Тесты bootstrap-wasm (Rust-free)
+        run: node --test selfhost/test/bootstrap-wasm.test.mjs
+
+  webide:
+    name: Web IDE (JS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - name: Тесты и покрытие ≥90%
+        run: node --experimental-test-coverage --test web-ide/test/*.test.js web-ide/test/*.test.mjs
+      - name: Production-сборка с ленивыми чанками
+        working-directory: web-ide
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build:chunks
+          test -f dist/index.html
+          ls dist/assets/*.js >/dev/null
+      - name: Структурный аудит
+        run: node web-ide/scripts/check-structure.mjs
+
+  docs:
+    name: Документация
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - name: Зависимости
+        working-directory: docs
+        run: pnpm install --frozen-lockfile
+      - name: Ассеты демо (wasm, vendor, selfhost seed)
+        run: node docs/static/demos/build-demos.mjs
+      - name: Проверка примеров из доки
+        run: node docs/scripts/validate-examples.mjs
+      - name: Сборка сайта
+        working-directory: docs
+        run: pnpm run build
+
+  tooling:
+    name: MCP и LSP
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: MCP-сервер документации
+        run: node --test mcp/docs-mcp/test/*.test.mjs
+      - name: "LSP-сервер: тесты и покрытие ≥90% строк"
+        run: node --experimental-test-coverage --test --test-coverage-lines=90 tooling/latent-lsp/test/*.test.mjs
+
+  idea:
+    name: IntelliJ IDEA (встроенные артефакты)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # Плагин носит с собой снимок compiler.wasm и копию language.json:
+      # проверяем, что они не разошлись с web-ide/compiler.wasm и
+      # tooling/language-data/language.json (обновление — --update).
+      - name: compiler.wasm и language.json совпадают с источником
+        run: node scripts/check-embedded-wasm.mjs

@@ -1,0 +1,14 @@
+// Базовый модуль: функции, класс, enum. Импортируется из main.lat.
+export fn square(x: int) -> int { return x * x; }
+
+export class Point {
+    x: int;
+    y: int;
+    fn init(x: int, y: int) { this.x = x; this.y = y; }
+    fn norm2() -> int { return square(this.x) + square(this.y); }
+}
+
+export enum Shape { Circle(int), Rect(int, int) }
+
+// Параметр с типом импортируемого класса: проверяет переписывание аннотаций.
+export fn norm(p: Point) -> int { return p.norm2(); }

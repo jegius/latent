@@ -1,0 +1,35 @@
+// First-class functions & lambdas: closures, higher-order functions, for-in.
+
+fn apply_twice(f, x) {
+    return f(f(x));
+}
+
+fn map_arr(arr, f) {
+    let r = [];
+    for (let item in arr) {
+        r.push(f(item));
+    }
+    return r;
+}
+
+fn main() -> int {
+    // lambda with expression body
+    let double = fn(x) => x * 2;
+    print("double(21) =", double(21));
+
+    // lambda with block body
+    let scale = fn(x) {
+        let y = x + 1;
+        return y * 10;
+    };
+    print("scale(4) =", scale(4));
+
+    // higher-order: pass lambda to function
+    let squared = map_arr([1, 2, 3, 4], fn(x) => x * x);
+    print("squared =", squared);
+
+    // nested application
+    print("apply_twice(double, 5) =", apply_twice(double, 5));
+
+    return squared[3];
+}

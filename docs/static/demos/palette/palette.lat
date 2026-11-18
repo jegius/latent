@@ -1,0 +1,94 @@
+// palette.lat — extract a compact colour palette from RGBA pixels.
+//
+// ABI used by docs/static/demos/palette/:
+//   main(pixels_ptr, width, height, out_ptr, max_colors) -> number of colours
+//
+// Input: width * height RGBA bytes at pixels_ptr (alpha < 128 is skipped).
+// Output at out_ptr:
+//   [opaque_pixels u32][color_count u32]
+//   color_count * { [argb u32][pixels u32] }
+//
+// The program intentionally uses only the engine #2 subset: integers, arrays
+// via alloc/load32/store32, while/if and print. No floats, no host features.
+
+fn bin_of(r: int, g: int, b: int) -> int {
+    // 3 bits per channel: 512 bins. Coarser than 4-bit bins but noticeably
+    // less "twelve shades of the same grey" in the resulting palette.
+    return (r >> 5) * 64 + (g >> 5) * 8 + (b >> 5);
+}
+
+fn main(pixels: int, width: int, height: int, out: int, max_colors: int) -> int {
+    let bins = alloc(512 * 4);
+    let reds = alloc(512 * 4);
+    let greens = alloc(512 * 4);
+    let blues = alloc(512 * 4);
+
+    let i = 0;
+    while (i < 512) {
+        store32(bins + i * 4, 0);
+        store32(reds + i * 4, 0);
+        store32(greens + i * 4, 0);
+        store32(blues + i * 4, 0);
+        i = i + 1;
+    }
+
+    let total = width * height;
+    let opaque = 0;
+    let p = 0;
+    while (p < total) {
+        let at = pixels + p * 4;
+        let a = load8(at + 3);
+        if (a >= 128) {
+            let r = load8(at);
+            let g = load8(at + 1);
+            let b = load8(at + 2);
+            let bin = bin_of(r, g, b);
+            store32(bins + bin * 4, load32(bins + bin * 4) + 1);
+            store32(reds + bin * 4, load32(reds + bin * 4) + r);
+            store32(greens + bin * 4, load32(greens + bin * 4) + g);
+            store32(blues + bin * 4, load32(blues + bin * 4) + b);
+            opaque = opaque + 1;
+        }
+        p = p + 1;
+    }
+
+    store32(out, opaque);
+    store32(out + 4, 0);
+    let count_ptr = out + 4;
+
+    let picked = 0;
+    let limit = max_colors;
+    if (limit > 16) { limit = 16; }
+    while (picked < limit) {
+        let best = 0 - 1;
+        let best_count = 0;
+        let j = 0;
+        while (j < 512) {
+            let c = load32(bins + j * 4);
+            if (c > best_count) {
+                best_count = c;
+                best = j;
+            }
+            j = j + 1;
+        }
+        if (best < 0) {
+            picked = limit;
+        } else {
+            let n = best_count;
+            let r = load32(reds + best * 4) / n;
+            let g = load32(greens + best * 4) / n;
+            let b = load32(blues + best * 4) / n;
+            let argb = (0 - 16777216) + r * 65536 + g * 256 + b;
+            let index = load32(count_ptr);
+            store32(out + 8 + index * 8, argb);
+            store32(out + 12 + index * 8, n);
+            store32(count_ptr, index + 1);
+            store32(bins + best * 4, 0);
+            picked = picked + 1;
+        }
+    }
+
+    print("palette colors:", load32(count_ptr));
+    print("opaque pixels:", opaque);
+    return load32(count_ptr);
+}

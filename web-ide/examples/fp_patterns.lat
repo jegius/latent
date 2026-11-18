@@ -1,0 +1,47 @@
+// Functional patterns: map, filter, reduce over arrays
+
+fn map_double(arr: [int]) -> [int] {
+    let result = [];
+    for (let i = 0; i < arr.length; i = i + 1) {
+        result.push(arr[i] * 2);
+    }
+    return result;
+}
+
+fn filter_even(arr: [int]) -> [int] {
+    let result = [];
+    for (let i = 0; i < arr.length; i = i + 1) {
+        if (arr[i] % 2 == 0) {
+            result.push(arr[i]);
+        }
+    }
+    return result;
+}
+
+fn reduce_sum(arr: [int]) -> int {
+    let acc = 0;
+    for (let i = 0; i < arr.length; i = i + 1) {
+        acc = acc + arr[i];
+    }
+    return acc;
+}
+
+fn main() -> int {
+    let numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    print("numbers:", numbers);
+
+    let doubled = map_double(numbers);
+    print("doubled: ", doubled);
+
+    let evens = filter_even(numbers);
+    print("evens:   ", evens);
+
+    let total = reduce_sum(numbers);
+    print("sum:     ", total);
+
+    // Composition: sum of doubled evens
+    let pipeline = reduce_sum(map_double(filter_even(numbers)));
+    print("sum of doubled evens:", pipeline);
+
+    return pipeline;
+}

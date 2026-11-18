@@ -1,0 +1,149 @@
+// --- сборка функций ---
+fn scan_signatures() -> int {
+    let i = 0; let cnt = 0; let depth = 0;
+    let total = get(0, 1);
+    while (i < total) {
+        let tk = load32(KIND() + i * 4);
+        if (tk == 22) { depth = depth + 1; }
+        else { if (tk == 23) { depth = depth - 1; if (depth < 0) { depth = 0; } }
+        // Функция верхнего уровня (depth 0) или метод класса (записан в
+        // METHTOK скан-классов). Прочие `fn` внутри тел — лямбды (scan_lambdas).
+        else { if (tk == 11 && (depth == 0 || method_class(i) >= 0)) {
+            store32(FNTOK() + cnt * 4, i);
+            store32(FNOFF() + cnt * 4, load32(TVAL() + (i + 1) * 4));
+            store32(FNLEN() + cnt * 4, load32(TLEN() + (i + 1) * 4));
+            let j = i + 2; let p = 0; let prev = 20;
+            while (j < total && load32(KIND() + j * 4) != 21) {
+                let kk = load32(KIND() + j * 4);
+                if ((kk == 2 || (kk >= 10 && kk <= 19)) && (prev == 20 || prev == 24)) { p = p + 1; }
+                prev = kk; j = j + 1;
+            }
+            let mc = method_class(i);
+            store32(FNCLS() + cnt * 4, mc);
+            // Метод получает неявный первый параметр `this`.
+            if (mc >= 0) { p = p + 1; }
+            store32(FNNP() + cnt * 4, p);
+            store32(FNRET() + cnt * 4, fn_ret_tp(total, i));
+            cnt = cnt + 1;
+        } }
+        }
+        i = i + 1;
+    }
+    set(0, 2, cnt);
+    return cnt;
+}
+
+// Тип результата функции для выбора строковых/числовых опкодов: строковым
+// считаем функцию с аннотацией `-> string`; иначе int (как oracle-дефолт).
+fn fn_ret_tp(total, ftok) -> int {
+    let j = ftok + 2;                  // после имени: '('
+    while (j < total && load32(KIND() + j * 4) != 21) { j = j + 1; }
+    if (j + 1 >= total) { return T_INT(); }
+    if (load32(KIND() + (j + 1) * 4) != 28) { return T_INT(); }   // нет '->'
+    let rt = j + 2;
+    if (load32(KIND() + rt * 4) == 2) {
+        if (is_lit(load32(TVAL() + rt * 4), load32(TLEN() + rt * 4), "string", 6)) { return T_STR(); }
+        if (is_lit(load32(TVAL() + rt * 4), load32(TLEN() + rt * 4), "float", 5)) { return T_FLT(); }
+    }
+    return T_INT();
+}
+// Пропускает аннотацию типа до разделителя: `,` `)` `}` `=` `;` или EOF.
+fn skip_type() -> int {
+    while (tok_kind() != 24 && tok_kind() != 21 && tok_kind() != 22 && tok_kind() != 27
+        && tok_kind() != 25 && tok_kind() != 0) { next_token(); }
+    return 0;
+}
+// Читает аннотацию типа и возвращает тег для LOTP (T_INT/T_FLT/T_STR),
+// потребляя токены до разделителя. `: string` → T_STR и т.п.
+fn read_type_tag() -> int {
+    let t = T_INT();
+    if (is_ident_kind(tok_kind())) {
+        let off = tok_val(); let ln = tok_len();
+        if (is_lit(off, ln, "string", 6)) { t = T_STR(); }
+        else { if (is_lit(off, ln, "float", 5)) { t = T_FLT(); } }
+    }
+    skip_type();
+    return t;
+}
+// Аннотация с ведущим `:` (текущий токен — 26).
+fn read_ann_after_colon() -> int {
+    if (tok_kind() == 26) { next_token(); return read_type_tag(); }
+    return T_INT();
+}
+
+// Декларации локальных групп для code-секции: идём по слотам nparams..ntot
+// и группируем подряд идущие одинаковые valtype (0x7f=i32, 0x7c=f64).
+// Так float-локальные (LOTP=T_FLT) получают корректный f64-valtype.
+fn emit_local_decls(nparams, ntot) -> int {
+    let i = nparams;
+    let ngrp = 0;
+    while (i < ntot) {
+        let t = local_valtype(i);
+        let j = i + 1;
+        while (j < ntot && local_valtype(j) == t) { j = j + 1; }
+        ngrp = ngrp + 1;
+        i = j;
+    }
+    bleb(BODYC(), ngrp);
+    i = nparams;
+    while (i < ntot) {
+        let t = local_valtype(i);
+        let j = i + 1;
+        while (j < ntot && local_valtype(j) == t) { j = j + 1; }
+        bleb(BODYC(), j - i);
+        bput(BODYC(), t);
+        i = j;
+    }
+    return 0;
+}
+fn local_valtype(idx) -> int {
+    if (load32(LOTP() + idx * 4) == T_FLT()) { return 124; }   // f64
+    return 127;                                                // i32
+}
+
+fn compile_fn(fi) -> int {
+    set(0, 0, load32(FNTOK() + fi * 4));
+    store32(CURFI(), fi);
+    expect(11); expect_ident();
+    binit(FNB());
+    set(0, 3, 0);
+    let cls = load32(FNCLS() + fi * 4);
+    if (cls >= 0) {
+        // Неявный `this` = локаль 0 (offset -1, распознаётся по имени в primary).
+        add_local(-1, 4, 0); set_local_tp(0, T_INT()); store32(LOCCLS() + 0 * 4, cls);
+    }
+    expect(20);
+    let idx = 0;
+    while (tok_kind() != 21 && tok_kind() != 0) {
+        let poff = tok_val(); let plen = tok_len();
+        expect_ident();
+        let slot = get(0, 3);
+        // Параметры подписаны всегда i32 (mixed-float параметры не поддержаны
+        // ни oracle, ни нами), но аннотация нужна для ТИПА локальной: строковый
+        // параметр обязан быть T_STR, иначе `s[i]` компилируется как индекс
+        // массива (4-байтовые ячейки) вместо str_char_at — так ломался текст
+        // ошибок у stage2 (tcerr_msg(s: string)).
+        let pt = read_ann_after_colon();
+        add_local(poff, plen, slot);
+        if (pt == T_STR()) { set_local_tp(slot, T_STR()); } else { set_local_tp(slot, T_INT()); }
+        idx = idx + 1;
+        if (tok_kind() == 24) { next_token(); }
+    }
+    expect(21);
+    if (tok_kind() == 28) { next_token(); skip_type(); }
+    expect(22);
+    stmts();
+    expect(23);
+    let lb = load8(FNB() + 4 + load32(FNB()) - 1);
+    if (lb != 15) { emit_op(65); emit_sleb(0); }
+    emit_op(11);
+    // финальное тело: декларации локальных групп по типу (i32/f64).
+    binit(BODYC());
+    let nparams = load32(FNNP() + fi * 4);
+    emit_local_decls(nparams, get(0, 3));
+    bcopy(BODYC(), FNB(), 0, blen(FNB()));
+    store32(CODEOF() + fi * 4, load32(CODEB()));
+    store32(CODELN() + fi * 4, blen(BODYC()));
+    bcopy(CODEB(), BODYC(), 0, blen(BODYC()));
+    return 0;
+}

@@ -1,0 +1,48 @@
+// Classic algorithms: bubble sort + binary search
+
+fn bubble_sort(arr: [int]) -> [int] {
+    let n = arr.length;
+    for (let i = 0; i < n; i = i + 1) {
+        for (let j = 0; j < n - i - 1; j = j + 1) {
+            if (arr[j] > arr[j + 1]) {
+                let tmp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = tmp;
+            }
+        }
+    }
+    return arr;
+}
+
+fn binary_search(arr: [int], target: int) -> int {
+    let lo = 0;
+    let hi = arr.length - 1;
+    while (lo <= hi) {
+        let mid = (lo + hi) / 2;
+        if (arr[mid] == target) {
+            return mid;
+        }
+        if (arr[mid] < target) {
+            lo = mid + 1;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    return -1;
+}
+
+fn main() -> int {
+    let data = [64, 34, 25, 12, 22, 11, 90];
+    print("original:", data);
+
+    let sorted = bubble_sort(data);
+    print("sorted:  ", sorted);
+
+    let idx = binary_search(sorted, 22);
+    print("binary_search(22) -> index", idx);
+
+    let missing = binary_search(sorted, 100);
+    print("binary_search(100) -> index", missing);
+
+    return 0;
+}

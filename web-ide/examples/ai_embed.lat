@@ -1,0 +1,45 @@
+// AI embeddings: vector representations + cosine similarity
+// Run with "🤖 Compile & Run with AI"
+
+fn dot(a: [float], b: [float]) -> float {
+    let sum = 0;
+    for (let i = 0; i < a.length; i = i + 1) {
+        sum = sum + a[i] * b[i];
+    }
+    return sum;
+}
+
+fn magnitude(v: [float]) -> float {
+    let sum = 0;
+    for (let i = 0; i < v.length; i = i + 1) {
+        sum = sum + v[i] * v[i];
+    }
+    // sqrt approximation via Newton's method
+    let x = sum;
+    let guess = x / 2;
+    for (let i = 0; i < 20; i = i + 1) {
+        guess = (guess + x / guess) / 2;
+    }
+    return guess;
+}
+
+fn cosine_similarity(a: [float], b: [float]) -> float {
+    return dot(a, b) / (magnitude(a) * magnitude(b));
+}
+
+fn main() -> int {
+    let v1 = ai_embed("parallel map-reduce sum of squares");
+    let v2 = ai_embed("concurrent reduction with goroutines");
+    let v3 = ai_embed("recipe for chocolate cake");
+
+    print("embedding dims:", v1.length);
+    print("v1[0..3]: [", v1[0], v1[1], v1[2], v1[3], "]");
+
+    let sim_related = cosine_similarity(v1, v2);
+    let sim_unrelated = cosine_similarity(v1, v3);
+
+    print("similarity(related texts):  ", sim_related);
+    print("similarity(unrelated texts):", sim_unrelated);
+
+    return 0;
+}

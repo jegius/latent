@@ -1,0 +1,181 @@
+<templateSet group="Latent">
+    <template name="fn" value="fn $NAME$($PARAMS$) -&gt; $RET$ {&#10;    $END$&#10;}"
+              description="Функция с аннотацией возвращаемого типа"
+              toReformat="true" toShortenFQNames="true">
+        <variable name="NAME" expression="" defaultValue="name" alwaysStopAt="true"/>
+        <variable name="PARAMS" expression="" defaultValue="" alwaysStopAt="true"/>
+        <variable name="RET" expression="" defaultValue="int" alwaysStopAt="true"/>
+        <context>
+            <option name="LATENT" value="true"/>
+        </context>
+    </template>
+
+    <template name="let" value="let $NAME$: $TYPE$ = $END$;"
+              description="Переменная с аннотацией типа"
+              toReformat="true" toShortenFQNames="true">
+        <variable name="NAME" expression="" defaultValue="x" alwaysStopAt="true"/>
+        <variable name="TYPE" expression="" defaultValue="int" alwaysStopAt="true"/>
+        <context>
+            <option name="LATENT" value="true"/>
+        </context>
+    </template>
+
+    <template name="if" value="if ($COND$) {&#10;    $END$&#10;}"
+              description="Условная инструкция"
+              toReformat="true" toShortenFQNames="true">
+        <variable name="COND" expression="" defaultValue="cond" alwaysStopAt="true"/>
+        <context>
+            <option name="LATENT" value="true"/>
+        </context>
+    </template>
+
+    <template name="ifelse" value="if ($COND$) {&#10;    $THEN$&#10;} else {&#10;    $END$&#10;}"
+              description="Условие с альтернативной веткой"
+              toReformat="true" toShortenFQNames="true">
+        <variable name="COND" expression="" defaultValue="cond" alwaysStopAt="true"/>
+        <variable name="THEN" expression="" defaultValue="" alwaysStopAt="true"/>
+        <context>
+            <option name="LATENT" value="true"/>
+        </context>
+    </template>
+
+    <template name="while" value="while ($COND$) {&#10;    $END$&#10;}"
+              description="Цикл с предусловием"
+              toReformat="true" toShortenFQNames="true">
+        <variable name="COND" expression="" defaultValue="cond" alwaysStopAt="true"/>
+        <context>
+            <option name="LATENT" value="true"/>
+        </context>
+    </template>
+
+    <template name="forin" value="for (let $ITEM$ in $ITEMS$) {&#10;    $END$&#10;}"
+              description="Обход массива (for-in)"
+              toReformat="true" toShortenFQNames="true">
+        <variable name="ITEM" expression="" defaultValue="item" alwaysStopAt="true"/>
+        <variable name="ITEMS" expression="" defaultValue="items" alwaysStopAt="true"/>
+        <context>
+            <option name="LATENT" value="true"/>
+        </context>
+    </template>
+
+    <template name="for" value="for (let $I$ = 0; $I$ &lt; $N$; $I$ = $I$ + 1) {&#10;    $END$&#10;}"
+              description="Цикл C-стиля"
+              toReformat="true" toShortenFQNames="true">
+        <variable name="I" expression="" defaultValue="i" alwaysStopAt="true"/>
+        <variable name="N" expression="" defaultValue="n" alwaysStopAt="true"/>
+        <context>
+            <option name="LATENT" value="true"/>
+        </context>
+    </template>
+
+    <template name="class" value="class $NAME$ {&#10;    $FIELD$: $TYPE$;&#10;&#10;    fn init($PARAMS$) {&#10;        $END$&#10;    }&#10;}"
+              description="Класс с полем и конструктором init"
+              toReformat="true" toShortenFQNames="true">
+        <variable name="NAME" expression="" defaultValue="Name" alwaysStopAt="true"/>
+        <variable name="FIELD" expression="" defaultValue="field" alwaysStopAt="true"/>
+        <variable name="TYPE" expression="" defaultValue="int" alwaysStopAt="true"/>
+        <variable name="PARAMS" expression="" defaultValue="" alwaysStopAt="true"/>
+        <context>
+            <option name="LATENT" value="true"/>
+        </context>
+    </template>
+
+    <template name="enum" value="enum $NAME$ {&#10;    $VARIANT$,&#10;    $END$&#10;}"
+              description="Sum-тип (enum)"
+              toReformat="true" toShortenFQNames="true">
+        <variable name="NAME" expression="" defaultValue="Name" alwaysStopAt="true"/>
+        <variable name="VARIANT" expression="" defaultValue="Variant" alwaysStopAt="true"/>
+        <context>
+            <option name="LATENT" value="true"/>
+        </context>
+    </template>
+
+    <template name="match" value="match $VALUE$ {&#10;    case $PATTERN$: $BODY$,&#10;    default: $END$&#10;}"
+              description="Сопоставление с образцом"
+              toReformat="true" toShortenFQNames="true">
+        <variable name="VALUE" expression="" defaultValue="value" alwaysStopAt="true"/>
+        <variable name="PATTERN" expression="" defaultValue="0" alwaysStopAt="true"/>
+        <variable name="BODY" expression="" defaultValue="result" alwaysStopAt="true"/>
+        <context>
+            <option name="LATENT" value="true"/>
+        </context>
+    </template>
+
+    <template name="lambda" value="fn($PARAM$) =&gt; $END$"
+              description="Лямбда-выражение"
+              toReformat="true" toShortenFQNames="true">
+        <variable name="PARAM" expression="" defaultValue="x" alwaysStopAt="true"/>
+        <context>
+            <option name="LATENT" value="true"/>
+        </context>
+    </template>
+
+    <template name="spawn" value="spawn {&#10;    $END$&#10;}"
+              description="Горутина (spawn)"
+              toReformat="true" toShortenFQNames="true">
+        <context>
+            <option name="LATENT" value="true"/>
+        </context>
+    </template>
+
+    <template name="select" value="select {&#10;    case $VALUE$ &lt;- $CHANNEL$: {&#10;        $END$&#10;    }&#10;    default: {&#10;    }&#10;}"
+              description="Мультиплексирование каналов"
+              toReformat="true" toShortenFQNames="true">
+        <variable name="VALUE" expression="" defaultValue="value" alwaysStopAt="true"/>
+        <variable name="CHANNEL" expression="" defaultValue="ch" alwaysStopAt="true"/>
+        <context>
+            <option name="LATENT" value="true"/>
+        </context>
+    </template>
+
+    <template name="test" value="test &quot;$NAME$&quot; {&#10;    assert($COND$);&#10;    $END$&#10;}"
+              description="Блок регрессионного теста"
+              toReformat="true" toShortenFQNames="true">
+        <variable name="NAME" expression="" defaultValue="name" alwaysStopAt="true"/>
+        <variable name="COND" expression="" defaultValue="true" alwaysStopAt="true"/>
+        <context>
+            <option name="LATENT" value="true"/>
+        </context>
+    </template>
+
+    <template name="assert" value="assert($COND$);&#10;$END$"
+              description="Проверка условия (trap при ложном)"
+              toReformat="true" toShortenFQNames="true">
+        <variable name="COND" expression="" defaultValue="cond" alwaysStopAt="true"/>
+        <context>
+            <option name="LATENT" value="true"/>
+        </context>
+    </template>
+
+    <template name="ai_generate" value="let $RESULT$ = ai_generate!(&quot;$PROMPT$&quot;);&#10;$END$"
+              description="AI-генерация строки (host-only)"
+              toReformat="true" toShortenFQNames="true">
+        <variable name="RESULT" expression="" defaultValue="text" alwaysStopAt="true"/>
+        <variable name="PROMPT" expression="" defaultValue="prompt" alwaysStopAt="true"/>
+        <context>
+            <option name="LATENT" value="true"/>
+        </context>
+    </template>
+
+    <template name="ai_infer" value="let $RESULT$ = ai_infer($MODEL$, $PROMPT$);&#10;$END$"
+              description="AI-инференс модели (host-only)"
+              toReformat="true" toShortenFQNames="true">
+        <variable name="RESULT" expression="" defaultValue="result" alwaysStopAt="true"/>
+        <variable name="MODEL" expression="" defaultValue="model" alwaysStopAt="true"/>
+        <variable name="PROMPT" expression="" defaultValue="prompt" alwaysStopAt="true"/>
+        <context>
+            <option name="LATENT" value="true"/>
+        </context>
+    </template>
+
+    <template name="ai_contract" value="@ai_contract(&quot;$DESCRIPTION$&quot;)&#10;fn $NAME$() -&gt; $RET$ {&#10;    $END$&#10;}"
+              description="Декоратор AI-контракта"
+              toReformat="true" toShortenFQNames="true">
+        <variable name="DESCRIPTION" expression="" defaultValue="contract" alwaysStopAt="true"/>
+        <variable name="NAME" expression="" defaultValue="name" alwaysStopAt="true"/>
+        <variable name="RET" expression="" defaultValue="int" alwaysStopAt="true"/>
+        <context>
+            <option name="LATENT" value="true"/>
+        </context>
+    </template>
+</templateSet>

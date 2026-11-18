@@ -1,0 +1,30 @@
+// Функции: параметры, типы возврата, вызовы, композиция и рекурсия
+
+fn add(a: int, b: int) -> int {
+    return a + b;
+}
+
+fn square(x: int) -> int {
+    return x * x;
+}
+
+// Композиция вызовов
+fn sum_squares(a: int, b: int) -> int {
+    return add(square(a), square(b));
+}
+
+// Рекурсия: алгоритм Евклида
+fn gcd(a: int, b: int) -> int {
+    if (b == 0) {
+        return a;
+    }
+    return gcd(b, a % b);
+}
+
+fn main() -> int {
+    print("add(2, 3) =", add(2, 3));
+    print("square(7) =", square(7));
+    print("sum_squares(3, 4) =", sum_squares(3, 4));
+    print("gcd(48, 36) =", gcd(48, 36));
+    return sum_squares(3, 4);
+}

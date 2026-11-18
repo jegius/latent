@@ -1,0 +1,19 @@
+{
+  "name": "latent-web-ide",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Latent online IDE — tree-walking interpreter (engine #1) and AI gateway",
+  "scripts": {
+    "dev": "vite",
+    "build:chunks": "vite build",
+    "preview": "vite preview",
+    "test": "node --test \"test/*.test.js\" \"test/*.test.mjs\"",
+    "test:js": "node --test \"test/*.test.js\"",
+    "coverage": "node --experimental-test-coverage --test \"test/*.test.js\" \"test/*.test.mjs\"",
+    "check:structure": "node scripts/check-structure.mjs"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}

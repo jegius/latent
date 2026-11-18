@@ -1,0 +1,70 @@
+/**
+ * Глобальные стили документации Latent.
+ * Тёмная тема по умолчанию (см. docusaurus.config.js), но светлая тоже
+ * аккуратно оформлена — переключатель в navbar.
+ */
+
+:root {
+  --ifm-color-primary: #7c5cff;
+  --ifm-color-primary-dark: #6845f5;
+  --ifm-color-primary-darker: #5c38f0;
+  --ifm-color-primary-darkest: #4726cc;
+  --ifm-color-primary-light: #9179ff;
+  --ifm-color-primary-lighter: #9d87ff;
+  --ifm-color-primary-lightest: #b9a8ff;
+  --ifm-code-font-size: 92%;
+  --ifm-font-family-base: 'Segoe UI', 'Inter', system-ui, -apple-system,
+    'Helvetica Neue', Arial, sans-serif;
+  --ifm-font-family-monospace: 'Cascadia Code', 'JetBrains Mono', 'Fira Code',
+    Consolas, 'Courier New', monospace;
+  --ifm-heading-font-weight: 650;
+  --docusaurus-highlighted-code-line-bg: rgba(124, 92, 255, 0.18);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #a78bfa;
+  --ifm-color-primary-dark: #9370f7;
+  --ifm-color-primary-darker: #8862f5;
+  --ifm-color-primary-darkest: #6d3ff0;
+  --ifm-color-primary-light: #bba6fd;
+  --ifm-color-primary-lighter: #c6b4fe;
+  --ifm-color-primary-lightest: #ddd2ff;
+  --ifm-background-color: #12121a;
+  --ifm-background-surface-color: #1a1a26;
+  --ifm-navbar-background-color: #16161f;
+  --ifm-footer-background-color: #0e0e15;
+  --ifm-code-background: rgba(167, 139, 250, 0.12);
+  --docusaurus-highlighted-code-line-bg: rgba(167, 139, 250, 0.22);
+}
+
+/* Компактнее таблицы: их в документации много (операторы, типы, ABI). */
+.markdown table {
+  display: table;
+  width: 100%;
+  font-size: 0.94rem;
+}
+
+.markdown table th {
+  background: var(--ifm-background-surface-color);
+}
+
+/* `latent`-блоки без Prism-грамматики: моноширинный, читаемый текст. */
+.markdown pre code {
+  font-variant-ligatures: none;
+}
+
+/* Блок «ограничения движка №2» — единый визуальный маркер. */
+.engine-limits {
+  border-left: 4px solid var(--ifm-color-warning-dark);
+  background: rgba(255, 196, 0, 0.08);
+  padding: 0.75rem 1rem;
+  border-radius: 0 var(--ifm-global-radius) var(--ifm-global-radius) 0;
+  margin: 1rem 0;
+}
+
+/* Компактный навбар на узких экранах. */
+@media (max-width: 996px) {
+  .navbar__title {
+    font-weight: 650;
+  }
+}

@@ -1,0 +1,271 @@
+{
+  "Latent: программа": {
+    "prefix": "program",
+    "body": [
+      "fn main() -> int {",
+      "    $0",
+      "    return 0;",
+      "}"
+    ],
+    "description": "Каркас программы Latent: точка входа main, возвращающая int"
+  },
+  "Latent: функция": {
+    "prefix": "fn",
+    "body": [
+      "fn ${1:name}(${2:args}) -> ${3:int} {",
+      "    $0",
+      "    return ${4:0};",
+      "}"
+    ],
+    "description": "Объявление функции с аннотацией возвращаемого типа"
+  },
+  "Latent: async-функция": {
+    "prefix": "async fn",
+    "body": [
+      "async fn ${1:name}(${2:args}) -> ${3:int} {",
+      "    $0",
+      "    return ${4:0};",
+      "}"
+    ],
+    "description": "Асинхронная функция (возвращает Promise<T>); await в движке №2 прозрачен"
+  },
+  "Latent: let с типом": {
+    "prefix": "let",
+    "body": [
+      "let ${1:name}: ${2:int} = ${3:0};$0"
+    ],
+    "description": "Объявление переменной с явной аннотацией типа"
+  },
+  "Latent: let с выводом типа": {
+    "prefix": "letinfer",
+    "body": [
+      "let ${1:name} = ${2:value};$0"
+    ],
+    "description": "Объявление переменной без аннотации: тип выводится"
+  },
+  "Latent: if": {
+    "prefix": "if",
+    "body": [
+      "if (${1:condition}) {",
+      "    $0",
+      "}"
+    ],
+    "description": "Условная инструкция; условие обязательно в круглых скобках"
+  },
+  "Latent: if / else": {
+    "prefix": "ifelse",
+    "body": [
+      "if (${1:condition}) {",
+      "    ${2}",
+      "} else {",
+      "    ${3}",
+      "}"
+    ],
+    "description": "Условная инструкция с альтернативной веткой"
+  },
+  "Latent: while": {
+    "prefix": "while",
+    "body": [
+      "while (${1:condition}) {",
+      "    $0",
+      "}"
+    ],
+    "description": "Цикл с предусловием (условие в круглых скобках)"
+  },
+  "Latent: for-in": {
+    "prefix": "forin",
+    "body": [
+      "for (let ${1:item} in ${2:items}) {",
+      "    $0",
+      "}"
+    ],
+    "description": "Обход коллекции: for (let item in array)"
+  },
+  "Latent: for C-стиль": {
+    "prefix": "forc",
+    "body": [
+      "for (let ${1:i} = 0; ${1:i} < ${2:n}; ${1:i} = ${1:i} + 1) {",
+      "    $0",
+      "}"
+    ],
+    "description": "Цикл for в C-стиле с инициализацией, условием и шагом"
+  },
+  "Latent: класс": {
+    "prefix": "class",
+    "body": [
+      "class ${1:Name} {",
+      "    ${2:field}: ${3:int};",
+      "",
+      "    fn init(${4:value}) {",
+      "        this.${2:field} = ${4:value};",
+      "    }",
+      "",
+      "    fn ${5:method}() -> ${6:int} {",
+      "        return this.${2:field};",
+      "    }",
+      "}",
+      "$0"
+    ],
+    "description": "Класс с полем, конструктором init и методом"
+  },
+  "Latent: enum": {
+    "prefix": "enum",
+    "body": [
+      "enum ${1:Name} {",
+      "    ${2:Variant},",
+      "    ${3:Other}(${4:int}),",
+      "}",
+      "$0"
+    ],
+    "description": "Перечисление с 0-арным и параметризованным вариантами"
+  },
+  "Latent: match": {
+    "prefix": "match",
+    "body": [
+      "return match ${1:value} {",
+      "    case ${2:pattern}: ${3:result},",
+      "    default: ${4:fallback},",
+      "};$0"
+    ],
+    "description": "Pattern matching: ветки case, default и завершающая точка с запятой"
+  },
+  "Latent: лямбда =>": {
+    "prefix": "lambda",
+    "body": [
+      "fn(${1:x}) => ${2:x * 2}"
+    ],
+    "description": "Лямбда-выражение с телом-выражением (=>)"
+  },
+  "Latent: лямбда с блоком": {
+    "prefix": "lambdablock",
+    "body": [
+      "fn(${1:x}) {",
+      "    $0",
+      "    return ${2:value};",
+      "}"
+    ],
+    "description": "Лямбда-выражение с телом-блоком"
+  },
+  "Latent: spawn": {
+    "prefix": "spawn",
+    "body": [
+      "spawn {",
+      "    $0",
+      "}"
+    ],
+    "description": "Порождение задачи (в движке №2 выполняется последовательно)"
+  },
+  "Latent: канал": {
+    "prefix": "channel",
+    "body": [
+      "let ${1:ch} = channel();$0"
+    ],
+    "description": "Создание канала (host-примитив, требует JS-движка/рантайма)"
+  },
+  "Latent: select": {
+    "prefix": "select",
+    "body": [
+      "select {",
+      "    case ${1:v} <- ${2:ch}: {",
+      "        $0",
+      "    }",
+      "    default: {",
+      "        ${3}",
+      "    }",
+      "}"
+    ],
+    "description": "Мультиплексирование каналов: ветки case и default"
+  },
+  "Latent: тест": {
+    "prefix": "test",
+    "body": [
+      "test \"${1:name}\" {",
+      "    $0",
+      "}"
+    ],
+    "description": "Блок теста с именем-строкой"
+  },
+  "Latent: @test": {
+    "prefix": "@test",
+    "body": [
+      "@test(\"${1:name}\")",
+      "fn ${2:testName}() {",
+      "    $0",
+      "}"
+    ],
+    "description": "Декоратор @test над функцией (прозрачная обёртка)"
+  },
+  "Latent: assert": {
+    "prefix": "assert",
+    "body": [
+      "assert(${1:condition});$0"
+    ],
+    "description": "Проверка условия; при ложном условии — trap"
+  },
+  "Latent: assert_eq": {
+    "prefix": "assert_eq",
+    "body": [
+      "assert_eq(${1:actual}, ${2:expected});$0"
+    ],
+    "description": "Проверка равенства (сравнение битов/указателей)"
+  },
+  "Latent: ai_infer": {
+    "prefix": "ai_infer",
+    "body": [
+      "let ${1:result} = ai_infer(\"${2:gpt-4}\", \"${3:prompt}\");$0"
+    ],
+    "description": "AI-инференс (host-примитив): модель + промпт → строка"
+  },
+  "Latent: ai_embed": {
+    "prefix": "ai_embed",
+    "body": [
+      "let ${1:embedding} = ai_embed(\"${2:text}\");$0"
+    ],
+    "description": "AI-эмбеддинг текста (host-примитив): [float]"
+  },
+  "Latent: tensor": {
+    "prefix": "tensor",
+    "body": [
+      "let ${1:t} = tensor([${2:1, 2, 3}]);$0"
+    ],
+    "description": "Создание тензора (host-примитив)"
+  },
+  "Latent: matmul": {
+    "prefix": "matmul",
+    "body": [
+      "let ${1:c} = matmul(${2:a}, ${3:b});$0"
+    ],
+    "description": "Матричное умножение тензоров (host-примитив)"
+  },
+  "Latent: alloc": {
+    "prefix": "alloc",
+    "body": [
+      "let ${1:ptr} = alloc(${2:size});$0"
+    ],
+    "description": "Выделение памяти в линейной памяти (self-hosting builtin)"
+  },
+  "Latent: memcopy": {
+    "prefix": "memcopy",
+    "body": [
+      "memcopy(${1:dst}, ${2:src}, ${3:len});$0"
+    ],
+    "description": "Копирование участка линейной памяти (self-hosting builtin)"
+  },
+  "Latent: print": {
+    "prefix": "print",
+    "body": [
+      "print(${1:value});$0"
+    ],
+    "description": "Печать значения через env.print"
+  },
+  "Latent: декоратор": {
+    "prefix": "decorator",
+    "body": [
+      "@${1:forall}(\"${2:name}\")",
+      "fn ${3:check}(${4:a}) {",
+      "    $0",
+      "}"
+    ],
+    "description": "Произвольный декоратор (forall, snapshot, ai_contract, …) над функцией"
+  }
+}

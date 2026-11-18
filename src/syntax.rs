@@ -3,10 +3,8 @@
 //! Определяет структуры для представления элементов синтаксиса:
 //! переменные, функции, классы, управляющие конструкции.
 
-use serde::{Deserialize, Serialize};
-
 /// Позиция в исходном коде
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
     pub line: usize,
     pub column: usize,
@@ -20,7 +18,7 @@ impl Span {
 }
 
 /// Объявление переменной
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LetDecl {
     pub name: String,
     pub ty: Option<TypeAnnotation>,
@@ -29,7 +27,7 @@ pub struct LetDecl {
 }
 
 /// Аннотация типа
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TypeAnnotation {
     Named(String),
     Array(Box<TypeAnnotation>),
@@ -39,7 +37,7 @@ pub enum TypeAnnotation {
 }
 
 /// Выражение
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Number(f64),
     String(String),
@@ -67,7 +65,7 @@ pub enum Expr {
 }
 
 /// Бинарные операторы
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
     Add, Sub, Mul, Div, Mod,
     Eq, NotEq, Lt, Gt, LtEq, GtEq,
@@ -75,20 +73,20 @@ pub enum BinaryOp {
 }
 
 /// Унарные операторы
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
     Neg, Not,
 }
 
 /// Параметр функции
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Param {
     pub name: String,
     pub ty: Option<TypeAnnotation>,
 }
 
 /// Объявление функции
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FnDecl {
     pub name: String,
     pub params: Vec<Param>,
@@ -98,7 +96,7 @@ pub struct FnDecl {
 }
 
 /// Объявление класса
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClassDecl {
     pub name: String,
     pub fields: Vec<ClassField>,
@@ -107,14 +105,14 @@ pub struct ClassDecl {
 }
 
 /// Поле класса
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClassField {
     pub name: String,
     pub ty: Option<TypeAnnotation>,
 }
 
 /// Инструкция
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Let(LetDecl),
     Fn(FnDecl),
@@ -139,7 +137,7 @@ pub enum Stmt {
 }
 
 /// Программа — корневой узел AST
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub statements: Vec<Stmt>,
 }

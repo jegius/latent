@@ -1,0 +1,6 @@
+// entry: true
+// expect-error: верхнем уровне
+fn main() -> int {
+    import { square } from "../basic/math.lat";
+    return 0;
+}

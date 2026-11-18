@@ -1,0 +1,5 @@
+// entry: true
+// expect-error: относительным
+import { square } from "math.lat";
+
+fn main() -> int { return square(2); }

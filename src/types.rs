@@ -2,11 +2,10 @@
 //!
 //! Определяет базовые типы, AI-типы и типы для многопоточности.
 
-use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Базовые типы Latent
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LatentType {
     Int,
     Float,
@@ -47,7 +46,7 @@ impl fmt::Display for LatentType {
 }
 
 /// AI-типы
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AIType {
     Model(Box<LatentType>),
     Embedding(usize),
@@ -70,7 +69,7 @@ impl fmt::Display for AIType {
 }
 
 /// Типы для многопоточности
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ConcurrencyType {
     Channel(Box<LatentType>),
     Promise(Box<LatentType>),
@@ -157,5 +156,38 @@ mod tests {
         assert!(types_compatible(&union, &LatentType::Int));
         assert!(types_compatible(&union, &LatentType::Null));
         assert!(!types_compatible(&union, &LatentType::String));
+    }
+
+    #[test]
+    fn test_display_remaining_variants() {
+        assert_eq!(LatentType::Bool.to_string(), "bool");
+        assert_eq!(LatentType::String.to_string(), "string");
+        assert_eq!(LatentType::Null.to_string(), "null");
+        assert_eq!(LatentType::Unit.to_string(), "unit");
+        assert_eq!(
+            LatentType::Generic("Vec".into(), vec![LatentType::Int]).to_string(),
+            "Vec<int>"
+        );
+        assert_eq!(
+            LatentType::Union(vec![LatentType::Int, LatentType::String]).to_string(),
+            "int | string"
+        );
+        assert_eq!(AIType::Agent.to_string(), "Agent");
+    }
+
+    #[test]
+    fn test_compatible_fn_and_generic() {
+        let f1 = LatentType::Fn(vec![LatentType::Int], Box::new(LatentType::Bool));
+        let f2 = LatentType::Fn(vec![LatentType::Int], Box::new(LatentType::Bool));
+        let f3 = LatentType::Fn(vec![], Box::new(LatentType::Bool));
+        assert!(types_compatible(&f1, &f2));
+        assert!(!types_compatible(&f1, &f3));
+        let g1 = LatentType::Generic("T".into(), vec![LatentType::Int]);
+        let g2 = LatentType::Generic("T".into(), vec![LatentType::Int]);
+        let g3 = LatentType::Generic("U".into(), vec![LatentType::Int]);
+        assert!(types_compatible(&g1, &g2));
+        assert!(!types_compatible(&g1, &g3));
+        assert!(types_compatible(&LatentType::Unit, &LatentType::Unit));
+        assert!(!types_compatible(&LatentType::Bool, &LatentType::Int));
     }
 }

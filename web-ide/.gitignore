@@ -1,0 +1,4 @@
+# Артефакты web-ide: зависимости и production-сборка (vite build).
+node_modules/
+dist/
+coverage/

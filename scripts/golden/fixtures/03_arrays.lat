@@ -1,0 +1,57 @@
+// Golden-набор: массивы — литералы, индексация, присваивание по индексу,
+// push/pop (метод и builtin), len, for-in, вложенные массивы.
+//
+// Важно: результаты, которые участвуют в возврате, снимаются в скаляры сразу
+// после вычисления. Причина — известное ограничение bump-аллокатора: `push`
+// в массив, созданный литералом `[]`, пишет за пределы выделенного блока, и
+// последующая аллокация может перезаписать элементы (поведение зафиксировано
+// golden-набором и не меняется рефакторингом).
+// expect-main: 10
+
+fn build(n: int) -> [int] {
+    let r = [];
+    for (let i = 0; i < n; i = i + 1) {
+        r.push(i * i);
+    }
+    return r;
+}
+
+fn sum(arr: [int]) -> int {
+    let total = 0;
+    for (let x in arr) {
+        total = total + x;
+    }
+    return total;
+}
+
+fn main() -> int {
+    let arr = [10, 20, 30];
+    print("arr[1] =", arr[1]);
+    arr[1] = 99;
+    print("after assign =", arr[1], "len =", arr.length);
+    let arr_len = arr.length;
+
+    let stack = [1, 2];
+    stack.push(3);
+    print("push ->", stack.length, len(stack));
+    let top = stack.pop();
+    print("pop ->", top, "len =", stack.length);
+    let stack_len = stack.length;
+
+    let squares = build(4);
+    let sq2 = squares[2];
+    print("squares sum =", sum(squares));
+
+    let acc = [0];
+    push(acc, 4);
+    push(acc, 5);
+    let acc_len = len(acc);
+
+    let nested = [1, [2, 3], 4];
+    print("nested[1] =", nested[1]);
+
+    let empty = [];
+    let empty_len = empty.length;
+
+    return arr_len + stack_len + sq2 + empty_len + acc_len - 2 + 0;
+}

@@ -1,0 +1,6 @@
+// entry: true
+// expect-main: 1
+// Взаимная рекурсия между модулями: odd(5) = 1.
+import { odd } from "./cycle_a.lat";
+
+fn main() -> int { return odd(5); }

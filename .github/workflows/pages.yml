@@ -1,0 +1,109 @@
+name: Docs & Playground → GitHub Pages
+
+# Публикация сайта документации Latent и web IDE (playground) на GitHub Pages.
+#
+# Что публикуется:
+#   https://<owner>.github.io/latent/            — документация (Docusaurus, RU)
+#   https://<owner>.github.io/latent/en/         — документация (EN)
+#   https://<owner>.github.io/latent/playground/ — web IDE со сборкой Vite
+#   https://<owner>.github.io/latent/demos/      — интерактивные демо
+#
+# Playground собирается из web-ide/ (production-чанки через vite) скриптом
+# scripts/sync-playground.mjs и НЕ хранится в git.
+#
+# Требования в настройках репозитория: Settings → Pages → Source = GitHub Actions.
+
+on:
+  push:
+    branches: [main, part10-toolchain]
+    paths-ignore:
+      - "editors/idea/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Сборка документации и playground
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11
+          run_install: false
+
+      - name: Зависимости документации
+        working-directory: docs
+        run: pnpm install --frozen-lockfile
+
+      - name: Сборка web IDE (ленивые чанки)
+        working-directory: web-ide
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build:chunks
+
+      - name: Playground в статику сайта
+        run: node scripts/sync-playground.mjs
+
+      - name: Сборка ассетов демо (wasm, vendor-интерпретатор, selfhost seed)
+        run: node docs/static/demos/build-demos.mjs
+
+      - name: Проверка примеров из документации
+        run: node docs/scripts/validate-examples.mjs
+
+      - name: Сборка сайта
+        working-directory: docs
+        run: pnpm run build
+
+      - name: Проверка артефакта (docs + playground + демо)
+        run: |
+          test -f docs/build/index.html
+          test -f docs/build/en/index.html
+          test -f docs/build/playground/index.html
+          # wasm: либо compiler.wasm в корне playground, либо хешированный ассет в assets/
+          test -n "$(find docs/build/playground -name '*.wasm' -print -quit)"
+          test -f docs/build/llms.txt
+          test -f docs/build/llms-en.txt
+          test -f docs/build/demos/index.html
+          test -f docs/build/demos/bench/index.html
+          test -f docs/build/demos/concurrency/index.html
+          test -f docs/build/demos/ai/index.html
+          test -f docs/build/demos/selfhost/index.html
+          test -f docs/build/demos/sandbox/index.html
+          test -f docs/build/demos/modules/index.html
+          echo "Artifact OK: $(du -sh docs/build | cut -f1), chunks: $(ls docs/build/playground/assets 2>/dev/null | wc -l)"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs/build
+
+  deploy:
+    name: Публикация на GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Test github pages
+        run: echo "Deploying docs and playground to GitHub Pages"
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

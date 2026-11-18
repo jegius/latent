@@ -1,0 +1,5 @@
+/* styles.css — агрегатор темы IntelliJ IDEA Darcula (2026) для Latent IDE.
+   Все стили разнесены по styles/; этот файл оставлен точкой входа для
+   index.html (<link rel="stylesheet" href="styles.css">). */
+
+@import 'styles/index.css';

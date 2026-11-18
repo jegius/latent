@@ -1,0 +1,153 @@
+// ============================ МОДУЛЬ: ХЕЛПЕРЫ КОНВЕРСИЙ ============================
+// Байткод i32_to_str/str_to_i32/f64_to_str и эмиттеры f64-констант 0.0/10.0.
+// Как и хелперы памяти, тела дописываются в CODEB по nf()+k.
+
+fn helper_i32_to_str(k) -> int {
+    // i32_to_str(n)->ptr: "<n>" в [len][utf8] (как в oracle). Переносим -n.
+    // locals: param 0 n; declared 1 neg,2 v,3 digits,4 i,5 p.
+    binit(BODYC());
+    bleb(BODYC(), 1); bleb(BODYC(), 5); bput(BODYC(), 127);
+    // neg = n < 0
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 72); bput(BODYC(), 33); bleb(BODYC(), 1);
+    // v = neg ? 0-n : n
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 4); bput(BODYC(), 64);
+    bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 107); bput(BODYC(), 33); bleb(BODYC(), 2);
+    bput(BODYC(), 5);
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 2);
+    bput(BODYC(), 11);
+    // digits = 1; i = v
+    bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 33); bleb(BODYC(), 3);
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 33); bleb(BODYC(), 4);
+    bput(BODYC(), 2); bput(BODYC(), 64); bput(BODYC(), 3); bput(BODYC(), 64);
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 65); bleb(BODYC(), 10); bput(BODYC(), 73); bput(BODYC(), 13); bleb(BODYC(), 1);
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 65); bleb(BODYC(), 10); bput(BODYC(), 110); bput(BODYC(), 33); bleb(BODYC(), 4);
+    bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 106); bput(BODYC(), 33); bleb(BODYC(), 3);
+    bput(BODYC(), 12); bleb(BODYC(), 0); bput(BODYC(), 11); bput(BODYC(), 11);
+    // p = alloc(4 + digits + neg)
+    bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 106); bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 106);
+    bput(BODYC(), 16); bleb(BODYC(), ALLOC_FI()); bput(BODYC(), 33); bleb(BODYC(), 5);
+    // store len = digits + neg
+    bput(BODYC(), 32); bleb(BODYC(), 5); bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 106); bput(BODYC(), 54); bput(BODYC(), 2); bput(BODYC(), 0);
+    // if neg: p[4] = '-'
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 4); bput(BODYC(), 64);
+    bput(BODYC(), 32); bleb(BODYC(), 5); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106); bput(BODYC(), 65); bleb(BODYC(), 45); bput(BODYC(), 58); bput(BODYC(), 0); bput(BODYC(), 0);
+    bput(BODYC(), 11);
+    // i = digits; loop { if i==0 break; i--; p[4+neg+i]='0'+v%10; v/=10 }
+    bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 33); bleb(BODYC(), 4);
+    bput(BODYC(), 2); bput(BODYC(), 64); bput(BODYC(), 3); bput(BODYC(), 64);
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 69); bput(BODYC(), 13); bleb(BODYC(), 1);
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 107); bput(BODYC(), 33); bleb(BODYC(), 4);
+    bput(BODYC(), 32); bleb(BODYC(), 5); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106); bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 106); bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 65); bleb(BODYC(), 10); bput(BODYC(), 112); bput(BODYC(), 65); bleb(BODYC(), 48); bput(BODYC(), 106);
+    bput(BODYC(), 58); bput(BODYC(), 0); bput(BODYC(), 0);
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 65); bleb(BODYC(), 10); bput(BODYC(), 110); bput(BODYC(), 33); bleb(BODYC(), 2);
+    bput(BODYC(), 12); bleb(BODYC(), 0); bput(BODYC(), 11); bput(BODYC(), 11);
+    bput(BODYC(), 32); bleb(BODYC(), 5);
+    bput(BODYC(), 11);
+    return emit_helper_body(k);
+}
+
+fn helper_str_to_i32(k) -> int {
+    // str_to_i32(ptr)->i32: опциональный '-' и ASCII-цифры.
+    // locals: param 0 ptr; declared 1 len,2 i,3 neg,4 acc,5 c.
+    binit(BODYC());
+    bleb(BODYC(), 1); bleb(BODYC(), 5); bput(BODYC(), 127);
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 1);
+    bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 2);
+    bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 3);
+    bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 4);
+    // if len>0 && ptr[4]=='-' { neg=1; i=1 }
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 74); bput(BODYC(), 4); bput(BODYC(), 64);
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106); bput(BODYC(), 45); bput(BODYC(), 0); bput(BODYC(), 0); bput(BODYC(), 65); bleb(BODYC(), 45); bput(BODYC(), 70); bput(BODYC(), 4); bput(BODYC(), 64);
+    bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 33); bleb(BODYC(), 3);
+    bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 33); bleb(BODYC(), 2);
+    bput(BODYC(), 11); bput(BODYC(), 11);
+    bput(BODYC(), 2); bput(BODYC(), 64); bput(BODYC(), 3); bput(BODYC(), 64);
+    // if i>=len break
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 79); bput(BODYC(), 13); bleb(BODYC(), 1);
+    // c = ptr[4+i]
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106); bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 106); bput(BODYC(), 45); bput(BODYC(), 0); bput(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 5);
+    // if c < '0' break; if c > '9' break
+    bput(BODYC(), 32); bleb(BODYC(), 5); bput(BODYC(), 65); bleb(BODYC(), 48); bput(BODYC(), 72); bput(BODYC(), 13); bleb(BODYC(), 1);
+    bput(BODYC(), 32); bleb(BODYC(), 5); bput(BODYC(), 65); bleb(BODYC(), 57); bput(BODYC(), 74); bput(BODYC(), 13); bleb(BODYC(), 1);
+    // acc = acc*10 + (c-'0')
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 65); bleb(BODYC(), 10); bput(BODYC(), 108); bput(BODYC(), 32); bleb(BODYC(), 5); bput(BODYC(), 65); bleb(BODYC(), 48); bput(BODYC(), 107); bput(BODYC(), 106); bput(BODYC(), 33); bleb(BODYC(), 4);
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 106); bput(BODYC(), 33); bleb(BODYC(), 2);
+    bput(BODYC(), 12); bleb(BODYC(), 0); bput(BODYC(), 11); bput(BODYC(), 11);
+    // neg ? -acc : acc  (if с результатом i32 = 0x7f)
+    bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 4); bput(BODYC(), 127);
+    bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 107); bput(BODYC(), 5);
+    bput(BODYC(), 32); bleb(BODYC(), 4);
+    bput(BODYC(), 11);   // end if (i32)
+    bput(BODYC(), 11);   // end function
+    return emit_helper_body(k);
+}
+
+fn helper_f64_to_str(k) -> int {
+    // f64_to_str(n)->ptr: "<int>.<6 цифр>" (фиксированные 6 знаков), как oracle.
+    // param 0 n(f64); i32-локали 1 neg,2 p,3 ipart,4 s,5 i,6 digit; f64-локаль 7 frac.
+    binit(BODYC());
+    bleb(BODYC(), 2); bleb(BODYC(), 6); bput(BODYC(), 127); bleb(BODYC(), 1); bput(BODYC(), 124);
+    // neg = n < 0.0
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 68); f64zero();
+    bput(BODYC(), 99); bput(BODYC(), 33); bleb(BODYC(), 1);
+    // if neg { n = -n }
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 4); bput(BODYC(), 64);
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 154); bput(BODYC(), 33); bleb(BODYC(), 0);
+    bput(BODYC(), 11);
+    // ipart = trunc(n) as i32
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 170); bput(BODYC(), 33); bleb(BODYC(), 3);
+    // p = alloc(23)
+    bput(BODYC(), 65); bleb(BODYC(), 23); bput(BODYC(), 16); bleb(BODYC(), ALLOC_FI()); bput(BODYC(), 33); bleb(BODYC(), 2);
+    // s = i32_to_str(ipart)
+    bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 16); bleb(BODYC(), I32S_FI()); bput(BODYC(), 33); bleb(BODYC(), 4);
+    // mem_copy(p+4, s+4, load(s))
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0);
+    bput(BODYC(), 16); bleb(BODYC(), MEM_FI()); bput(BODYC(), 26);
+    // p[4+neg+load(s)] = '.'
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0); bput(BODYC(), 106);
+    bput(BODYC(), 65); bleb(BODYC(), 46); bput(BODYC(), 58); bput(BODYC(), 0); bput(BODYC(), 0);
+    // frac = n - convert(ipart)
+    bput(BODYC(), 32); bleb(BODYC(), 0); bput(BODYC(), 32); bleb(BODYC(), 3); bput(BODYC(), 183); bput(BODYC(), 161); bput(BODYC(), 33); bleb(BODYC(), 7);
+    // i = 0
+    bput(BODYC(), 65); bleb(BODYC(), 0); bput(BODYC(), 33); bleb(BODYC(), 5);
+    bput(BODYC(), 2); bput(BODYC(), 64); bput(BODYC(), 3); bput(BODYC(), 64);
+    // if i >= 6 break
+    bput(BODYC(), 32); bleb(BODYC(), 5); bput(BODYC(), 65); bleb(BODYC(), 6); bput(BODYC(), 78); bput(BODYC(), 13); bleb(BODYC(), 1);
+    // frac *= 10.0
+    bput(BODYC(), 32); bleb(BODYC(), 7); bput(BODYC(), 68); f64ten(); bput(BODYC(), 162); bput(BODYC(), 33); bleb(BODYC(), 7);
+    // digit = trunc(frac)
+    bput(BODYC(), 32); bleb(BODYC(), 7); bput(BODYC(), 170); bput(BODYC(), 33); bleb(BODYC(), 6);
+    // frac -= convert(digit)
+    bput(BODYC(), 32); bleb(BODYC(), 7); bput(BODYC(), 32); bleb(BODYC(), 6); bput(BODYC(), 183); bput(BODYC(), 161); bput(BODYC(), 33); bleb(BODYC(), 7);
+    // p[4+neg+load(s)+1+i] = '0'+digit
+    bput(BODYC(), 32); bleb(BODYC(), 2); bput(BODYC(), 65); bleb(BODYC(), 4); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0); bput(BODYC(), 106);
+    bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 5); bput(BODYC(), 106);
+    bput(BODYC(), 32); bleb(BODYC(), 6); bput(BODYC(), 65); bleb(BODYC(), 48); bput(BODYC(), 106);
+    bput(BODYC(), 58); bput(BODYC(), 0); bput(BODYC(), 0);
+    // i++
+    bput(BODYC(), 32); bleb(BODYC(), 5); bput(BODYC(), 65); bleb(BODYC(), 1); bput(BODYC(), 106); bput(BODYC(), 33); bleb(BODYC(), 5);
+    bput(BODYC(), 12); bleb(BODYC(), 0); bput(BODYC(), 11); bput(BODYC(), 11);
+    // len = neg + load(s) + 7; store at p
+    bput(BODYC(), 32); bleb(BODYC(), 2);
+    bput(BODYC(), 32); bleb(BODYC(), 1); bput(BODYC(), 32); bleb(BODYC(), 4); bput(BODYC(), 40); bput(BODYC(), 2); bput(BODYC(), 0); bput(BODYC(), 106); bput(BODYC(), 65); bleb(BODYC(), 7); bput(BODYC(), 106);
+    bput(BODYC(), 54); bput(BODYC(), 2); bput(BODYC(), 0);
+    bput(BODYC(), 32); bleb(BODYC(), 2);
+    bput(BODYC(), 11);
+    return emit_helper_body(k);
+}
+
+fn f64zero() -> int { let i = 0; while (i < 8) { bput(BODYC(), 0); i = i + 1; } return 0; }
+
+fn f64ten() -> int {
+    bput(BODYC(), 0); bput(BODYC(), 0); bput(BODYC(), 0); bput(BODYC(), 0);
+    bput(BODYC(), 0); bput(BODYC(), 0); bput(BODYC(), 36); bput(BODYC(), 64);
+    return 0;
+}

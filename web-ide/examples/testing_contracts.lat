@@ -1,0 +1,32 @@
+// Testing & contracts: test blocks, assert/assert_eq, @forall, snapshot
+// and AI contract decorators.
+
+@forall("array")
+fn non_empty_length(arr) {
+    assert(arr.length >= 0);
+}
+
+@ai_contract("sorting")
+fn sorting_contract(f) {
+    assert(true);
+}
+
+test "arithmetic" {
+    assert(1 + 1 == 2);
+    assert_eq(2 * 3, 6, "multiplication");
+}
+
+test "arrays" {
+    let a = [1, 2, 3];
+    assert(a.length == 3);
+    assert_eq(a[0], 1);
+}
+
+fn main() -> int {
+    // snapshot records a named value for regression tracking
+    snapshot("demo");
+    let c = ai_contract("ordering");
+    enforce_contract(c);
+    print("contracts active");
+    return 1;
+}

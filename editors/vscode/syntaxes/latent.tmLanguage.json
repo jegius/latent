@@ -1,0 +1,368 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Latent",
+  "scopeName": "source.latent",
+  "fileTypes": [
+    "lat"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#constants"
+    },
+    {
+      "include": "#declarations"
+    },
+    {
+      "include": "#decorators"
+    },
+    {
+      "include": "#builtins"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#calls"
+    },
+    {
+      "include": "#properties"
+    },
+    {
+      "include": "#identifiers"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#punctuation"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.latent",
+          "match": "//.*$",
+          "captures": {
+            "0": {
+              "name": "punctuation.definition.comment.latent"
+            }
+          }
+        },
+        {
+          "name": "comment.block.latent",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.begin.latent"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.end.latent"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#comments"
+            }
+          ]
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "invalid.illegal.unterminated-string.latent",
+          "match": "\"[^\"\\n]*$"
+        },
+        {
+          "name": "string.quoted.double.latent",
+          "begin": "\"",
+          "end": "\"",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.begin.latent"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.end.latent"
+            }
+          },
+          "patterns": [
+            {
+              "name": "constant.character.escape.latent",
+              "match": "\\\\[nt\\\\\"]"
+            },
+            {
+              "name": "invalid.illegal.character.escape.latent",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.latent",
+          "match": "\\b\\d+\\.\\d+([eE][+-]?\\d+)?\\b"
+        },
+        {
+          "name": "constant.numeric.float.latent",
+          "match": "\\b\\d+[eE][+-]?\\d+\\b"
+        },
+        {
+          "name": "invalid.illegal.number.latent",
+          "match": "\\b\\d+[eE](?![+-]?\\d)"
+        },
+        {
+          "name": "constant.numeric.integer.latent",
+          "match": "\\b\\d+\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.latent",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.null.latent",
+          "match": "\\bnull\\b"
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "(\\bfn\\s+)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.fn.latent"
+            },
+            "2": {
+              "name": "entity.name.function.latent"
+            }
+          }
+        },
+        {
+          "match": "(\\bclass\\s+)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.class.latent"
+            },
+            "2": {
+              "name": "entity.name.type.class.latent"
+            }
+          }
+        },
+        {
+          "match": "(\\benum\\s+)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.enum.latent"
+            },
+            "2": {
+              "name": "entity.name.type.enum.latent"
+            }
+          }
+        },
+        {
+          "match": "(\\blet\\s+)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.let.latent"
+            },
+            "2": {
+              "name": "variable.other.definition.latent"
+            }
+          }
+        },
+        {
+          "match": "(\\bnew\\s+)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.other.new.latent"
+            },
+            "2": {
+              "name": "entity.name.type.class.latent"
+            }
+          }
+        }
+      ]
+    },
+    "decorators": {
+      "patterns": [
+        {
+          "match": "(@)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.decorator.latent"
+            },
+            "2": {
+              "name": "entity.name.function.decorator.latent"
+            }
+          }
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "name": "support.function.macro.latent",
+          "match": "\\bai_generate\\s*!"
+        },
+        {
+          "name": "support.function.builtin.latent",
+          "match": "\\b(print|len|push|str|int|float|sqrt|assert|assert_eq|alloc|load8|store8|load32|store32|memcopy|channel|tensor|semantic|matmul|cosine_similarity|dot|magnitude|zeros|ones|snapshot|ai_contract|enforce_contract|ai_infer|ai_embed|ai_stream|stream_next|pop|Ok|Err|Some|None)\\b\\s*(?=\\()"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.latent",
+          "match": "\\b(if|else|while|for|in|return|match|select|default|yield|spawn)\\b"
+        },
+        {
+          "name": "keyword.declaration.latent",
+          "match": "\\b(let|fn|class|enum|async|await)\\b"
+        },
+        {
+          "name": "keyword.other.latent",
+          "match": "\\b(new|this|channel|ai)\\b"
+        },
+        {
+          "name": "keyword.other.soft.latent",
+          "match": "\\b(case|test|assert|assert_eq|forall|snapshot|ai_contract|enforce_contract|model|agent|embedding|tensor|semantic)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.primitive.latent",
+          "match": "\\b(int|float|bool|string|void|unit)\\b"
+        },
+        {
+          "name": "support.type.latent",
+          "match": "\\b(Channel|Promise|Model|Embedding|Tensor|Agent|Semantic|Contract)\\b"
+        }
+      ]
+    },
+    "calls": {
+      "patterns": [
+        {
+          "name": "support.function.call.latent",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b\\s*(?=\\()"
+        }
+      ]
+    },
+    "properties": {
+      "patterns": [
+        {
+          "match": "(\\.)\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+          "captures": {
+            "1": {
+              "name": "punctuation.accessor.latent"
+            },
+            "2": {
+              "name": "entity.name.function.method.latent"
+            }
+          }
+        },
+        {
+          "match": "(\\.)\\s*([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "punctuation.accessor.latent"
+            },
+            "2": {
+              "name": "variable.other.property.latent"
+            }
+          }
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "entity.name.type.latent",
+          "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+        },
+        {
+          "name": "variable.other.latent",
+          "match": "\\b[a-z_][A-Za-z0-9_]*\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.latent",
+          "match": "=>|->|<-|==|!=|<=|>=|<<|>>|&&|\\|\\|"
+        },
+        {
+          "name": "keyword.operator.arithmetic.latent",
+          "match": "[+\\-*/%]"
+        },
+        {
+          "name": "keyword.operator.comparison.latent",
+          "match": "[<>=!]"
+        },
+        {
+          "name": "keyword.operator.bitwise.latent",
+          "match": "[&|^]"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.section.block.latent",
+          "match": "[{}]"
+        },
+        {
+          "name": "punctuation.section.group.latent",
+          "match": "[()]"
+        },
+        {
+          "name": "punctuation.section.array.latent",
+          "match": "[\\[\\]]"
+        },
+        {
+          "name": "punctuation.terminator.latent",
+          "match": ";"
+        },
+        {
+          "name": "punctuation.separator.latent",
+          "match": "[,:]"
+        },
+        {
+          "name": "punctuation.accessor.latent",
+          "match": "\\."
+        },
+        {
+          "name": "punctuation.definition.decorator.latent",
+          "match": "@"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "version.label": {
+    "message": "Next",
+    "description": "The label for version current"
+  },
+  "sidebar.docs.category.Введение": {
+    "message": "Introduction",
+    "description": "The label for category 'Введение' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Начало работы": {
+    "message": "Getting Started",
+    "description": "The label for category 'Начало работы' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Туториал": {
+    "message": "Tutorial",
+    "description": "The label for category 'Туториал' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Руководство по языку": {
+    "message": "Language Guide",
+    "description": "The label for category 'Руководство по языку' in sidebar 'docs'"
+  }
+}

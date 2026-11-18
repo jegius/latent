@@ -1,0 +1,46 @@
+// AI + Goroutines: parallel computation with AI-powered analysis
+// Run with "🤖 Compile & Run with AI"
+
+fn worker(data: [int], start: int, end: int, ch: channel) {
+    let sum = 0;
+    for (let i = start; i < end; i = i + 1) {
+        sum = sum + data[i] * data[i];
+    }
+    ch.send(sum);
+}
+
+fn main() -> int {
+    // Build a large array: [1, 2, ..., 1000]
+    let data = [];
+    for (let i = 1; i <= 1000; i = i + 1) {
+        data.push(i);
+    }
+
+    // Parallel sum of squares across 4 goroutines
+    let ch = channel();
+    let workers = 4;
+    let chunk = data.length / workers;
+    for (let w = 0; w < workers; w = w + 1) {
+        let start = w * chunk;
+        let end = start + chunk;
+        spawn worker(data, start, end, ch);
+    }
+
+    let total = 0;
+    for (let w = 0; w < workers; w = w + 1) {
+        let partial = ch.recv();
+        print("Worker", w, "partial sum of squares:", partial);
+        total = total + partial;
+    }
+    print("Total sum of squares 1^2..1000^2:", total);
+
+    // AI inference: ask AI to analyze the computed result
+    let insight = ai_infer("gpt-4", "Analyze parallel sum of squares result 333833500");
+    print("AI Insight:", insight);
+
+    // AI embeddings: vector representation of the algorithm description
+    let vec = ai_embed("parallel map-reduce sum of squares");
+    print("Embedding (first 4 dims): [", vec[0], vec[1], vec[2], vec[3], "]");
+
+    return total;
+}

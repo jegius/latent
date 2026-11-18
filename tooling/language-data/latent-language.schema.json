@@ -1,0 +1,242 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/jegius/latent/tooling/language-data/latent-language.schema.json",
+  "title": "Latent language data",
+  "description": "Схема machine-readable источника правды о языке Latent (tooling/language-data/language.json). Используется LSP-сервером, IDE-плагинами, MCP-сервером документации и генераторами доков.",
+  "type": "object",
+  "required": [
+    "version",
+    "language",
+    "keywords",
+    "operators",
+    "types",
+    "builtins",
+    "hostOnly",
+    "diagnostics"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Версия самого файла данных (semver), не языка и не компилятора."
+    },
+    "language": {
+      "type": "string",
+      "const": "latent"
+    },
+    "compilerVersion": {
+      "type": "string",
+      "description": "Версия компилятора Latent (Cargo.toml), на которой выверены данные."
+    },
+    "description": {
+      "type": "string"
+    },
+    "engines": {
+      "type": "object",
+      "description": "Пояснения к значениям поля `engine`.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "target": { "type": "string" }
+        },
+        "required": ["description"]
+      }
+    },
+    "keywords": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/keyword" }
+    },
+    "operators": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/operator" }
+    },
+    "types": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/type" }
+    },
+    "builtins": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/builtin" }
+    },
+    "hostOnly": {
+      "type": "array",
+      "description": "Имена, которые доступны только в host-рантайме (движок №1): движок №2 даёт по ним ошибку компиляции.",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "diagnostics": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/diagnostic" }
+    },
+    "snippets": {
+      "type": "array",
+      "description": "Готовые LSP/snippet-шаблоны конструкций (синтаксис плейсхолдеров: $1, ${1:name}, $0).",
+      "items": { "$ref": "#/definitions/snippet" }
+    },
+    "abi": {
+      "type": "object",
+      "description": "Соглашения двоичного интерфейса: импорты/экспорты WASM-модуля и ABI компилятора-as-WASM.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "definitions": {
+    "engine": {
+      "type": "string",
+      "enum": ["rust", "js", "both", "host"],
+      "description": "rust — движок №2 (Rust→WASM), js — движок №1 (JS-интерпретатор), both — оба, host — только при наличии host-рантайма."
+    },
+    "docPath": {
+      "type": "string",
+      "pattern": "^(intro|getting-started|tutorial|guide|reference|specs|tooling|examples)/[a-z0-9-]+(#[a-z0-9_-]+)?$",
+      "description": "Путь к странице документации относительно docs/docs (без .md), при необходимости с якорем."
+    },
+    "keyword": {
+      "type": "object",
+      "required": ["name", "kind", "soft", "category", "summary", "syntax", "engine", "docs"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z_][a-z0-9_]*$" },
+        "kind": { "type": "string", "const": "keyword" },
+        "soft": {
+          "type": "boolean",
+          "description": "true — «мягкое» слово: лексер помечает его отдельным токеном, но синтаксически допустимо как имя."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["declaration", "control-flow", "oop", "concurrency", "ai", "testing", "literal", "types"]
+        },
+        "summary": { "type": "string", "minLength": 10 },
+        "syntax": { "type": "string", "minLength": 1 },
+        "engine": { "$ref": "#/definitions/engine" },
+        "docs": { "$ref": "#/definitions/docPath" }
+      },
+      "additionalProperties": true
+    },
+    "operator": {
+      "type": "object",
+      "required": ["op", "kind", "summary", "engine", "docs"],
+      "properties": {
+        "op": { "type": "string", "minLength": 1 },
+        "kind": {
+          "type": "string",
+          "enum": ["binary", "unary", "assignment", "postfix", "punctuation", "arrow"]
+        },
+        "precedence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Значение binding power из Pratt-парсера (src/parser/expressions/core.rs): больше — связывает крепче."
+        },
+        "assoc": { "type": "string", "enum": ["left", "right", "none"] },
+        "summary": { "type": "string", "minLength": 10 },
+        "example": { "type": "string", "minLength": 1 },
+        "engine": { "$ref": "#/definitions/engine" },
+        "docs": { "$ref": "#/definitions/docPath" }
+      },
+      "additionalProperties": true
+    },
+    "type": {
+      "type": "object",
+      "required": ["name", "category", "wasm", "summary", "syntax", "engine", "docs"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "category": {
+          "type": "string",
+          "enum": ["primitive", "composite", "user", "concurrency", "ai"]
+        },
+        "wasm": {
+          "type": "string",
+          "description": "Представление в WASM (valtype и/или layout в линейной памяти)."
+        },
+        "summary": { "type": "string", "minLength": 10 },
+        "syntax": { "type": "string", "minLength": 1 },
+        "engine": { "$ref": "#/definitions/engine" },
+        "docs": { "$ref": "#/definitions/docPath" }
+      },
+      "additionalProperties": true
+    },
+    "builtin": {
+      "type": "object",
+      "required": ["name", "kind", "signatures", "engine", "summary", "example", "docs"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z_][a-z0-9_]*!?$|^[A-Z][A-Za-z0-9]*$",
+          "description": "Имя builtin/метода/конструктора; допускается суффикс `!` для макросов."
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["function", "method", "property", "constructor", "host-function", "macro"]
+        },
+        "owner": {
+          "type": "string",
+          "enum": ["array", "string", "any", "channel", "tensor", "ai"],
+          "description": "Тип-владелец для методов и свойств (используется completion после точки)."
+        },
+        "signatures": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 3 }
+        },
+        "engine": { "$ref": "#/definitions/engine" },
+        "summary": { "type": "string", "minLength": 10 },
+        "example": { "type": "string", "minLength": 1 },
+        "docs": { "$ref": "#/definitions/docPath" }
+      },
+      "additionalProperties": true
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "engine", "severity", "positioned", "pattern", "summary", "docs"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^(LEX|PARSE|TYPE|GEN)_[A-Z0-9_]+$",
+          "description": "Стабильный код диагностики для документации и подавления/фильтрации."
+        },
+        "engine": { "$ref": "#/definitions/engine" },
+        "severity": { "type": "string", "enum": ["error", "warning", "info", "hint"] },
+        "positioned": {
+          "type": "boolean",
+          "description": "true — текст содержит позицию `на строке L:C` (1-based), LSP может поставить диапазон."
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Реальный текст сообщения с плейсхолдерами в фигурных скобках."
+        },
+        "regex": {
+          "type": "string",
+          "description": "JS-совместимое регулярное выражение для разбора реального сообщения."
+        },
+        "sample": {
+          "type": "string",
+          "description": "Пример реального сообщения; проверяется на соответствие `regex` валидатором."
+        },
+        "summary": { "type": "string", "minLength": 10 },
+        "reserved": {
+          "type": "boolean",
+          "description": "true — вариант ошибки объявлен в коде, но в текущей версии не порождается."
+        },
+        "docs": { "$ref": "#/definitions/docPath" }
+      },
+      "additionalProperties": true
+    },
+    "snippet": {
+      "type": "object",
+      "required": ["prefix", "body", "description"],
+      "properties": {
+        "prefix": { "type": "string", "minLength": 1 },
+        "body": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 3 }
+      },
+      "additionalProperties": true
+    }
+  }
+}

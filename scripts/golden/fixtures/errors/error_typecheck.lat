@@ -1,0 +1,10 @@
+// Golden-набор: ошибка типизации (несовместимые типы).
+// expect-error: Несовпадение типов
+
+fn f(x: int) -> int {
+    return x;
+}
+
+fn main() -> int {
+    return f("not an int");
+}

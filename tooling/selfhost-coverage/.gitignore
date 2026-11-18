@@ -1,0 +1,5 @@
+# Генерируемые артефакты инструмента покрытия (не коммитить).
+coverage.json
+coverage.md
+coverage.wasm
+.out/

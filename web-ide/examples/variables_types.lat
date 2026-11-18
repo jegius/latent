@@ -1,0 +1,26 @@
+// Variables and type annotations: let name: type = value;
+
+fn main() -> int {
+    // Базовые литералы с аннотациями типов
+    let i: int = 42;
+    let f: float = 3.14;
+    let b: bool = true;
+    let s: string = "latent";
+    let n = null;
+    let arr: [int] = [1, 2, 3];
+
+    print("int:   ", i);
+    print("float: ", f);
+    print("bool:  ", b);
+    print("string:", s);
+    print("null:  ", n);
+    print("array: ", arr);
+
+    // Присваивание меняет значение переменной
+    let counter = 0;
+    counter = counter + 1;
+    counter = counter + 1;
+    print("counter:", counter);
+
+    return counter;
+}

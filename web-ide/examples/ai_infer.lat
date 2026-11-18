@@ -1,0 +1,24 @@
+// AI inference: ask the model to analyze computed results
+// Run with "🤖 Compile & Run with AI"
+
+fn main() -> int {
+    // Compute some statistics
+    let data = [12, 45, 7, 89, 23, 56, 91, 34];
+    let sum = 0;
+    for (let i = 0; i < data.length; i = i + 1) {
+        sum = sum + data[i];
+    }
+    let mean = sum / data.length;
+    print("data:", data);
+    print("mean:", mean);
+
+    // AI inference: analyze the dataset
+    let analysis = ai_infer("gpt-4", "Analyze this dataset: [12, 45, 7, 89, 23, 56, 91, 34] with mean 44.625");
+    print("AI analysis:", analysis);
+
+    // AI inference: suggest an algorithm
+    let suggestion = ai_infer("gpt-4", "Suggest a sorting algorithm for nearly-sorted data");
+    print("AI suggestion:", suggestion);
+
+    return 0;
+}

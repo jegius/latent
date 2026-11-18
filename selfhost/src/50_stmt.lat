@@ -1,0 +1,278 @@
+// --- инструкции ---
+fn stmts() -> int {
+    while (tok_kind() != 23 && tok_kind() != 0) {
+        let before = get(0, 0);
+        set(0, 7, 0);              // тип-стек выравнивается на границе инструкции
+        set(0, 8, -1);             // класс последнего выражения сбрасывается
+        stmt();
+        if (get(0, 0) == before) { next_token(); }
+    }
+    return 0;
+}
+fn stmt() -> int {
+    let k = tok_kind();
+    if (k == 10) { return st_let(); }
+    if (k == 15) { return st_return(); }
+    if (k == 12) { return st_if(); }
+    if (k == 14) { return st_while(); }
+    if (k == 16) { return st_for(); }
+    if (k == 100) { return st_spawn(); }
+    if (k == 101) { return st_yield(); }
+    if (k == 104) { return st_select(); }
+    if (k == 105) { return st_test(); }
+    if (is_ident_kind(k) && tok_kind_at(1) == 27) { return st_assign(); }
+    if (k == 94 && tok_kind_at(1) == 29 && tok_kind_at(3) == 27) { return st_field_assign(k); }
+    if (is_ident_kind(k) && tok_kind_at(1) == 29 && tok_kind_at(3) == 27) { return st_field_assign(k); }
+    level_or();
+    if (get(0, 5) == 1) { emit_op(26); }
+    expect(25);
+    return 0;
+}
+// Присваивание в поле: `this.f = v` или `obj.f = v`. Класс берётся из
+// FNCLS текущей функции (для this) или из LOCCLS локальной переменной.
+fn st_field_assign(k) -> int {
+    let cls = -1;
+    let base_slot = -1;
+    if (k == 94) {
+        next_token();                          // this
+        cls = load32(FNCLS() + load32(CURFI()) * 4);
+        base_slot = -1;                 // this = локаль 0
+    } else {
+        let boff = tok_val(); let blen = tok_len(); next_token();
+        cls = load32(LOCCLS() + find_local(boff, blen) * 4);
+        base_slot = find_local(boff, blen);
+    }
+    expect(29);                        // .
+    let foff = tok_val(); let flen = tok_len();
+    expect_ident();
+    expect(27);                        // =
+    let voff = reserve();
+    level_or();
+    emit_op(33); emit_leb(voff);              // сохраняем значение
+    let off = field_off(cls, foff, flen);
+    if (off < 0) { err(); }
+    else {
+        emit_op(32);
+        if (base_slot >= 0) { emit_leb(base_slot); } else { emit_leb(0); }
+        if (off > 0) { emit_op(65); emit_sleb(off); emit_op(106); }
+        emit_op(32); emit_leb(voff);
+        emit_op(54); emit_op(2); emit_op(0);          // i32.store
+        // Присваивание — выражение: оставляем записанное значение.
+        // (в st)-контексте достаточно; стек инструкций выравнивается вызовом)
+    }
+    expect(25); set(0, 5, 0);
+    return 0;
+}
+
+fn st_assign() -> int {
+    let noff = tok_val(); let nlen = tok_len();
+    expect_ident(); expect(27);
+    level_or();
+    let vt = tpop();
+    let li = find_local(noff, nlen);
+    if (li < 0) { err(); } else { emit_op(33); emit_leb(li); set_local_tp(li, vt); }
+    expect(25); set(0, 5, 0);
+    return 0;
+}
+fn st_let() -> int {
+    next_token();
+    let noff = tok_val(); let nlen = tok_len();
+    expect_ident();
+    let ann = read_ann_after_colon();
+    set(0, 5, 0);
+    let vt = ann;
+    if (tok_kind() == 27) { next_token(); level_or(); vt = tpop(); if (ann != T_INT()) { vt = ann; } } else { emit_op(65); emit_sleb(0); }
+    expect(25);
+    let idx = get(0, 3);
+    add_local(noff, nlen, idx);
+    set_local_tp(idx, vt);
+    emit_op(33); emit_leb(idx);
+    return 0;
+}
+fn st_return() -> int {
+    next_token();
+    if (tok_kind() != 25) { level_or(); } else { emit_op(65); emit_sleb(0); }
+    emit_op(15);
+    if (tok_kind() == 25) { next_token(); }
+    return 0;
+}
+fn st_if() -> int {
+    next_token(); expect(20); level_or(); expect(21);
+    emit_op(4); emit_op(64); expect(22); stmts(); expect(23);
+    if (tok_kind() == 13) {
+        next_token();
+        if (tok_kind() == 12) { emit_op(5); st_if(); emit_op(11); return 0; }
+        emit_op(5); expect(22); stmts(); expect(23); emit_op(11); return 0;
+    }
+    emit_op(11);
+    return 0;
+}
+fn st_while() -> int {
+    next_token(); expect(20);
+    emit_op(2); emit_op(64); emit_op(3); emit_op(64);
+    level_or(); expect(21);
+    emit_op(69); emit_op(13); emit_leb(1);
+    expect(22); stmts(); expect(23);
+    emit_op(12); emit_leb(0); emit_op(11); emit_op(11);
+    return 0;
+}
+// Различает `for (let x in arr)` от C-стиля `for (let x = ...)`.
+// Текущий токен — `let`; смотрим вперёд: let IDENT [ : T ] in ...
+fn is_for_in() -> bool {
+    if (tok_kind() != 10) { return false; }
+    if (!is_ident_kind(tok_kind_at(1))) { return false; }
+    let t2 = tok_kind_at(2);
+    if (t2 == 17) { return true; }
+    if (t2 != 26) { return false; }
+    let j = 3;
+    while (load32(KIND() + (get(0, 0) + j) * 4) != 0) {
+        let k = load32(KIND() + (get(0, 0) + j) * 4);
+        if (k == 17) { return true; }
+        if (k == 27) { return false; }
+        j = j + 1;
+    }
+    return false;
+}
+
+// for (let x in arr) { body } — итерация по массиву [len u32][e0..].
+fn st_for_in() -> int {
+    next_token();                                   // let
+    let voff = tok_val(); let vlen = tok_len();
+    expect_ident();
+    if (tok_kind() == 26) { next_token(); skip_type(); }
+    expect(17);                              // in
+    level_or();                              // iterable
+    let arr = reserve(); emit_op(33); emit_leb(arr);
+    let idx = reserve(); emit_op(65); emit_sleb(0); emit_op(33); emit_leb(idx);
+    let v = add_local(voff, vlen, get(0, 3));
+    expect(21);
+    emit_op(2); emit_op(64); emit_op(3); emit_op(64);
+    emit_op(32); emit_leb(idx);
+    emit_op(32); emit_leb(arr); emit_op(40); emit_op(2); emit_op(0);   // len
+    emit_op(78);                                       // i32.ge_s
+    emit_op(13); emit_leb(1);                            // br_if 1 (выход)
+    emit_op(32); emit_leb(arr);
+    emit_op(32); emit_leb(idx); emit_op(65); emit_sleb(4); emit_op(108); emit_op(106);
+    emit_op(65); emit_sleb(4); emit_op(106);
+    emit_op(40); emit_op(2); emit_op(0);                         // load
+    emit_op(33); emit_leb(v);
+    expect(22); stmts(); expect(23);
+    emit_op(32); emit_leb(idx); emit_op(65); emit_sleb(1); emit_op(106); emit_op(33); emit_leb(idx);
+    emit_op(12); emit_leb(0); emit_op(11); emit_op(11);
+    set(0, 5, 0);
+    return 0;
+}
+
+// Пропуск токенов до закрывающей `}` текущего блока (сама `}` остаётся).
+// Используется после уже разобранной ветки select: oracle исполняет только
+// первую ветку, остальные в код не попадают.
+fn skip_to_rbrace() -> int {
+    let d = 0;
+    while (tok_kind() != 0) {
+        let k = tok_kind();
+        if (k == 22) { d = d + 1; }
+        else {
+            if (k == 23) {
+                if (d == 0) { return 0; }
+                d = d - 1;
+            }
+        }
+        next_token();
+    }
+    return 0;
+}
+
+// spawn { ... } / spawn expr; — oracle выполняет тело последовательно (inline).
+fn st_spawn() -> int {
+    next_token();
+    if (tok_kind() == 22) {
+        next_token(); stmts(); expect(23);
+    } else {
+        level_or();
+        if (get(0, 5) == 1) { emit_op(26); }      // результат выражения отбрасывается
+    }
+    if (tok_kind() == 25) { next_token(); }
+    set(0, 5, 0);
+    return 0;
+}
+
+// yield; — no-op (как в oracle: кооперативного планировщика нет).
+fn st_yield() -> int {
+    next_token();
+    expect(25);
+    return 0;
+}
+
+// test "name" { ... } / test("name") { ... } внутри функции — обычное тело
+// (на верхнем уровне не эмитится, т.к. top-level инструкции не компилируются).
+fn st_test() -> int {
+    next_token();
+    if (tok_kind() == 3) { next_token(); }
+    else {
+        if (tok_kind() == 20) {
+            next_token();
+            if (tok_kind() == 3) { next_token(); }
+            expect(21);
+        }
+    }
+    expect(22); stmts(); expect(23);
+    return 0;
+}
+
+// select { case v <- ch: { ... } default: { ... } } — oracle не вычисляет
+// выражения каналов и исполняет тело ПЕРВОЙ ветки (v связывается с 0);
+// default исполняется, только если веток нет.
+fn st_select() -> int {
+    next_token(); expect(22);
+    if (tok_kind() == 98) {
+        next_token(); expect(26);
+        expect(22); stmts(); expect(23);
+        skip_to_rbrace(); expect(23);
+        set(0, 5, 0);
+        return 0;
+    }
+    if (tok_kind() != 23) {
+        if (tok_kind() == 97) { next_token(); }
+        if (is_ident_kind(tok_kind()) && tok_kind_at(1) == 106) {
+            let voff = tok_val(); let vlen = tok_len();
+            next_token(); next_token();                    // IDENT, <-
+            let slot = get(0, 3);
+            add_local(voff, vlen, slot);
+            set_local_tp(slot, T_INT());
+            store32(LOCCLS() + slot * 4, -1);
+            emit_op(65); emit_sleb(0); emit_op(33); emit_leb(slot);
+        } else {
+            if (tok_kind() == 106) { next_token(); }
+        }
+        // Выражение канала не исполняется: эмитим и откатываем буфер.
+        let save = blen(FNB()); let tsp = get(0, 7);
+        if (tok_kind() != 26) { level_or(); }
+        store32(FNB(), save); set(0, 7, tsp);
+        expect(26);
+        expect(22); stmts(); expect(23);
+    }
+    skip_to_rbrace(); expect(23);
+    set(0, 5, 0);
+    return 0;
+}
+
+fn st_for() -> int {
+    next_token(); expect(20);
+    if (is_for_in()) { return st_for_in(); }
+    if (tok_kind() == 10) { st_let(); } else { if (tok_kind() != 25) { level_or(); emit_op(26); expect(25); } else { next_token(); } }
+    emit_op(2); emit_op(64); emit_op(3); emit_op(64);
+    if (tok_kind() != 25) { level_or(); } else { emit_op(65); emit_sleb(1); }
+    expect(25);
+    emit_op(69); emit_op(13); emit_leb(1);
+    let step_start = get(0, 0);
+    while (tok_kind() != 21 && tok_kind() != 0) { next_token(); }
+    let step_end = get(0, 0);
+    expect(21);
+    expect(22); stmts(); expect(23);
+    let after_body = get(0, 0);
+    set(0, 0, step_start);
+    if (step_start != step_end) { level_or(); emit_op(26); }
+    set(0, 0, after_body);
+    emit_op(12); emit_leb(0); emit_op(11); emit_op(11);
+    return 0;
+}

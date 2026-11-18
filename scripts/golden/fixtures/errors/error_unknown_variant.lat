@@ -1,0 +1,12 @@
+// Golden-набор: неизвестный вариант enum в паттерне match.
+// expect-error: Unknown enum variant
+
+enum Color { Red, Green }
+
+fn main() -> int {
+    let c = Red;
+    return match c {
+        case Blue(x): 1,
+        default: 0,
+    };
+}
