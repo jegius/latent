@@ -1,4 +1,7 @@
 # Rust
+docs/
+.idea/
+.gm/
 target/
 
 # IDE (локальные настройки)
